@@ -6,11 +6,22 @@ class StoreSettings {
   final DateTime? scheduledCloseAt;
   final DateTime? scheduledOpenAt;
 
+  final String? announcement;
+
+  // Expiration windows in hours
+  final int perishableWindowHours;
+  final int mixedWindowHours;
+  final int standardWindowHours;
+
   const StoreSettings({
     required this.isClosed,
     this.closureMessage,
     this.scheduledCloseAt,
     this.scheduledOpenAt,
+    this.perishableWindowHours = 2,
+    this.mixedWindowHours = 24,
+    this.standardWindowHours = 72,
+    this.announcement,
   });
 
   factory StoreSettings.fromFirestore(DocumentSnapshot doc) {
@@ -20,6 +31,10 @@ class StoreSettings {
       closureMessage: d['closureMessage'],
       scheduledCloseAt: (d['scheduledCloseAt'] as Timestamp?)?.toDate(),
       scheduledOpenAt: (d['scheduledOpenAt'] as Timestamp?)?.toDate(),
+      perishableWindowHours: d['perishableWindowHours'] ?? 2,
+      mixedWindowHours: d['mixedWindowHours'] ?? 24,
+      standardWindowHours: d['standardWindowHours'] ?? 72,
+      announcement: d['announcement'],
     );
   }
 
@@ -28,6 +43,10 @@ class StoreSettings {
     'closureMessage': closureMessage,
     'scheduledCloseAt': scheduledCloseAt != null ? Timestamp.fromDate(scheduledCloseAt!) : null,
     'scheduledOpenAt': scheduledOpenAt != null ? Timestamp.fromDate(scheduledOpenAt!) : null,
+    'perishableWindowHours': perishableWindowHours,
+    'mixedWindowHours': mixedWindowHours,
+    'standardWindowHours': standardWindowHours,
+    'announcement': announcement,
   };
 
   bool get effectivelyClosed {

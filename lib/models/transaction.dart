@@ -11,6 +11,7 @@ class StoreTransaction {
   final double         change;
   final DateTime       createdAt;
   final String?        customerId;
+  final String?        customerEmail; // NEW: Track email for loyalty/stats
   final PaymentMethod  paymentMethod;
 
   const StoreTransaction({
@@ -21,6 +22,7 @@ class StoreTransaction {
     required this.change,
     required this.createdAt,
     this.customerId,
+    this.customerEmail,
     this.paymentMethod = PaymentMethod.cash,
   });
 
@@ -34,6 +36,7 @@ class StoreTransaction {
       change:    (d['change'] as num).toDouble(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       customerId: d['customerId'],
+      customerEmail: d['customerEmail'],
       paymentMethod: PaymentMethod.values.firstWhere(
         (e) => e.name == (d['paymentMethod'] ?? 'cash'),
         orElse: () => PaymentMethod.cash,
@@ -48,6 +51,7 @@ class StoreTransaction {
     'change':        change,
     'createdAt':     FieldValue.serverTimestamp(),
     'customerId':    customerId,
+    'customerEmail': customerEmail,
     'paymentMethod': paymentMethod.name,
   };
 }

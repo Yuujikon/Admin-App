@@ -135,22 +135,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
         const SizedBox(height: 8),
 
         // Product list
-        Expanded(child: products.isEmpty 
-            ? const Center(child: CircularProgressIndicator())
-            : (filtered.isEmpty
-                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade200),
-                    const SizedBox(height: 16),
-                    const Text('No products matching filters', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500)),
-                    TextButton(onPressed: () => setState(() { _search = ''; _cat = 'All'; }), child: const Text('Clear all filters')),
-                  ]))
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
-                    itemCount: filtered.length,
-                    itemBuilder: (_, i) => _ProductRow(
-                      product: filtered[i],
-                      onEdit:  () => _showSheet(context, filtered[i]),
-                    )))),
+        Expanded(child: RefreshIndicator(
+          onRefresh: () async {
+            // Re-initialize to force fresh stream
+            context.read<InventoryProvider>().initialize();
+            await Future.delayed(const Duration(milliseconds: 500));
+          },
+          child: products.isEmpty 
+              ? const Center(child: CircularProgressIndicator())
+              : (filtered.isEmpty
+                  ? SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Container(
+                        height: MediaQuery.of(context).size.height * 0.5,
+                        alignment: Alignment.center,
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade200),
+                          const SizedBox(height: 16),
+                          const Text('No products matching filters', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500)),
+                          TextButton(onPressed: () => setState(() { _search = ''; _cat = 'All'; }), child: const Text('Clear all filters')),
+                        ]),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) => _ProductRow(
+                        product: filtered[i],
+                        onEdit:  () => _showSheet(context, filtered[i]),
+                      ))),
+        )),
       ])),
     );
   }
@@ -289,7 +304,7 @@ class _ProductSheet extends StatefulWidget {
 }
 
 class _ProductSheetState extends State<_ProductSheet> {
-  late TextEditingController _name, _price, _stock, _unit, _shelf, _barcode, _wPrice, _wThreshold;
+  late TextEditingController _name, _price, _stock, _unit, _shelf, _barcode, _wPrice, _wThreshold, _pickupWindow;
   late String _category;
   String? _supplierId;
   bool _perishable = false;
@@ -320,6 +335,7 @@ class _ProductSheetState extends State<_ProductSheet> {
     _barcode    = TextEditingController(text: p?.barcode ?? '');
     _wPrice     = TextEditingController(text: p?.wholesalePrice?.toString() ?? '');
     _wThreshold = TextEditingController(text: p?.wholesaleThreshold?.toString() ?? '');
+    _pickupWindow = TextEditingController(text: p?.pickupWindowHours?.toString() ?? '');
     _category   = (p != null && allCats.contains(p.category)) ? p.category : _defaultCategories.first;
     _perishable = p?.isPerishable ?? false;
     _photoBase64 = p?.photoBase64;
@@ -349,7 +365,7 @@ class _ProductSheetState extends State<_ProductSheet> {
   void dispose() {
     _name.dispose(); _price.dispose(); _stock.dispose();
     _unit.dispose(); _shelf.dispose(); _barcode.dispose();
-    _wPrice.dispose(); _wThreshold.dispose();
+    _wPrice.dispose(); _wThreshold.dispose(); _pickupWindow.dispose();
     super.dispose();
   }
 
@@ -508,17 +524,27 @@ class _ProductSheetState extends State<_ProductSheet> {
           SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Perishable item'),
-              subtitle: const Text('Auto-cancels if not picked up within 2 hours'),
+              subtitle: Text(_perishable 
+                  ? 'Set shelf life and specific pickup window.' 
+                  : 'Auto-cancels if not picked up within store defaults.'),
               value: _perishable,
               onChanged: (v) => setState(() => _perishable = v)),
 
           if (_perishable) ...[
-            TextField(controller: _shelf,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Shelf life (days)',
-                    prefixIcon: Icon(Icons.timer_outlined))),
-            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: TextField(controller: _shelf,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Shelf life (days)',
+                      prefixIcon: Icon(Icons.timer_outlined)))),
+              const SizedBox(width: 10),
+              Expanded(child: TextField(controller: _pickupWindow,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Pickup (hrs)',
+                      prefixIcon: Icon(Icons.shopping_basket_outlined)))),
+            ]),
+            const SizedBox(height: 12),
           ],
 
           if (widget.product != null) ...[
@@ -574,6 +600,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                         unit:      _unit.text.trim(),
                         barcode:   _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
                         shelfDays: _perishable ? int.tryParse(_shelf.text) : null,
+                        pickupWindowHours: _perishable ? int.tryParse(_pickupWindow.text) : null,
                         photoBase64: _photoBase64,
                         supplierId: _supplierId,
                         expiryDate: _expiryDate,

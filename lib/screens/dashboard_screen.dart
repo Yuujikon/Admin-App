@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/inventory_provider.dart';
+import '../../models/store_settings.dart';
 import '../../providers/order_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../models/order.dart';
@@ -36,25 +37,8 @@ class DashboardScreen extends StatelessWidget {
     final lowStock = inventory.products.where((p) => p.stock <= 5).toList();
 
     // Movement Insights (Last 30 Days)
-    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-    final recentTx = transactions.where((t) => t.createdAt.isAfter(thirtyDaysAgo));
-    
-    final recentCounts = <String, int>{};
-    for (final tx in recentTx) {
-      for (final item in tx.items) {
-        recentCounts[item.name] = (recentCounts[item.name] ?? 0) + item.qty;
-      }
-    }
-
-    // Fast Moving: Top by volume
-    final fastMoving = recentCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    // Slow Moving: In inventory but low/zero sales in 30 days
-    final slowMoving = inventory.products
-        .where((p) => (recentCounts[p.name] ?? 0) <= 2) // Threshold: 2 or less in a month
-        .toList()
-      ..sort((a, b) => (recentCounts[a.name] ?? 0).compareTo(recentCounts[b.name] ?? 0));
+    final fastMoving = inventory.fastMovingItems;
+    final slowMoving = inventory.slowMovingItems;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -198,7 +182,7 @@ class DashboardScreen extends StatelessWidget {
                 itemCount: slowMoving.take(10).length,
                 itemBuilder: (context, index) {
                   final p = slowMoving[index];
-                  final sold = recentCounts[p.name] ?? 0;
+                  final sold = inventory.recentMovementCounts[p.name] ?? 0;
                   return Card(
                     margin: const EdgeInsets.only(right: 12),
                     color: Theme.of(context).colorScheme.surfaceContainer,
@@ -431,6 +415,79 @@ class DashboardScreen extends StatelessWidget {
                     },
                     child: Text('Clear Schedule', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   ),
+
+                const Divider(height: 48),
+                Text('Store Announcement', style: Theme.of(context).textTheme.titleSmall),
+                Text('Display a scrolling ticker to customers.', style: Theme.of(context).textTheme.labelSmall),
+                const SizedBox(height: 16),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Current Announcement',
+                    hintText: 'e.g. Fresh batch of donuts at 3PM!',
+                    border: OutlineInputBorder(),
+                  ),
+                  controller: TextEditingController(text: settings.announcement),
+                  onSubmitted: (v) => inventory.saveStoreSettings(StoreSettings(
+                    isClosed: settings.isClosed,
+                    closureMessage: settings.closureMessage,
+                    scheduledCloseAt: settings.scheduledCloseAt,
+                    scheduledOpenAt: settings.scheduledOpenAt,
+                    perishableWindowHours: settings.perishableWindowHours,
+                    mixedWindowHours: settings.mixedWindowHours,
+                    standardWindowHours: settings.standardWindowHours,
+                    announcement: v.trim().isEmpty ? null : v.trim(),
+                  )),
+                ),
+
+                const Divider(height: 48),
+                Text('Order Expiration Windows', style: Theme.of(context).textTheme.titleSmall),
+                Text('Time customers have to pick up their orders.', style: Theme.of(context).textTheme.labelSmall),
+                const SizedBox(height: 16),
+
+                _WindowInput(
+                  label: 'Perishables Only',
+                  hint: 'e.g. 2 hours',
+                  value: settings.perishableWindowHours,
+                  onChanged: (v) => inventory.saveStoreSettings(StoreSettings(
+                    isClosed: settings.isClosed,
+                    closureMessage: settings.closureMessage,
+                    scheduledCloseAt: settings.scheduledCloseAt,
+                    scheduledOpenAt: settings.scheduledOpenAt,
+                    perishableWindowHours: v,
+                    mixedWindowHours: settings.mixedWindowHours,
+                    standardWindowHours: settings.standardWindowHours,
+                  )),
+                ),
+                const SizedBox(height: 12),
+                _WindowInput(
+                  label: 'Mixed Orders',
+                  hint: 'e.g. 24 hours',
+                  value: settings.mixedWindowHours,
+                  onChanged: (v) => inventory.saveStoreSettings(StoreSettings(
+                    isClosed: settings.isClosed,
+                    closureMessage: settings.closureMessage,
+                    scheduledCloseAt: settings.scheduledCloseAt,
+                    scheduledOpenAt: settings.scheduledOpenAt,
+                    perishableWindowHours: settings.perishableWindowHours,
+                    mixedWindowHours: v,
+                    standardWindowHours: settings.standardWindowHours,
+                  )),
+                ),
+                const SizedBox(height: 12),
+                _WindowInput(
+                  label: 'Non-Perishables',
+                  hint: 'e.g. 72 hours',
+                  value: settings.standardWindowHours,
+                  onChanged: (v) => inventory.saveStoreSettings(StoreSettings(
+                    isClosed: settings.isClosed,
+                    closureMessage: settings.closureMessage,
+                    scheduledCloseAt: settings.scheduledCloseAt,
+                    scheduledOpenAt: settings.scheduledOpenAt,
+                    perishableWindowHours: settings.perishableWindowHours,
+                    mixedWindowHours: settings.mixedWindowHours,
+                    standardWindowHours: v,
+                  )),
+                ),
               ],
             ),
           ),
@@ -470,26 +527,30 @@ class _StatCard extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, 
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color, size: 22),
+              child: Icon(icon, color: color, size: 20),
             ),
             const Spacer(),
-            Text(value,
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -1),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(value,
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                  maxLines: 1),
+            ),
             const SizedBox(height: 2),
             Text(label,
-                style: Theme.of(context).textTheme.labelMedium),
+                style: Theme.of(context).textTheme.labelSmall,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
@@ -516,4 +577,42 @@ class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Container(width: 1, height: 32, color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5));
+}
+
+class _WindowInput extends StatelessWidget {
+  final String label;
+  final String hint;
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const _WindowInput({required this.label, required this.hint, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 80,
+          child: TextField(
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.end,
+            decoration: InputDecoration(
+              hintText: hint,
+              suffixText: ' hr',
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            controller: TextEditingController(text: value.toString()),
+            onSubmitted: (v) {
+              final n = int.tryParse(v);
+              if (n != null) onChanged(n);
+            },
+          ),
+        ),
+      ],
+    );
+  }
 }

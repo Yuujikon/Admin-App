@@ -4,6 +4,7 @@ import '../models/order.dart';
 import '../models/transaction.dart';
 import '../models/expense.dart';
 import '../models/refund_request.dart';
+import '../models/bundle.dart';
 import '../models/store_settings.dart';
 import '../models/supplier.dart';
 import '../models/loss_record.dart';
@@ -21,6 +22,7 @@ class FirestoreService {
   CollectionReference get _suppliers      => _db.collection('suppliers');
   CollectionReference get _lossRecords    => _db.collection('loss_records');
   CollectionReference get _customers      => _db.collection('customers');
+  CollectionReference get _bundles        => _db.collection('bundles');
   DocumentReference   get _settings       => _db.collection('settings').doc('store_settings');
 
   // ── Store Settings ─────────────────────────────────────────────────────────
@@ -35,6 +37,9 @@ class FirestoreService {
         'scheduledCloseAt': closeAt != null ? Timestamp.fromDate(closeAt) : null,
         'scheduledOpenAt': openAt != null ? Timestamp.fromDate(openAt) : null,
       }, SetOptions(merge: true));
+
+  Future<void> saveStoreSettings(StoreSettings s) =>
+      _settings.set(s.toFirestore(), SetOptions(merge: true));
 
   // ── Products ───────────────────────────────────────────────────────────────
 
@@ -203,6 +208,12 @@ class FirestoreService {
   Future<void> deleteCustomer(String id) =>
       _customers.doc(id).delete();
 
+  Future<Customer?> getCustomerByEmail(String email) async {
+    final snap = await _customers.where('email', isEqualTo: email).limit(1).get();
+    if (snap.docs.isEmpty) return null;
+    return Customer.fromMap(snap.docs.first.id, snap.docs.first.data() as Map<String, dynamic>);
+  }
+
   Future<void> updateCustomerPoints(String id, int delta) =>
       _customers.doc(id).update({'loyaltyPoints': FieldValue.increment(delta)});
 
@@ -252,4 +263,36 @@ class FirestoreService {
 
     return batch.commit();
   }
+
+  // ── Product Watches ────────────────────────────────────────────────────────
+
+  Future<List<String>> getWatchersForProduct(String productId) async {
+    final snap = await _db.collection('watched_products')
+        .where('productId', isEqualTo: productId)
+        .get();
+    return snap.docs.map((d) => d.data()['email'] as String).toList();
+  }
+
+  Future<void> removeWatchesForProduct(String productId) async {
+    final snap = await _db.collection('watched_products')
+        .where('productId', isEqualTo: productId)
+        .get();
+    final batch = _db.batch();
+    for (var doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  // ── Bundles ────────────────────────────────────────────────────────────────
+
+  Stream<List<ProductBundle>> bundlesStream() =>
+      _bundles.snapshots().map((s) => s.docs.map(ProductBundle.fromFirestore).toList());
+
+  Future<void> saveBundle(ProductBundle b) {
+    if (b.id.isEmpty) return _bundles.add(b.toFirestore());
+    return _bundles.doc(b.id).update(b.toFirestore());
+  }
+
+  Future<void> deleteBundle(String id) => _bundles.doc(id).delete();
 }

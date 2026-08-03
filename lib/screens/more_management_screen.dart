@@ -8,6 +8,7 @@ import 'supplier_management_screen.dart';
 import 'loss_management_screen.dart';
 import 'reports_screen.dart';
 import 'customer_management_screen.dart';
+import 'bundle_management_screen.dart';
 
 class MoreManagementScreen extends StatelessWidget {
   const MoreManagementScreen({super.key});
@@ -43,6 +44,15 @@ class MoreManagementScreen extends StatelessWidget {
             subtitle: 'Manage delivery contacts',
             color: semantic.success,
             target: const SupplierManagementScreen(),
+          ),
+          const SizedBox(height: 12),
+          _menuItem(
+            context,
+            icon: Icons.auto_awesome_motion_rounded,
+            title: 'Cooking Bundles',
+            subtitle: 'Group items into recipe sets',
+            color: Colors.orange.shade700,
+            target: const BundleManagementScreen(),
           ),
           const SizedBox(height: 12),
           _menuItem(

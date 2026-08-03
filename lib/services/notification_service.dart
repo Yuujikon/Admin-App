@@ -120,4 +120,19 @@ class NotificationService {
       )),
     );
   }
+
+  static Future<void> sendBackInStock(String productName, String userEmail) async {
+    // In a real app, this would trigger an FCM push to that specific user topic
+    // For now, we simulate with a debug log or a broadcast if needed.
+    // For demo purposes, we show a local notification on admin app too
+    await _local.show(
+      productName.hashCode + 10,
+      'Restock Alert Sent 📢',
+      'Notification sent to watchers of $productName.',
+      const NotificationDetails(android: AndroidNotificationDetails(
+        'gdc_alerts', 'Store Alerts',
+        importance: Importance.low,
+      )),
+    );
+  }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product.dart';
+import '../models/bundle.dart';
 import '../models/order.dart';
 import '../models/transaction.dart';
 import '../models/refund_request.dart';
@@ -23,6 +24,7 @@ class InventoryProvider extends ChangeNotifier {
   List<Supplier>         _suppliers      = [];
   List<LossRecord>       _lossRecords    = [];
   List<Customer>         _customers      = [];
+  List<ProductBundle>    _bundles        = [];
   StoreSettings          _settings       = const StoreSettings(isClosed: false);
   String                 _adminName      = 'Admin';
 
@@ -32,8 +34,12 @@ class InventoryProvider extends ChangeNotifier {
   List<Supplier>         get suppliers      => _suppliers;
   List<LossRecord>       get lossRecords    => _lossRecords;
   List<Customer>         get customers      => _customers;
+  List<ProductBundle>    get bundles        => _bundles;
   StoreSettings          get settings       => _settings;
   String                 get adminName      => _adminName;
+
+  List<Product>? _cachedSortedProducts;
+  DateTime?      _lastSortTime;
 
   // ── Sorting Logic ──────────────────────────────────────────────────────────
 
@@ -41,6 +47,14 @@ class InventoryProvider extends ChangeNotifier {
   /// Fast-moving first, slow-moving later.
   List<Product> get sortedProducts {
     if (_products.isEmpty) return [];
+    
+    // Cache for 1 minute or until data changes
+    if (_cachedSortedProducts != null && 
+        _lastSortTime != null && 
+        DateTime.now().difference(_lastSortTime!).inMinutes < 1) {
+      return _cachedSortedProducts!;
+    }
+
     if (_transactions.isEmpty) return _products;
 
     // 1. Calculate sales volume per product name in the last 30 days
@@ -64,19 +78,68 @@ class InventoryProvider extends ChangeNotifier {
       return countB.compareTo(countA);
     });
 
+    _cachedSortedProducts = sorted;
+    _lastSortTime = DateTime.now();
     return sorted;
   }
 
+  // Movement Insights (Last 30 Days)
+  Map<String, int>? _cachedRecentCounts;
+  List<MapEntry<String, int>> get fastMovingItems {
+    if (_transactions.isEmpty) return [];
+    
+    if (_cachedRecentCounts != null) {
+      final entries = _cachedRecentCounts!.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return entries;
+    }
+
+    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+    final counts = <String, int>{};
+    for (final tx in _transactions) {
+      if (tx.createdAt.isAfter(thirtyDaysAgo)) {
+        for (final item in tx.items) {
+          counts[item.name] = (counts[item.name] ?? 0) + item.qty;
+        }
+      }
+    }
+    _cachedRecentCounts = counts;
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries;
+  }
+
+  List<Product> get slowMovingItems {
+    final counts = _cachedRecentCounts ?? {};
+    if (counts.isEmpty && _transactions.isNotEmpty) {
+      // Force a calculation of recent counts if it's missing but we have transactions
+      final _ = fastMovingItems; 
+    }
+    
+    final slow = _products
+        .where((p) => (counts[p.name] ?? 0) <= 2)
+        .toList();
+    slow.sort((a, b) => (counts[a.name] ?? 0).compareTo(counts[b.name] ?? 0));
+    return slow;
+  }
+
+  Map<String, int> get recentMovementCounts => _cachedRecentCounts ?? {};
+
   void initialize() {
     cancelSubscriptions();
+    _cachedSortedProducts = null; 
+    _cachedRecentCounts = null;
 
     _subs.add(_fs.productsStream().listen((list) {
       _products = list;
+      _cachedSortedProducts = null;
       notifyListeners();
     }, onError: (e) => debugPrint('Inventory Stream Error: $e')));
 
     _subs.add(_fs.transactionsStream().listen((list) {
       _transactions = list;
+      _cachedSortedProducts = null;
+      _cachedRecentCounts = null; // Invalidate movement counts
       notifyListeners();
     }, onError: (e) => debugPrint('Transactions Stream Error: $e')));
 
@@ -110,6 +173,11 @@ class InventoryProvider extends ChangeNotifier {
       notifyListeners();
     }, onError: (e) => debugPrint('Customers Stream Error: $e')));
 
+    _subs.add(_fs.bundlesStream().listen((list) {
+      _bundles = list;
+      notifyListeners();
+    }, onError: (e) => debugPrint('Bundles Stream Error: $e')));
+
     _subs.add(_fs.settingsStream().listen((settings) {
       _settings = settings;
       notifyListeners();
@@ -133,14 +201,43 @@ class InventoryProvider extends ChangeNotifier {
     await _fs.updateStoreStatus(isClosed, message: message, closeAt: closeAt, openAt: openAt);
   }
 
+  Future<void> saveStoreSettings(StoreSettings s) async {
+    await _fs.saveStoreSettings(s);
+  }
+
   void setAdminEmail(String name) {
     _adminName = name;
     notifyListeners();
   }
 
-  Future<void> saveProduct(Product product) {
-    if (product.id.isEmpty) return _fs.addProduct(product);
-    return _fs.updateProduct(product);
+  Future<void> saveProduct(Product product) async {
+    // Check for stock increase for notifications
+    if (product.id.isNotEmpty) {
+      try {
+        final old = _products.firstWhere((p) => p.id == product.id);
+        if (old.stock <= 0 && product.stock > 0) {
+          _notifyBackInStock(product);
+        }
+      } catch (_) {}
+    }
+
+    if (product.id.isEmpty) {
+      await _fs.addProduct(product);
+    } else {
+      await _fs.updateProduct(product);
+    }
+  }
+
+  void _notifyBackInStock(Product p) async {
+    final watchers = await _fs.getWatchersForProduct(p.id);
+    if (watchers.isEmpty) return;
+
+    for (var email in watchers) {
+      await NotificationService.sendBackInStock(p.name, email);
+    }
+    
+    // Clear watches after notifying
+    await _fs.removeWatchesForProduct(p.id);
   }
 
   Future<void> deleteProduct(String id) async {
@@ -172,6 +269,9 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> adjustPoints(String customerId, int delta) async {
     await _fs.updateCustomerPoints(customerId, delta);
   }
+
+  Future<void> saveBundle(ProductBundle b) => _fs.saveBundle(b);
+  Future<void> deleteBundle(String id) => _fs.deleteBundle(id);
 
   Future<void> completeSale(List<CartItem> cart, double cash, {String? customerId, PaymentMethod paymentMethod = PaymentMethod.cash}) async {
     final total  = cart.fold(0.0, (s, i) => s + i.price * i.qty);

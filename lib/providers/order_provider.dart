@@ -18,17 +18,15 @@ class OrderProvider extends ChangeNotifier {
   List<PreOrder> get orders  => _orders;
   List<CartItem> get preCart => _preCart;
 
-  // Stream that auto-updates for admin view
-  Stream<List<PreOrder>> get ordersStream => _fs.ordersStream();
-
-  // Stream for a specific customer
-  Stream<List<PreOrder>> ordersStreamForEmail(String email) =>
-      _fs.ordersStreamForEmail(email);
+  // Streams that auto-update for admin view
+  late final Stream<List<PreOrder>> ordersStream;
 
   void initialize() {
     cancelSubscriptions();
 
-    _subs.add(_fs.ordersStream().listen((list) {
+    ordersStream = _fs.ordersStream().asBroadcastStream();
+
+    _subs.add(ordersStream.listen((list) {
       _orders = list;
       _checkExpirations(list);
       notifyListeners();
@@ -191,19 +189,33 @@ class OrderProvider extends ChangeNotifier {
     // Record as transaction when collected
     if (next == OrderStatus.collected) {
       final tx = StoreTransaction(
-        id: const Uuid().v4(), // Use a new UUID to ensure it's recorded as a new document
+        id: const Uuid().v4(), 
         items: order.items,
         total: order.total,
         cash: order.total,
         change: 0,
         createdAt: DateTime.now(),
+        customerEmail: order.customerEmail,
       );
       await _fs.addTransaction(tx);
+
+      // Award points for collected pre-order
+      _awardPointsForPreOrder(order);
     }
 
     // Notify customer when order is ready
     if (next == OrderStatus.ready) {
       await NotificationService.sendOrderReady(order.orderId);
+    }
+  }
+
+  void _awardPointsForPreOrder(PreOrder order) async {
+    final customer = await _fs.getCustomerByEmail(order.customerEmail);
+    if (customer != null) {
+      final points = (order.total / 100).floor();
+      if (points > 0) {
+        await _fs.updateCustomerPoints(customer.id, points);
+      }
     }
   }
 
