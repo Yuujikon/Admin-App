@@ -1,0 +1,47 @@
+name: gdc_admin_app
+description: GDC Sari-Sari Store — Staff POS & Management
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core:      ^2.27.1
+  firebase_auth:      ^4.17.9
+  cloud_firestore:    ^4.15.9
+  firebase_messaging: ^14.7.20
+
+  # UI & state
+  provider:           ^6.1.2
+  google_fonts:       ^6.2.1
+  intl:               ^0.19.0
+
+  # Notifications
+  flutter_local_notifications: ^17.1.2
+
+  # Utilities
+  uuid:                ^4.3.3
+  shared_preferences:  ^2.2.3   # stores admin PIN
+  mobile_scanner:      ^5.1.0   # camera barcode scanner
+  camera:              ^0.11.0
+  google_mlkit_text_recognition: ^0.13.0
+  esc_pos_utils_plus: ^2.0.4
+  print_bluetooth_thermal: ^1.2.1
+  image_picker: ^1.2.3
+  url_launcher: ^6.3.0
+  fl_chart: ^0.66.0
+  pdf: ^3.10.10
+  printing: ^5.13.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
