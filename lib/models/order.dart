@@ -54,6 +54,9 @@ class PreOrder {
   final String         customerName;
   final String         customerEmail;
   final List<CartItem> items;
+  final double         subtotal;
+  final double         discount;
+  final double         tax;
   final double         total;
   final OrderStatus    status;
   final String         notes;
@@ -62,6 +65,7 @@ class PreOrder {
   final DateTime       createdAt;
   final DateTime?      expiresAt;
   final String?        rejectionReason;
+  final bool           isSeniorPWD;
 
   const PreOrder({
     required this.id,
@@ -69,6 +73,9 @@ class PreOrder {
     required this.customerName,
     required this.customerEmail,
     required this.items,
+    this.subtotal = 0,
+    this.discount = 0,
+    this.tax = 0,
     required this.total,
     required this.status,
     this.notes      = '',
@@ -77,6 +84,7 @@ class PreOrder {
     required this.createdAt,
     this.expiresAt,
     this.rejectionReason,
+    this.isSeniorPWD = false,
   });
 
   factory PreOrder.fromFirestore(DocumentSnapshot doc) {
@@ -87,7 +95,10 @@ class PreOrder {
       customerName:  d['customerName'] ?? '',
       customerEmail: d['customerEmail'] ?? '',
       items:         (d['items'] as List? ?? []).map((e) => CartItem.fromMap(e)).toList(),
-      total:         (d['total'] as num).toDouble(),
+      subtotal:      (d['subtotal'] as num? ?? 0).toDouble(),
+      discount:      (d['discount'] as num? ?? 0).toDouble(),
+      tax:           (d['tax'] as num? ?? 0).toDouble(),
+      total:         (d['total'] as num? ?? 0).toDouble(),
       status: OrderStatus.values.firstWhere(
         (e) => e.name == (d['status'] ?? 'pending'),
         orElse: () => OrderStatus.pending,
@@ -98,6 +109,7 @@ class PreOrder {
       createdAt:     (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       expiresAt:     (d['expiresAt'] as Timestamp?)?.toDate(),
       rejectionReason: d['rejectionReason'],
+      isSeniorPWD:   d['isSeniorPWD'] ?? false,
     );
   }
 
@@ -106,6 +118,9 @@ class PreOrder {
     'customerName':  customerName,
     'customerEmail': customerEmail,
     'items':         items.map((i) => i.toMap()).toList(),
+    'subtotal':      subtotal,
+    'discount':      discount,
+    'tax':           tax,
     'total':         total,
     'status':        status.name,
     'notes':         notes,
@@ -113,17 +128,20 @@ class PreOrder {
     'pickupTime':    pickupTime,
     'createdAt':     FieldValue.serverTimestamp(),
     'expiresAt':     expiresAt != null ? Timestamp.fromDate(expiresAt!) : null,
+    'isSeniorPWD':   isSeniorPWD,
     if (rejectionReason != null) 'rejectionReason': rejectionReason,
   };
 
   PreOrder copyWith({OrderStatus? status}) => PreOrder(
     id: id, orderId: orderId,
     customerName: customerName, customerEmail: customerEmail,
-    items: items, total: total,
+    items: items, 
+    subtotal: subtotal, discount: discount, tax: tax, total: total,
     status: status ?? this.status,
     notes: notes, location: location,
     pickupTime: pickupTime, createdAt: createdAt,
     expiresAt: expiresAt,
     rejectionReason: rejectionReason,
+    isSeniorPWD: isSeniorPWD,
   );
 }

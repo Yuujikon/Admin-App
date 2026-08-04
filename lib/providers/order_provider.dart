@@ -3,15 +3,18 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 import '../models/order.dart';
 import '../models/product.dart';
+import '../models/promotion.dart';
 import '../models/transaction.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
+import '../utils/pricing_engine.dart';
 
 class OrderProvider extends ChangeNotifier {
   final _fs = FirestoreService();
   final List<StreamSubscription> _subs = [];
 
   List<PreOrder> _orders  = [];
+  List<Promotion> _promotions = [];
   final List<CartItem> _preCart = [];
   Timer? _expirationTimer;
 
@@ -31,6 +34,11 @@ class OrderProvider extends ChangeNotifier {
       _checkExpirations(list);
       notifyListeners();
     }, onError: (e) => debugPrint('Orders Stream Error: $e')));
+
+    _subs.add(_fs.promotionsStream().listen((list) {
+      _promotions = list;
+      notifyListeners();
+    }, onError: (e) => debugPrint('Promotions Stream Error: $e')));
     
     // Start a timer to check expirations every minute
     _expirationTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -124,26 +132,25 @@ class OrderProvider extends ChangeNotifier {
       expiresAt = DateTime.now().add(const Duration(days: 3));
     }
 
+    final total = cart.fold(0.0, (s, i) => s + i.price * i.qty);
+    
+    // Calculate breakdown using PricingEngine
+    final breakdown = PricingEngine.calculate(
+      items: _preCart, 
+      allProducts: allProducts, 
+      activePromos: _promotions,
+    );
+
     final order = PreOrder(
       id:            const Uuid().v4(),
       orderId:       'GDC-${orderCount.toString().padLeft(4, '0')}',
       customerName:  customerName,
       customerEmail: customerEmail,
-      items:         _preCart.map((item) {
-        final p = allProducts.firstWhere((p) => p.id == item.productId);
-        final bool isWholesale = p.wholesalePrice != null && 
-                               p.wholesaleThreshold != null && 
-                               item.qty >= p.wholesaleThreshold!;
-        return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
-      }).toList(),
-      total:         _preCart.fold(0.0, (s, item) {
-        final p = allProducts.firstWhere((p) => p.id == item.productId);
-        final bool isWholesale = p.wholesalePrice != null && 
-                               p.wholesaleThreshold != null && 
-                               item.qty >= p.wholesaleThreshold!;
-        final price = isWholesale ? p.wholesalePrice! : p.price;
-        return s + price * item.qty;
-      }),
+      items:         List.from(_preCart),
+      subtotal:      breakdown.subtotal,
+      discount:      breakdown.promoDiscount + breakdown.seniorDiscount,
+      tax:           breakdown.vAtAmount,
+      total:         breakdown.total,
       status:        OrderStatus.pending,
       notes:         notes,
       location:      location,

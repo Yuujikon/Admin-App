@@ -178,28 +178,34 @@ class _PreOrdersTabState extends State<_PreOrdersTab> {
                             order:    o,
                             isOpen:   isOpen,
                             onToggle: () => setState(() => _expanded = isOpen ? null : o.id),
-                            onAdvance: () => _confirmAction(context, 'Advance Status', 
-                              'Are you sure you want to move this order to the next stage?', () async {
-                              final oldStatus = o.status;
-                              await context.read<OrderProvider>().advanceStatus(o.id);
-                              
-                              if (oldStatus == OrderStatus.ready) {
-                                final printer = context.read<PrinterProvider>();
-                                if (printer.connected) {
-                                  printer.printReceipt(
-                                    items: o.items,
-                                    total: o.total,
-                                    cash: o.total,
-                                    change: 0,
-                                    orderId: o.orderId,
-                                  );
+                            onAdvance: () async {
+                              await _confirmAction(context, 'Advance Status', 
+                                'Are you sure you want to move this order to the next stage?', () async {
+                                final oldStatus = o.status;
+                                await context.read<OrderProvider>().advanceStatus(o.id);
+                                
+                                if (oldStatus == OrderStatus.ready) {
+                                  final printer = context.read<PrinterProvider>();
+                                  if (printer.connected) {
+                                    printer.printReceipt(
+                                      items: o.items,
+                                      total: o.total,
+                                      cash: o.total,
+                                      change: 0,
+                                      orderId: o.orderId,
+                                    );
+                                  }
                                 }
-                              }
-                            }),
-                            onCancel: () => _confirmAction(context, 'Cancel Order', 
-                              'Are you sure you want to cancel this order? This will return items to stock.', () async {
-                              await context.read<OrderProvider>().cancelOrder(o.id, isAuto: false);
-                            }),
+                              });
+                              setState(() => _expanded = null);
+                            },
+                            onCancel: () async {
+                              await _confirmAction(context, 'Cancel Order', 
+                                'Are you sure you want to cancel this order? This will return items to stock.', () async {
+                                await context.read<OrderProvider>().cancelOrder(o.id, isAuto: false);
+                              });
+                              setState(() => _expanded = null);
+                            },
                           );
                         }),
               ),
@@ -460,10 +466,6 @@ class _RefundRequests extends StatelessWidget {
       case RefundStatus.rejected: return const Icon(Icons.cancel, color: Colors.red);
     }
   }
-
-  void _handleAction(BuildContext context, RefundRequest req, bool approve) {
-    // Legacy method - replaced by _RefundActions widget
-  }
 }
 
 // ── Shared Widgets ─────────────────────────────────────────────────────────
@@ -543,9 +545,6 @@ class _OrderCardState extends State<_OrderCard> {
               setState(() => _loading = true);
               try {
                 await widget.onAdvance();
-                if (mounted) {
-                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order status updated'), backgroundColor: GdcColors.sageGreen));
-                }
               } finally {
                 if (mounted) setState(() => _loading = false);
               }
@@ -554,9 +553,6 @@ class _OrderCardState extends State<_OrderCard> {
               setState(() => _loading = true);
               try {
                 await widget.onCancel();
-                if (mounted) {
-                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order cancelled'), backgroundColor: Colors.orange));
-                }
               } finally {
                 if (mounted) setState(() => _loading = false);
               }
@@ -727,88 +723,105 @@ class _RefundActionsState extends State<_RefundActions> {
 
   void _handleAction(BuildContext context, bool approve) {
     final rejectCtrl = TextEditingController();
+    RefundCondition selectedCondition = RefundCondition.damaged;
     
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('${approve ? 'Approve' : 'Reject'} Refund: #${widget.req.transactionId.length > 8 ? widget.req.transactionId.substring(0, 8) : widget.req.transactionId}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Customer: ${widget.req.customerEmail}'),
-            Text('Total: ₱${widget.req.total.toStringAsFixed(2)}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Text('Customer Reason:', style: TextStyle(color: Colors.grey[700])),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(5)),
-              child: Text('"${widget.req.reason}"', style: const TextStyle(fontStyle: FontStyle.italic)),
-            ),
-            if (!approve) ...[
-              const SizedBox(height: 16),
-              const Text('Rejection Reason:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              TextField(
-                controller: rejectCtrl,
-                decoration: const InputDecoration(hintText: 'e.g., No issue found, Item is used', border: OutlineInputBorder()),
-                maxLines: 2,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSt) => AlertDialog(
+          title: Text('${approve ? 'Approve' : 'Reject'} Refund: #${widget.req.transactionId.length > 8 ? widget.req.transactionId.substring(0, 8) : widget.req.transactionId}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Customer: ${widget.req.customerEmail}'),
+              Text('Total: ₱${widget.req.total.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Text('Customer Reason:', style: TextStyle(color: Colors.grey[700])),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(5)),
+                child: Text('"${widget.req.reason}"', style: const TextStyle(fontStyle: FontStyle.italic)),
               ),
+              if (approve) ...[
+                const SizedBox(height: 16),
+                const Text('Item Condition:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Approved refunds are recorded as Loss (Requirement 6)', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<RefundCondition>(
+                  value: selectedCondition,
+                  items: const [
+                    DropdownMenuItem(value: RefundCondition.expired, child: Text('Expired')),
+                    DropdownMenuItem(value: RefundCondition.damaged, child: Text('Damaged')),
+                  ],
+                  onChanged: (v) => setSt(() => selectedCondition = v!),
+                ),
+              ],
+              if (!approve) ...[
+                const SizedBox(height: 16),
+                const Text('Rejection Reason:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: rejectCtrl,
+                  decoration: const InputDecoration(hintText: 'e.g., No issue found, Item is used', border: OutlineInputBorder()),
+                  maxLines: 2,
+                ),
+              ],
+              const Divider(height: 24),
+              Text(approve ? 'Items to Log as Loss:' : 'Items in request:', style: const TextStyle(fontWeight: FontWeight.bold)),
+              ...widget.req.items.map((i) => Text('• ${i.name} x${i.qty}')),
             ],
-            const Divider(height: 24),
-            Text(approve ? 'Items to Restock:' : 'Items in request:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            ...widget.req.items.map((i) => Text('• ${i.name} x${i.qty}')),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final provider = context.read<InventoryProvider>();
-              if (approve) {
-                Navigator.pop(ctx);
-              } else {
-                if (rejectCtrl.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please provide a rejection reason.')));
-                  return;
-                }
-                Navigator.pop(ctx);
-                setState(() => _loading = true);
-                try {
-                  await provider.rejectRefundRequest(widget.req, rejectCtrl.text.trim());
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Refund Request Rejected'))
-                    );
-                  }
-                } finally {
-                  if (mounted) setState(() => _loading = false);
-                }
-              }
-            },
-            child: Text(approve ? 'Cancel' : 'Reject', style: const TextStyle(color: Colors.red)),
           ),
-          if (approve)
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+          actions: [
+            TextButton(
               onPressed: () async {
                 final provider = context.read<InventoryProvider>();
-                Navigator.pop(ctx);
-                setState(() => _loading = true);
-                try {
-                  await provider.approveRefundRequest(widget.req);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Refund Approved & Items Restocked!'))
-                    );
+                if (approve) {
+                  Navigator.pop(ctx);
+                } else {
+                  if (rejectCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please provide a rejection reason.')));
+                    return;
                   }
-                } finally {
-                  if (mounted) setState(() => _loading = false);
+                  Navigator.pop(ctx);
+                  setState(() => _loading = true);
+                  try {
+                    await provider.rejectRefundRequest(widget.req, rejectCtrl.text.trim());
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Refund Request Rejected'))
+                      );
+                    }
+                  } finally {
+                    if (mounted) setState(() => _loading = false);
+                  }
                 }
               },
-              child: const Text('Approve & Restock', style: TextStyle(color: Colors.white)),
+              child: Text(approve ? 'Cancel' : 'Reject', style: const TextStyle(color: Colors.red)),
             ),
-        ],
+            if (approve)
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                onPressed: () async {
+                  final provider = context.read<InventoryProvider>();
+                  Navigator.pop(ctx);
+                  setState(() => _loading = true);
+                  try {
+                    await provider.approveRefundRequest(widget.req, condition: selectedCondition);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Refund Approved & Recorded as Loss'))
+                      );
+                    }
+                  } finally {
+                    if (mounted) setState(() => _loading = false);
+                  }
+                },
+                child: const Text('Approve & Log Loss', style: TextStyle(color: Colors.white)),
+              ),
+          ],
+        ),
       ),
     );
   }

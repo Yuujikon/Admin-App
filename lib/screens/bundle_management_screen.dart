@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../../models/bundle.dart';
-import '../../models/product.dart';
 import '../../providers/inventory_provider.dart';
-import '../config/theme.dart';
 
 class BundleManagementScreen extends StatelessWidget {
   const BundleManagementScreen({super.key});
@@ -88,8 +86,11 @@ class BundleManagementScreen extends StatelessWidget {
                     value: selectedIds.contains(p.id),
                     onChanged: (v) {
                       setSt(() {
-                        if (v == true) selectedIds.add(p.id);
-                        else selectedIds.remove(p.id);
+                        if (v == true) {
+                          selectedIds.add(p.id);
+                        } else {
+                          selectedIds.remove(p.id);
+                        }
                       });
                     },
                   )),

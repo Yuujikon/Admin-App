@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum LossType { expired, damaged, lost, personalUse }
+enum LossType { expired, damaged, lost, personalUse, refundReturn }
 
 class LossRecord {
   final String id;
@@ -11,6 +11,10 @@ class LossRecord {
   final LossType type;
   final String notes;
   final DateTime createdAt;
+  
+  // NEW FIELDS
+  final String? processedBy;
+  final String? referenceId; // Order ID or Transaction ID
 
   const LossRecord({
     required this.id,
@@ -21,6 +25,8 @@ class LossRecord {
     required this.type,
     this.notes = '',
     required this.createdAt,
+    this.processedBy,
+    this.referenceId,
   });
 
   double get totalLoss => qty * unitPrice;
@@ -39,6 +45,8 @@ class LossRecord {
       ),
       notes: d['notes'] ?? '',
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      processedBy: d['processedBy'],
+      referenceId: d['referenceId'],
     );
   }
 
@@ -50,5 +58,7 @@ class LossRecord {
     'type': type.name,
     'notes': notes,
     'createdAt': FieldValue.serverTimestamp(),
+    'processedBy': processedBy,
+    'referenceId': referenceId,
   };
 }

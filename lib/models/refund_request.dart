@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'order.dart';
 
 enum RefundStatus { pending, approved, rejected }
+enum RefundCondition { good, expired, damaged }
 
 class RefundRequest {
   final String id;
@@ -14,6 +15,7 @@ class RefundRequest {
   final String reason;
   final String? rejectionReason;
   final RefundStatus status;
+  final RefundCondition? condition; // Set by admin during processing
   final DateTime createdAt;
   final String? processedByEmail;
 
@@ -27,6 +29,7 @@ class RefundRequest {
     required this.reason,
     this.rejectionReason,
     required this.status,
+    this.condition,
     required this.createdAt,
     this.processedByEmail,
   });
@@ -34,12 +37,16 @@ class RefundRequest {
   factory RefundRequest.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
     
-    // Robust status parsing
     RefundStatus status = RefundStatus.pending;
     try {
       status = RefundStatus.values.byName(d['status'] ?? 'pending');
-    } catch (e) {
-      debugPrint('Error parsing RefundStatus for ${doc.id}: $e');
+    } catch (_) {}
+
+    RefundCondition? condition;
+    if (d['condition'] != null) {
+      try {
+        condition = RefundCondition.values.byName(d['condition']);
+      } catch (_) {}
     }
 
     return RefundRequest(
@@ -52,6 +59,7 @@ class RefundRequest {
       reason: d['reason'] ?? '',
       rejectionReason: d['rejectionReason'],
       status: status,
+      condition: condition,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       processedByEmail: d['processedByEmail'],
     );
@@ -66,6 +74,7 @@ class RefundRequest {
     'reason': reason,
     if (rejectionReason != null) 'rejectionReason': rejectionReason,
     'status': status.name,
+    if (condition != null) 'condition': condition!.name,
     'createdAt': FieldValue.serverTimestamp(),
     if (processedByEmail != null) 'processedByEmail': processedByEmail,
   };

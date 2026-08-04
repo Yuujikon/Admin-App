@@ -352,13 +352,17 @@ class _ProductGrid extends StatefulWidget {
 }
 
 class _ProductGridState extends State<_ProductGrid> {
-  String _cat    = 'All';
+  String _cat = 'All';
 
   @override
   Widget build(BuildContext context) {
-    final cats = ['All', ...widget.products.map((p) => p.category).toSet().toList()..sort()];
+    final inventory = context.watch<InventoryProvider>();
+    final masterCats = inventory.settings.masterCategories;
+    final cats = ['All', ...masterCats];
+    
     final filtered = widget.products
         .where((p) => _cat == 'All' || p.category == _cat)
+        .where((p) => p.status == ProductStatus.published) // Only show published
         .toList();
 
     return Column(children: [
@@ -371,83 +375,91 @@ class _ProductGridState extends State<_ProductGrid> {
               label: Text(cats[i], style: const TextStyle(fontSize: 12)),
               selected: _cat == cats[i],
               onSelected: (_) => setState(() => _cat = cats[i])))),
-      Expanded(child: GridView.builder(
-          padding: const EdgeInsets.all(12),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 160, childAspectRatio: 0.85,
-              crossAxisSpacing: 8, mainAxisSpacing: 8),
-          itemCount: filtered.length,
-          itemBuilder: (_, i) {
-            final p      = filtered[i];
-            final inCart = widget.cart.any((c) => c.productId == p.id);
-            return GestureDetector(
-              onTap: () => widget.onToggle(p),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: inCart ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.05) : Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: inCart ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
-                    width: inCart ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    )
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      color: Colors.grey.shade50,
-                      child: p.photoBase64 != null
-                        ? Image.memory(base64Decode(p.photoBase64!), fit: BoxFit.cover)
-                        : Icon(Icons.inventory_2_outlined, color: Colors.grey.shade200, size: 32),
-                    ),
-                  ),
-                  Padding(padding: const EdgeInsets.all(10), child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(p.category.toUpperCase(),
-                        style: TextStyle(fontSize: 9, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-                    const SizedBox(height: 2),
-                    Text(p.name,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, height: 1.1),
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(formatPeso(p.price),
-                            style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w900, fontSize: 14)),
-                        if (p.stock <= 5)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text('${p.stock}',
-                                style: TextStyle(fontSize: 10,
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.w900)),
-                          )
-                        else
-                          Text('${p.stock} left', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5))),
-                      ],
-                    ),
-                  ])),
-                ]),
-              ),
-            );
-          })),
+      Expanded(
+        child: filtered.isEmpty 
+          ? Center(child: Text('No visible products in $_cat', style: const TextStyle(color: Colors.grey)))
+          : GridView.builder(
+              padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 160, childAspectRatio: 0.82,
+                  crossAxisSpacing: 8, mainAxisSpacing: 8),
+              itemCount: filtered.length,
+              itemBuilder: (_, i) {
+                final p      = filtered[i];
+                final inCart = widget.cart.any((c) => c.productId == p.id);
+                return _PosProductTile(p: p, inCart: inCart, onToggle: () => widget.onToggle(p));
+              }),
+      ),
     ]);
+  }
+}
+
+class _PosProductTile extends StatelessWidget {
+  final Product p;
+  final bool inCart;
+  final VoidCallback onToggle;
+  const _PosProductTile({required this.p, required this.inCart, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final isLow = p.stock <= p.lowStockThreshold;
+    
+    return GestureDetector(
+      onTap: onToggle,
+      child: Container(
+        decoration: BoxDecoration(
+          color: inCart ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.05) : Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: inCart ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+            width: inCart ? 2 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              color: Colors.grey.shade50,
+              child: p.photoBase64 != null
+                ? Image.memory(base64Decode(p.photoBase64!), fit: BoxFit.cover)
+                : Icon(Icons.inventory_2_outlined, color: Colors.grey.shade200, size: 32),
+            ),
+          ),
+          Padding(padding: const EdgeInsets.all(8), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.name,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, height: 1.1),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(formatPeso(p.price),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w900, fontSize: 13)),
+                if (isLow)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text('${p.stock}',
+                        style: TextStyle(fontSize: 9,
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w900)),
+                  )
+                else
+                  Text('${p.stock}', style: TextStyle(fontSize: 9, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5))),
+              ],
+            ),
+          ])),
+        ]),
+      ),
+    );
   }
 }
 

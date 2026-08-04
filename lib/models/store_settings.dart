@@ -6,12 +6,15 @@ class StoreSettings {
   final DateTime? scheduledCloseAt;
   final DateTime? scheduledOpenAt;
 
-  final String? announcement;
-
   // Expiration windows in hours
   final int perishableWindowHours;
   final int mixedWindowHours;
   final int standardWindowHours;
+
+  // NEW FIELDS
+  final int globalLowStockThreshold;
+  final List<String> masterCategories;
+  final String? announcement;
 
   const StoreSettings({
     required this.isClosed,
@@ -21,6 +24,11 @@ class StoreSettings {
     this.perishableWindowHours = 2,
     this.mixedWindowHours = 24,
     this.standardWindowHours = 72,
+    this.globalLowStockThreshold = 5,
+    this.masterCategories = const [
+      'Fresh', 'Grains', 'Snacks', 'Beverages', 
+      'Canned Goods', 'Personal Care', 'Condiments', 'Others'
+    ],
     this.announcement,
   });
 
@@ -34,6 +42,11 @@ class StoreSettings {
       perishableWindowHours: d['perishableWindowHours'] ?? 2,
       mixedWindowHours: d['mixedWindowHours'] ?? 24,
       standardWindowHours: d['standardWindowHours'] ?? 72,
+      globalLowStockThreshold: (d['globalLowStockThreshold'] as num? ?? 5).toInt(),
+      masterCategories: List<String>.from(d['masterCategories'] ?? [
+        'Fresh', 'Grains', 'Snacks', 'Beverages', 
+        'Canned Goods', 'Personal Care', 'Condiments', 'Others'
+      ]),
       announcement: d['announcement'],
     );
   }
@@ -46,6 +59,8 @@ class StoreSettings {
     'perishableWindowHours': perishableWindowHours,
     'mixedWindowHours': mixedWindowHours,
     'standardWindowHours': standardWindowHours,
+    'globalLowStockThreshold': globalLowStockThreshold,
+    'masterCategories': masterCategories,
     'announcement': announcement,
   };
 

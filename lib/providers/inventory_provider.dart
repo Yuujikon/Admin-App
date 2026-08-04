@@ -72,9 +72,23 @@ class InventoryProvider extends ChangeNotifier {
     // 2. Sort the products list based on these counts
     final sorted = List<Product>.from(_products);
     sorted.sort((a, b) {
+      // REQUIREMENT 14: SORTING
+      // Available (stock > threshold) first, then Low Stock, then Out of Stock (0).
+      
+      int getSortOrder(Product p) {
+        if (p.stock <= 0) return 3; // Out of stock last
+        if (p.stock <= p.lowStockThreshold) return 2; // Low stock second
+        return 1; // Available first
+      }
+
+      final orderA = getSortOrder(a);
+      final orderB = getSortOrder(b);
+
+      if (orderA != orderB) return orderA.compareTo(orderB);
+
+      // Within same status, sort by sales volume (existing logic)
       final countA = recentCounts[a.id] ?? 0;
       final countB = recentCounts[b.id] ?? 0;
-      // Descending order: higher count (fast-moving) first
       return countB.compareTo(countA);
     });
 
@@ -316,9 +330,23 @@ class InventoryProvider extends ChangeNotifier {
     await _fs.refundTransaction(tx);
   }
 
-  Future<void> approveRefundRequest(RefundRequest request) async {
-    // 1. Process the refund in Firestore (updates status and returns stock)
-    await _fs.processApprovedRefund(request, _adminName);
+  Future<void> approveRefundRequest(RefundRequest request, {required RefundCondition condition}) async {
+    // 1. Process the refund in Firestore (updates status and logs Loss)
+    final updatedReq = RefundRequest(
+      id: request.id,
+      transactionId: request.transactionId,
+      customerEmail: request.customerEmail,
+      customerName: request.customerName,
+      items: request.items,
+      total: request.total,
+      reason: request.reason,
+      status: RefundStatus.approved,
+      condition: condition,
+      createdAt: request.createdAt,
+      processedByEmail: _adminName,
+    );
+
+    await _fs.processApprovedRefund(updatedReq, _adminName);
 
     // 2. Find and update the original Order status if it exists
     final orderSnap = await FirebaseFirestore.instance.collection('orders')

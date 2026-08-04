@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/expense_provider.dart';
 import '../../utils/format.dart';
-import '../config/theme.dart';
 
 class ExpensesScreen extends StatelessWidget {
   const ExpensesScreen({super.key});

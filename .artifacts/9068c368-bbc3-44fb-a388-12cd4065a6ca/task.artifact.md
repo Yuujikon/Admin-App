@@ -1,0 +1,23 @@
+# Task List
+
+- `[x]` Core Models & Database Schema
+    - `[x]` Update `Product` model (Admin & Customer)
+    - `[x]` Update `StoreSettings` model (Admin & Customer)
+    - `[x]` Update `Customer` / `AuthProvider` (Remove birthday, add phone)
+- `[x]` Pricing & Promotions
+    - `[x]` Create `Promotion` model
+    - `[x]` Implement Discount & Tax logic in `OrderProvider`
+- `[x]` Refund & Loss Validation
+    - `[x]` Update `processApprovedRefund` in `FirestoreService`
+    - `[x]` Implement Loss logging for expired/damaged returns
+- `[x]` Admin UI Enhancements
+    - `[x]` Product Validation & Draft/Published status
+    - `[x]` Category Management with master list
+    - `[x]` Configurable Low Stock & "Email Supplier" compiled list
+- `[x]` POS & Customer App UI
+    - `[x]` POS scrollability and overflow fixes
+    - `[x]` Promotion display in Customer Shop
+    - `[x]` Standardized Barcode Scanner naming
+- `[x]` Advanced Features
+    - `[x]` Expiration Date Scanning
+    - `[x]` PDF Export implementation

@@ -176,7 +176,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text('Total Expenses:'),
-                  pw.Text('- ${formatPeso(expenses)}', style: pw.TextStyle(color: PdfColors.red)),
+                  pw.Text('- ${formatPeso(expenses)}', style: const pw.TextStyle(color: PdfColors.red)),
                 ],
               ),
               pw.SizedBox(height: 4),
@@ -184,7 +184,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text('Inventory Loss:'),
-                  pw.Text('- ${formatPeso(loss)}', style: pw.TextStyle(color: PdfColors.orange)),
+                  pw.Text('- ${formatPeso(loss)}', style: const pw.TextStyle(color: PdfColors.orange)),
                 ],
               ),
               pw.Divider(height: 24),
@@ -221,7 +221,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
     );
 
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+    // Save/Share directly without print dialog (Requirement 10)
+    await Printing.sharePdf(bytes: await pdf.save(), filename: 'GDC_Report_${monthLabel.replaceAll(' ', '_')}.pdf');
   }
 
   Widget _reportRow(String label, String value, Color color, {bool isBold = false}) {

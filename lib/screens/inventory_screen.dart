@@ -11,6 +11,7 @@ import '../../widgets/brand_scanner_dialog.dart';
 import '../../providers/inventory_provider.dart';
 import '../config/theme.dart';
 import '../../utils/format.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class InventoryScreen extends StatefulWidget {
   final String? initialCategory;
@@ -46,11 +47,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
+    final settings = inventory.settings;
     final products  = inventory.sortedProducts;
-    final cats      = ['All', 'Low Stock', ...products.map((p) => p.category).toSet().toList()..sort()];
+    final cats      = ['All', 'Low Stock', ...settings.masterCategories];
     final filtered = products
         .where((p) {
-          if (_cat == 'Low Stock') return p.stock <= 5;
+          final threshold = p.lowStockThreshold;
+          if (_cat == 'Low Stock') return p.stock <= threshold;
           return _cat == 'All' || p.category == _cat;
         })
         .where((p) {
@@ -73,8 +76,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
       body: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-            child: Text('Inventory',
-                style: Theme.of(context).textTheme.headlineMedium)),
+            child: Row(
+              children: [
+                Text('Inventory',
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const Spacer(),
+                IconButton.filledTonal(
+                  onPressed: () => _emailSupplier(context, inventory),
+                  icon: const Icon(Icons.email_outlined),
+                  tooltip: 'Email Supplier Restock List',
+                ),
+              ],
+            )),
 
         // Search
         Padding(padding: const EdgeInsets.all(12),
@@ -179,6 +192,42 @@ class _InventoryScreenState extends State<InventoryScreen> {
       builder: (_) => _ProductSheet(product: product),
     );
   }
+
+  void _emailSupplier(BuildContext context, InventoryProvider inventory) async {
+    final lowStock = inventory.products.where((p) => p.stock <= p.lowStockThreshold).toList();
+    if (lowStock.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No low-stock items to report.')));
+      return;
+    }
+
+    final buffer = StringBuffer('Sari-Sari Store Restock Request\n\n');
+    buffer.writeln('The following items are low in stock:\n');
+    
+    for (final p in lowStock) {
+      buffer.writeln('• ${p.name} (${p.category})');
+      buffer.writeln('  Current: ${p.stock} ${p.unit} | Threshold: ${p.lowStockThreshold} ${p.unit}');
+      buffer.writeln('  Suggested Restock: ${p.lowStockThreshold * 3} ${p.unit}\n');
+    }
+
+    final body = buffer.toString();
+    final Uri emailLaunchUri = Uri(
+      scheme: 'mailto',
+      path: '', 
+      queryParameters: {
+        'subject': 'Restock Request - GDC Sari-Sari Store',
+        'body': body,
+      },
+    );
+
+    if (await canLaunchUrl(emailLaunchUri)) {
+      await launchUrl(emailLaunchUri);
+    } else {
+      await Clipboard.setData(ClipboardData(text: body));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch email app. Restock list copied to clipboard.')));
+      }
+    }
+  }
 }
 
 // ── Product row ────────────────────────────────────────────────────────────
@@ -190,7 +239,8 @@ class _ProductRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLow = product.stock <= 5;
+    final threshold = product.lowStockThreshold;
+    final isLow = product.stock <= threshold;
     final now = DateTime.now();
     final isExpired = product.expiryDate != null && product.expiryDate!.isBefore(now);
     final isNearExpiry = product.expiryDate != null && 
@@ -225,18 +275,31 @@ class _ProductRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           clipBehavior: Clip.antiAlias,
-          child: product.photoBase64 != null
-              ? Image.memory(base64Decode(product.photoBase64!), fit: BoxFit.cover)
-              : Icon(
-                  isExpired ? Icons.event_busy_rounded : (isLow ? Icons.warning_amber_rounded : Icons.inventory_2_rounded),
-                  color: isExpired || isLow
-                      ? Theme.of(context).colorScheme.error
-                      : isNearExpiry ? Theme.of(context).semantic.warning : Theme.of(context).colorScheme.primary,
-                  size: 28,
-                ),
+          child: Opacity(
+            opacity: product.status == ProductStatus.draft ? 0.5 : 1.0,
+            child: product.photoBase64 != null
+                ? Image.memory(base64Decode(product.photoBase64!), fit: BoxFit.cover)
+                : Icon(
+                    isExpired ? Icons.event_busy_rounded : (isLow ? Icons.warning_amber_rounded : Icons.inventory_2_rounded),
+                    color: isExpired || isLow
+                        ? Theme.of(context).colorScheme.error
+                        : isNearExpiry ? Theme.of(context).semantic.warning : Theme.of(context).colorScheme.primary,
+                    size: 28,
+                  ),
+          ),
         ),
-        title: Text(product.name,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, letterSpacing: -0.2)),
+        title: Row(
+          children: [
+            Expanded(child: Text(product.name,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, letterSpacing: -0.2))),
+            if (product.status == ProductStatus.draft)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)),
+                child: const Text('DRAFT', style: TextStyle(fontSize: 8, color: Colors.grey, fontWeight: FontWeight.w900)),
+              ),
+          ],
+        ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Wrap(spacing: 6, runSpacing: 6, children: [
@@ -304,10 +367,12 @@ class _ProductSheet extends StatefulWidget {
 }
 
 class _ProductSheetState extends State<_ProductSheet> {
-  late TextEditingController _name, _price, _stock, _unit, _shelf, _barcode, _wPrice, _wThreshold, _pickupWindow;
+  late TextEditingController _name, _price, _stock, _unit, _shelf, _barcode, _wPrice, _wThreshold, _pickupWindow, _lowStockT, _discP, _discF;
   late String _category;
+  late ProductStatus _status;
   String? _supplierId;
   bool _perishable = false;
+  bool _taxable    = true;
   bool _saving     = false;
   String? _photoBase64;
   File? _localPhoto;
@@ -336,8 +401,13 @@ class _ProductSheetState extends State<_ProductSheet> {
     _wPrice     = TextEditingController(text: p?.wholesalePrice?.toString() ?? '');
     _wThreshold = TextEditingController(text: p?.wholesaleThreshold?.toString() ?? '');
     _pickupWindow = TextEditingController(text: p?.pickupWindowHours?.toString() ?? '');
-    _category   = (p != null && allCats.contains(p.category)) ? p.category : _defaultCategories.first;
+    _lowStockT  = TextEditingController(text: p?.lowStockThreshold.toString() ?? '5');
+    _discP      = TextEditingController(text: p?.discountPercentage.toString() ?? '0');
+    _discF      = TextEditingController(text: p?.discountFixed.toString() ?? '0');
+    _category   = (p != null && allCats.contains(p.category)) ? p.category : settings.masterCategories.first;
     _perishable = p?.isPerishable ?? false;
+    _taxable    = p?.isTaxable ?? true;
+    _status     = p?.status ?? ProductStatus.published;
     _photoBase64 = p?.photoBase64;
     _supplierId = p?.supplierId;
     _expiryDate = p?.expiryDate;
@@ -366,6 +436,7 @@ class _ProductSheetState extends State<_ProductSheet> {
     _name.dispose(); _price.dispose(); _stock.dispose();
     _unit.dispose(); _shelf.dispose(); _barcode.dispose();
     _wPrice.dispose(); _wThreshold.dispose(); _pickupWindow.dispose();
+    _lowStockT.dispose(); _discP.dispose(); _discF.dispose();
     super.dispose();
   }
 
@@ -484,17 +555,55 @@ class _ProductSheetState extends State<_ProductSheet> {
           const SizedBox(height: 10),
 
           Row(children: [
-            Expanded(child: TextField(controller: _unit,
-                decoration: const InputDecoration(labelText: 'Unit (pc, kg…)'))),
+            Expanded(child: DropdownButtonFormField<String>(
+                isExpanded: true,
+                value: _unit.text,
+                decoration: const InputDecoration(labelText: 'UOM'),
+                items: ['pcs', 'pack', 'kg', 'g', 'ml', 'L']
+                    .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                    .toList(),
+                onChanged: (v) => setState(() => _unit.text = v!))),
             const SizedBox(width: 10),
             Expanded(child: DropdownButtonFormField<String>(
                 isExpanded: true,
-                initialValue: _category,
+                value: _category,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: allCats.map((c) =>
                     DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
                 onChanged: (v) => setState(() => _category = v!))),
           ]),
+          const SizedBox(height: 10),
+
+          Row(children: [
+            Expanded(child: DropdownButtonFormField<ProductStatus>(
+                value: _status,
+                decoration: const InputDecoration(labelText: 'Visibility Status'),
+                items: ProductStatus.values.map((s) =>
+                    DropdownMenuItem(value: s, child: Text(s.name.toUpperCase()))).toList(),
+                onChanged: (v) => setState(() => _status = v!))),
+            const SizedBox(width: 10),
+            Expanded(child: TextField(controller: _lowStockT,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Low Stock Threshold'))),
+          ]),
+          const SizedBox(height: 10),
+
+          Row(children: [
+            Expanded(child: TextField(controller: _discP,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Discount %', suffixText: '%'))),
+            const SizedBox(width: 10),
+            Expanded(child: TextField(controller: _discF,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Discount Fixed', prefixText: '₱'))),
+          ]),
+          const SizedBox(height: 10),
+
+          CheckboxListTile(
+            title: const Text('Taxable (Apply VAT)'),
+            value: _taxable,
+            onChanged: (v) => setState(() => _taxable = v ?? true),
+          ),
 
           DropdownButtonFormField<String?>(
             isExpanded: true,
@@ -574,7 +683,17 @@ class _ProductSheetState extends State<_ProductSheet> {
                 flex: 2,
                 child: ElevatedButton(
                     onPressed: _saving ? null : () async {
-                      if (_name.text.trim().isEmpty) return;
+                      // REQUIREMENT 7: Validation
+                      if (_name.text.trim().isEmpty || 
+                          _barcode.text.trim().isEmpty || 
+                          _price.text.trim().isEmpty || 
+                          _category.isEmpty || 
+                          _unit.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please fill all required fields: Name, Barcode, Price, Category, and UOM.'))
+                        );
+                        return;
+                      }
 
                       final barcode = _barcode.text.trim();
                       if (barcode.isNotEmpty) {
@@ -601,6 +720,11 @@ class _ProductSheetState extends State<_ProductSheet> {
                         barcode:   _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
                         shelfDays: _perishable ? int.tryParse(_shelf.text) : null,
                         pickupWindowHours: _perishable ? int.tryParse(_pickupWindow.text) : null,
+                        lowStockThreshold: int.tryParse(_lowStockT.text) ?? 5,
+                        discountPercentage: double.tryParse(_discP.text) ?? 0,
+                        discountFixed: double.tryParse(_discF.text) ?? 0,
+                        isTaxable: _taxable,
+                        status: _status,
                         photoBase64: _photoBase64,
                         supplierId: _supplierId,
                         expiryDate: _expiryDate,
@@ -639,7 +763,7 @@ class _ProductSheetState extends State<_ProductSheet> {
               Text('Product: ${widget.product!.name}', style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
               DropdownButtonFormField<LossType>(
-                value: type,
+                initialValue: type,
                 decoration: const InputDecoration(labelText: 'Reason'),
                 items: LossType.values.map((t) => DropdownMenuItem(
                   value: t, 
@@ -723,7 +847,25 @@ class _ProductSheetState extends State<_ProductSheet> {
       builder: (ctx) => const ScannerDialog(),
     );
     if (result != null) {
-      setState(() => _barcode.text = result);
+      setState(() {
+        _barcode.text = result;
+        
+        // REQUIREMENT 8: Expiration Date Scanning
+        // Basic GS1 parsing (looking for AI 17: YYMMDD)
+        // Usually formatted as (17)YYMMDD or just fixed position in 128
+        if (result.length >= 10 && result.contains('17')) {
+          final idx = result.indexOf('17');
+          if (result.length >= idx + 8) {
+            final dateStr = result.substring(idx + 2, idx + 8);
+            try {
+              final yy = int.parse(dateStr.substring(0, 2)) + 2000;
+              final mm = int.parse(dateStr.substring(2, 4));
+              final dd = int.parse(dateStr.substring(4, 6));
+              _expiryDate = DateTime(yy, mm, dd);
+            } catch (_) {}
+          }
+        }
+      });
     }
   }
 

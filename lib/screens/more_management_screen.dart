@@ -9,6 +9,7 @@ import 'loss_management_screen.dart';
 import 'reports_screen.dart';
 import 'customer_management_screen.dart';
 import 'bundle_management_screen.dart';
+import 'category_management_screen.dart';
 
 class MoreManagementScreen extends StatelessWidget {
   const MoreManagementScreen({super.key});
@@ -46,6 +47,17 @@ class MoreManagementScreen extends StatelessWidget {
             target: const SupplierManagementScreen(),
           ),
           const SizedBox(height: 12),
+          if (isAdmin) ...[
+            _menuItem(
+              context,
+              icon: Icons.category_outlined,
+              title: 'Categories',
+              subtitle: 'Manage master category list',
+              color: Colors.blue.shade700,
+              target: const CategoryManagementScreen(),
+            ),
+            const SizedBox(height: 12),
+          ],
           _menuItem(
             context,
             icon: Icons.auto_awesome_motion_rounded,

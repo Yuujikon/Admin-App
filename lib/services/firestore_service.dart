@@ -23,6 +23,7 @@ class FirestoreService {
   CollectionReference get _lossRecords    => _db.collection('loss_records');
   CollectionReference get _customers      => _db.collection('customers');
   CollectionReference get _bundles        => _db.collection('bundles');
+  CollectionReference get _promotions     => _db.collection('promotions');
   DocumentReference   get _settings       => _db.collection('settings').doc('store_settings');
 
   // ── Store Settings ─────────────────────────────────────────────────────────
@@ -242,24 +243,28 @@ class FirestoreService {
   Future<void> processApprovedRefund(RefundRequest request, String adminEmail) {
     final batch = _db.batch();
     
-    // 1. Mark request as approved and record who did it
+    // 1. Mark request as approved
     batch.update(_refundRequests.doc(request.id), {
       'status': RefundStatus.approved.name,
       'processedByEmail': adminEmail,
     });
 
-    // 2. Return items to stock
+    // 2. Record as Loss (Expired/Damaged as per requirement 6)
+    // Approved refunds for expired/damaged items do NOT return to inventory.
     for (final item in request.items) {
-      batch.update(_products.doc(item.productId), {
-        'stock': FieldValue.increment(item.qty),
+      final lossDoc = _lossRecords.doc();
+      batch.set(lossDoc, {
+        'productId':   item.productId,
+        'productName': item.name,
+        'qty':         item.qty,
+        'unitPrice':   item.price,
+        'type':        request.condition == RefundCondition.expired ? 'expired' : 'damaged',
+        'notes':       'Refund Return: ${request.reason}',
+        'createdAt':   FieldValue.serverTimestamp(),
+        'processedBy': adminEmail,
+        'referenceId': request.transactionId,
       });
     }
-
-    // 3. Update the original order status to 'refunded'
-    // We search for the order by its orderId (transactionId in the request)
-    // Note: Since we don't have the order document ID here directly, 
-    // we use a where query in the provider or just update the order if we had its ID.
-    // Better yet, update the order inside the batch if we find it.
 
     return batch.commit();
   }
@@ -294,5 +299,17 @@ class FirestoreService {
     return _bundles.doc(b.id).update(b.toFirestore());
   }
 
-  Future<void> deleteBundle(String id) => _bundles.doc(id).delete();
+  Future<void> deleteBundle(String id) \u003d\u003e _bundles.doc(id).delete();
+
+  // ── Promotions ─────────────────────────────────────────────────────────────
+
+  Stream<List<Promotion>> promotionsStream() \u003d\u003e
+      _promotions.snapshots().map((s) \u003d\u003e s.docs.map(Promotion.fromFirestore).toList());
+
+  Future\u003cvoid\u003e savePromotion(Promotion p) {
+    if (p.id.isEmpty) return _promotions.add(p.toFirestore());
+    return _promotions.doc(p.id).update(p.toFirestore());
+  }
+
+  Future\u003cvoid\u003e deletePromotion(String id) \u003d\u003e _promotions.doc(id).delete();
 }
