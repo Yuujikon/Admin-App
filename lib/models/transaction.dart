@@ -9,6 +9,7 @@ class StoreTransaction {
   final double         total;
   final double         cash;
   final double         change;
+  final int            pointsRedeemed; // NEW
   final DateTime       createdAt;
   final String?        customerId;
   final String?        customerEmail; // NEW: Track email for loyalty/stats
@@ -20,6 +21,7 @@ class StoreTransaction {
     required this.total,
     required this.cash,
     required this.change,
+    this.pointsRedeemed = 0,
     required this.createdAt,
     this.customerId,
     this.customerEmail,
@@ -34,6 +36,7 @@ class StoreTransaction {
       total:     (d['total'] as num).toDouble(),
       cash:      (d['cash'] as num).toDouble(),
       change:    (d['change'] as num).toDouble(),
+      pointsRedeemed: (d['pointsRedeemed'] as num? ?? 0).toInt(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       customerId: d['customerId'],
       customerEmail: d['customerEmail'],
@@ -49,6 +52,7 @@ class StoreTransaction {
     'total':         total,
     'cash':          cash,
     'change':        change,
+    'pointsRedeemed': pointsRedeemed,
     'createdAt':     FieldValue.serverTimestamp(),
     'customerId':    customerId,
     'customerEmail': customerEmail,

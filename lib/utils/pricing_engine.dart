@@ -7,6 +7,7 @@ class PricingBreakdown {
   final double promoDiscount; // From active promotions
   final double vAtAmount;     // 12% of VATable sales
   final double seniorDiscount; // 20% if applicable
+  final double pointsDiscount; // Redemeed points value
   final double total;         // Final amount to pay
 
   const PricingBreakdown({
@@ -14,6 +15,7 @@ class PricingBreakdown {
     required this.promoDiscount,
     required this.vAtAmount,
     required this.seniorDiscount,
+    required this.pointsDiscount,
     required this.total,
   });
 }
@@ -26,10 +28,14 @@ class PricingEngine {
     required List<Product> allProducts,
     required List<Promotion> activePromos,
     bool isSeniorOrPWD = false,
+    int pointsToRedeem = 0,
   }) {
     double subtotal = 0;
     double totalPromoDiscount = 0;
     double taxableSubtotal = 0;
+    
+    const double pointsValueRate = 1.0; // 1 point = ₱1.00
+    double pointsDiscount = pointsToRedeem * pointsValueRate;
 
     for (final item in items) {
       final product = allProducts.firstWhere((p) => p.id == item.productId, 
@@ -88,13 +94,14 @@ class PricingEngine {
       finalVat = taxableSubtotal - (taxableSubtotal / (1 + vatRate));
     }
 
-    final total = subtotal - totalPromoDiscount - seniorDiscount;
+    final total = (subtotal - totalPromoDiscount - seniorDiscount - pointsDiscount).clamp(0.0, double.infinity);
 
     return PricingBreakdown(
       subtotal: subtotal,
       promoDiscount: totalPromoDiscount,
       vAtAmount: finalVat,
       seniorDiscount: seniorDiscount,
+      pointsDiscount: pointsDiscount,
       total: total,
     );
   }

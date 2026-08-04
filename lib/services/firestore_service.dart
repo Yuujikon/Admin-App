@@ -5,6 +5,7 @@ import '../models/transaction.dart';
 import '../models/expense.dart';
 import '../models/refund_request.dart';
 import '../models/bundle.dart';
+import '../models/promotion.dart';
 import '../models/store_settings.dart';
 import '../models/supplier.dart';
 import '../models/loss_record.dart';
@@ -22,8 +23,8 @@ class FirestoreService {
   CollectionReference get _suppliers      => _db.collection('suppliers');
   CollectionReference get _lossRecords    => _db.collection('loss_records');
   CollectionReference get _customers      => _db.collection('customers');
-  CollectionReference get _bundles        => _db.collection('bundles');
   CollectionReference get _promotions     => _db.collection('promotions');
+  CollectionReference get _bundles        => _db.collection('bundles');
   DocumentReference   get _settings       => _db.collection('settings').doc('store_settings');
 
   // ── Store Settings ─────────────────────────────────────────────────────────
@@ -44,7 +45,6 @@ class FirestoreService {
 
   // ── Products ───────────────────────────────────────────────────────────────
 
-  // Real-time stream — widgets rebuild automatically on changes
   Stream<List<Product>> productsStream() =>
       _products.orderBy('name').snapshots().map(
               (s) => s.docs.map(Product.fromFirestore).toList());
@@ -64,21 +64,20 @@ class FirestoreService {
   Future<void> recordSale(StoreTransaction tx) {
     final batch = _db.batch();
     
-    // 1. Record transaction
     batch.set(_transactions.doc(tx.id), tx.toFirestore());
 
-    // 2. Decrement stock
     for (final item in tx.items) {
       batch.update(_products.doc(item.productId), {
         'stock': FieldValue.increment(-item.qty),
       });
     }
 
-    // 3. Award Loyalty Points (1 pt per 100 PHP) and Lifetime Stats
     if (tx.customerId != null) {
-      final points = (tx.total / 100).floor();
+      final pointsAwarded = (tx.total / 100).floor();
+      final netPoints = pointsAwarded - tx.pointsRedeemed;
+      
       batch.update(_customers.doc(tx.customerId), {
-        'loyaltyPoints': FieldValue.increment(points),
+        'loyaltyPoints': FieldValue.increment(netPoints),
         'totalSpent':    FieldValue.increment(tx.total),
         'lastVisit':     FieldValue.serverTimestamp(),
       });
@@ -99,17 +98,14 @@ class FirestoreService {
 
   Future<void> refundTransaction(StoreTransaction tx) {
     final batch = _db.batch();
-    // 1. Delete the transaction record (or mark as refunded)
     batch.delete(_transactions.doc(tx.id));
 
-    // 2. Return items to stock
     for (final item in tx.items) {
       batch.update(_products.doc(item.productId), {
         'stock': FieldValue.increment(item.qty),
       });
     }
 
-    // 3. Deduct awarded Loyalty Points
     if (tx.customerId != null) {
       final points = (tx.total / 100).floor();
       if (points > 0) {
@@ -145,15 +141,10 @@ class FirestoreService {
 
   Future<void> recordLoss(LossRecord record) async {
     final batch = _db.batch();
-    
-    // 1. Log the loss
     batch.set(_lossRecords.doc(), record.toFirestore());
-
-    // 2. Decrement stock
     batch.update(_products.doc(record.productId), {
       'stock': FieldValue.increment(-record.qty),
     });
-
     return batch.commit();
   }
 
@@ -224,15 +215,6 @@ class FirestoreService {
       _refundRequests.orderBy('createdAt', descending: true).snapshots().map(
               (s) => s.docs.map(RefundRequest.fromFirestore).toList());
 
-  // Added based on requirements
-  Stream<List<RefundRequest>> getRefundQueue() {
-    return _refundRequests
-        .where('status', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((s) => s.docs.map(RefundRequest.fromFirestore).toList());
-  }
-
   Future<void> updateRefundStatus(String requestId, RefundStatus status, String adminEmail, {String? reason}) =>
       _refundRequests.doc(requestId).update({
         'status': status.name,
@@ -243,14 +225,11 @@ class FirestoreService {
   Future<void> processApprovedRefund(RefundRequest request, String adminEmail) {
     final batch = _db.batch();
     
-    // 1. Mark request as approved
     batch.update(_refundRequests.doc(request.id), {
       'status': RefundStatus.approved.name,
       'processedByEmail': adminEmail,
     });
 
-    // 2. Record as Loss (Expired/Damaged as per requirement 6)
-    // Approved refunds for expired/damaged items do NOT return to inventory.
     for (final item in request.items) {
       final lossDoc = _lossRecords.doc();
       batch.set(lossDoc, {
@@ -299,17 +278,17 @@ class FirestoreService {
     return _bundles.doc(b.id).update(b.toFirestore());
   }
 
-  Future<void> deleteBundle(String id) \u003d\u003e _bundles.doc(id).delete();
+  Future<void> deleteBundle(String id) => _bundles.doc(id).delete();
 
   // ── Promotions ─────────────────────────────────────────────────────────────
 
-  Stream<List<Promotion>> promotionsStream() \u003d\u003e
-      _promotions.snapshots().map((s) \u003d\u003e s.docs.map(Promotion.fromFirestore).toList());
+  Stream<List<Promotion>> promotionsStream() =>
+      _promotions.snapshots().map((s) => s.docs.map(Promotion.fromFirestore).toList());
 
-  Future\u003cvoid\u003e savePromotion(Promotion p) {
+  Future<void> savePromotion(Promotion p) {
     if (p.id.isEmpty) return _promotions.add(p.toFirestore());
     return _promotions.doc(p.id).update(p.toFirestore());
   }
 
-  Future\u003cvoid\u003e deletePromotion(String id) \u003d\u003e _promotions.doc(id).delete();
+  Future<void> deletePromotion(String id) => _promotions.doc(id).delete();
 }

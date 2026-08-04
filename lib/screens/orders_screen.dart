@@ -55,18 +55,11 @@ class _PreOrdersTabState extends State<_PreOrdersTab> {
   OrderStatus? _filter;
   String?      _expanded;
   String       _search = '';
-  late Stream<List<PreOrder>> _ordersStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _ordersStream = context.read<OrderProvider>().ordersStream;
-  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<PreOrder>>(
-      stream: _ordersStream,
+      stream: context.read<OrderProvider>().ordersStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());

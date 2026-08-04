@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -76,18 +77,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
       body: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-            child: Row(
-              children: [
-                Text('Inventory',
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const Spacer(),
-                IconButton.filledTonal(
-                  onPressed: () => _emailSupplier(context, inventory),
-                  icon: const Icon(Icons.email_outlined),
-                  tooltip: 'Email Supplier Restock List',
-                ),
-              ],
-            )),
+            child: Text('Inventory',
+                style: Theme.of(context).textTheme.headlineMedium)),
 
         // Search
         Padding(padding: const EdgeInsets.all(12),
@@ -386,8 +377,10 @@ class _ProductSheetState extends State<_ProductSheet> {
   @override
   void initState() {
     super.initState();
-    final p     = widget.product;
-    final products = context.read<InventoryProvider>().products;
+    final p = widget.product;
+    final inventory = context.read<InventoryProvider>();
+    final settings = inventory.settings;
+    final products = inventory.products;
     
     // Combine defaults with existing categories from DB
     final allCats = {..._defaultCategories, ...products.map((e) => e.category)};
@@ -395,7 +388,7 @@ class _ProductSheetState extends State<_ProductSheet> {
     _name       = TextEditingController(text: p?.name ?? '');
     _price      = TextEditingController(text: p?.price.toString() ?? '');
     _stock      = TextEditingController(text: p?.stock.toString() ?? '');
-    _unit       = TextEditingController(text: p?.unit ?? 'pc');
+    _unit       = TextEditingController(text: p?.unit ?? 'pcs');
     _shelf      = TextEditingController(text: p?.shelfDays?.toString() ?? '');
     _barcode    = TextEditingController(text: p?.barcode ?? '');
     _wPrice     = TextEditingController(text: p?.wholesalePrice?.toString() ?? '');
@@ -557,7 +550,7 @@ class _ProductSheetState extends State<_ProductSheet> {
           Row(children: [
             Expanded(child: DropdownButtonFormField<String>(
                 isExpanded: true,
-                value: _unit.text,
+                value: ['pcs', 'pack', 'kg', 'g', 'ml', 'L'].contains(_unit.text) ? _unit.text : 'pcs',
                 decoration: const InputDecoration(labelText: 'UOM'),
                 items: ['pcs', 'pack', 'kg', 'g', 'ml', 'L']
                     .map((u) => DropdownMenuItem(value: u, child: Text(u)))

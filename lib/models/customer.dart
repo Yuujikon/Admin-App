@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class Customer {
   final String id;
   final String name;
+  final String? email; // NEW
   final String phone;
   final int loyaltyPoints;
   final double totalSpent;
@@ -13,6 +14,7 @@ class Customer {
   const Customer({
     required this.id,
     required this.name,
+    this.email,
     required this.phone,
     this.loyaltyPoints = 0,
     this.totalSpent = 0,
@@ -25,6 +27,7 @@ class Customer {
     return Customer(
       id: id,
       name: map['name'] ?? '',
+      email: map['email'],
       phone: map['phone'] ?? '',
       loyaltyPoints: (map['loyaltyPoints'] ?? 0).toInt(),
       totalSpent: (map['totalSpent'] ?? 0).toDouble(),
@@ -37,6 +40,7 @@ class Customer {
   Map<String, dynamic> toMap() {
     return {
       'name': name,
+      'email': email,
       'phone': phone,
       'loyaltyPoints': loyaltyPoints,
       'totalSpent': totalSpent,
@@ -46,10 +50,11 @@ class Customer {
     };
   }
 
-  Customer copyWith({String? name, String? phone, int? loyaltyPoints, double? totalSpent, DateTime? lastVisit, String? notes}) {
+  Customer copyWith({String? name, String? email, String? phone, int? loyaltyPoints, double? totalSpent, DateTime? lastVisit, String? notes}) {
     return Customer(
       id: id,
       name: name ?? this.name,
+      email: email ?? this.email,
       phone: phone ?? this.phone,
       loyaltyPoints: loyaltyPoints ?? this.loyaltyPoints,
       totalSpent: totalSpent ?? this.totalSpent,
@@ -59,4 +64,3 @@ class Customer {
     );
   }
 }
-

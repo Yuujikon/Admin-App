@@ -9,7 +9,9 @@ import '../widgets/qty_control.dart';
 import '../widgets/scanner_dialog.dart';
 import '../utils/format.dart';
 import '../models/customer.dart';
+import '../providers/order_provider.dart';
 import '../providers/printer_provider.dart';
+import '../utils/pricing_engine.dart';
 import '../config/theme.dart';
 
 class PosScreen extends StatefulWidget {
@@ -23,6 +25,8 @@ class _PosScreenState extends State<PosScreen> {
   final _barcodeCtrl  = TextEditingController();
   final _cashCtrl     = TextEditingController();
   String _cash = '';
+  bool   _redeemPoints = false; 
+  bool   _isSeniorPWD = false; // NEW
   bool   _done = false;
   Customer? _selectedCustomer;
   
@@ -38,18 +42,19 @@ class _PosScreenState extends State<PosScreen> {
     super.dispose();
   }
 
-  double get _total => _cart.fold(0, (s, item) {
+  double get _total {
     final products = context.read<InventoryProvider>().products;
-    try {
-      final p = products.firstWhere((p) => p.id == item.productId);
-      final price = (p.wholesalePrice != null && p.wholesaleThreshold != null && item.qty >= p.wholesaleThreshold!)
-          ? p.wholesalePrice!
-          : p.price;
-      return s + price * item.qty;
-    } catch (_) {
-      return s + item.price * item.qty;
-    }
-  });
+    final orderProvider = context.read<OrderProvider>();
+    
+    final breakdown = PricingEngine.calculate(
+      items: _cart, 
+      allProducts: products, 
+      activePromos: orderProvider.promotions,
+      pointsToRedeem: (_redeemPoints && _selectedCustomer != null) ? _selectedCustomer!.loyaltyPoints : 0,
+      isSeniorOrPWD: _isSeniorPWD,
+    );
+    return breakdown.total;
+  }
   
   double get _cashNum => double.tryParse(_cash) ?? 0;
   double get _change  => (_cashNum - _total).clamp(0, double.infinity);
@@ -175,6 +180,7 @@ class _PosScreenState extends State<PosScreen> {
       final total = _total;
       final cash = _cashNum;
       final change = _change;
+      final pointsRedeemed = (_redeemPoints && _selectedCustomer != null) ? _selectedCustomer!.loyaltyPoints : 0;
 
       final printer = context.read<PrinterProvider>();
 
@@ -182,6 +188,8 @@ class _PosScreenState extends State<PosScreen> {
         items, 
         cash,
         customerId: _selectedCustomer?.id,
+        customerEmail: _selectedCustomer?.email,
+        pointsRedeemed: pointsRedeemed,
         paymentMethod: PaymentMethod.cash,
       );
       
@@ -307,11 +315,15 @@ class _PosScreenState extends State<PosScreen> {
               total: _total, cashNum: _cashNum, change: _change,
               products: products,
               selectedCustomer: _selectedCustomer,
+              redeemPoints: _redeemPoints,
+              isSeniorPWD: _isSeniorPWD,
               onCash: (v) => setState(() => _cash = v),
               onAdjust:   _adjustQty,
               onRemove:   (id) => setState(() => _cart.removeWhere((c) => c.productId == id)),
               onComplete: _completeSale,
               onSelectCustomer: (c) => setState(() => _selectedCustomer = c),
+              onRedeemPoints: (v) => setState(() => _redeemPoints = v),
+              onSeniorToggle: (v) => setState(() => _isSeniorPWD = v),
             )),
       ]);
     }
@@ -328,11 +340,15 @@ class _PosScreenState extends State<PosScreen> {
               total: _total, cashNum: _cashNum, change: _change,
               products: products,
               selectedCustomer: _selectedCustomer,
+              redeemPoints: _redeemPoints,
+              isSeniorPWD: _isSeniorPWD,
               onCash: (v) => setState(() => _cash = v),
               onAdjust:   _adjustQty,
               onRemove:   (id) => setState(() => _cart.removeWhere((c) => c.productId == id)),
               onComplete: _completeSale,
               onSelectCustomer: (c) => setState(() => _selectedCustomer = c),
+              onRedeemPoints: (v) => setState(() => _redeemPoints = v),
+              onSeniorToggle: (v) => setState(() => _isSeniorPWD = v),
             ),
           ),
         ),
@@ -403,6 +419,13 @@ class _PosProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLow = p.stock <= p.lowStockThreshold;
+
+    // Calculate effective price for display
+    double effectivePrice = p.price;
+    if (p.discountPercentage > 0) {
+      effectivePrice -= (p.price * (p.discountPercentage / 100));
+    }
+    effectivePrice -= p.discountFixed;
     
     return GestureDetector(
       onTap: onToggle,
@@ -436,10 +459,18 @@ class _PosProductTile extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(formatPeso(p.price),
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w900, fontSize: 13)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (p.discountPercentage > 0 || p.discountFixed > 0)
+                      Text(formatPeso(p.price),
+                          style: const TextStyle(fontSize: 9, color: Colors.grey, decoration: TextDecoration.lineThrough, fontWeight: FontWeight.w600)),
+                    Text(formatPeso(effectivePrice),
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w900, fontSize: 13)),
+                  ],
+                ),
                 if (isLow)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -478,14 +509,23 @@ class _CartPanel extends StatelessWidget {
   final VoidCallback onComplete;
   final ValueChanged<Customer?> onSelectCustomer;
 
+  final bool redeemPoints;
+  final bool isSeniorPWD;
+  final ValueChanged<bool> onRedeemPoints;
+  final ValueChanged<bool> onSeniorToggle;
+
   const _CartPanel({
     required this.cart, required this.cash, required this.cashCtrl,
     required this.total, required this.cashNum, required this.change,
     required this.products,
     required this.selectedCustomer,
+    required this.redeemPoints,
+    required this.isSeniorPWD,
     required this.onCash, required this.onAdjust,
     required this.onRemove, required this.onComplete,
     required this.onSelectCustomer,
+    required this.onRedeemPoints,
+    required this.onSeniorToggle,
   });
 
   @override
@@ -518,176 +558,213 @@ class _CartPanel extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       if (cart.isEmpty)
-        Expanded(
+        const Expanded(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.shopping_bag_outlined, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.1), size: 80),
+              Icon(Icons.shopping_bag_outlined, color: Colors.grey, size: 80),
               const SizedBox(height: 12),
-              Text('Cart is empty', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.3), fontSize: 14, fontWeight: FontWeight.w600)),
+              Text('Cart is empty', style: TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.w600)),
             ],
           ),
         )
       else
-        Flexible(child: ListView.separated(
-          shrinkWrap: true,
-          itemCount: cart.length,
-          separatorBuilder: (_, __) => Divider(height: 24, color: Colors.grey.shade50),
-          itemBuilder: (_, i) {
-            final item = cart[i];
-            final products = context.read<InventoryProvider>().products;
-            final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
-            final stock = product.stock;
-            
-            final bool isWholesale = product.wholesalePrice != null && 
-                                   product.wholesaleThreshold != null && 
-                                   item.qty >= product.wholesaleThreshold!;
-            
-            final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
-
-            return Row(children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.name,
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(formatPeso(effectivePrice),
-                            style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                        if (isWholesale) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                            child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              QtyControl(
-                  qty: item.qty,
-                  max: stock,
-                  onChanged: (n) => onAdjust(item.productId, n - item.qty)),
-              const SizedBox(width: 8),
-              Text(formatPeso(effectivePrice * item.qty),
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
-              const SizedBox(width: 4),
-              IconButton(
-                  onPressed: () => onRemove(item.productId),
-                  icon: Icon(Icons.remove_circle_outline, size: 18, color: Colors.red.shade300),
-                  padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-            ]);
-          },
-        )),
-      const Divider(height: 32),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        Text(formatPeso(total),
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Theme.of(context).colorScheme.primary)),
-      ]),
-      const SizedBox(height: 20),
-      
-      if (cart.isNotEmpty) ...[
-        // Cash Input
-        TextField(
-          controller: cashCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          onChanged: onCash,
-          decoration: InputDecoration(
-            labelText: 'Cash Received',
-            prefixText: '₱ ',
-            isDense: true,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            suffixIcon: cash.isNotEmpty ? IconButton(
-              icon: const Icon(Icons.clear, size: 18),
-              onPressed: () {
-                cashCtrl.clear();
-                onCash('');
-              },
-            ) : null,
-          ),
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        
-        // Quick Cash Buttons
-        SizedBox(
-          height: 32,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [20, 50, 100, 200, 500, 1000].map((amt) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: OutlinedButton(
-                  onPressed: () {
-                    final current = double.tryParse(cash) ?? 0;
-                    final newVal = current + amt;
-                    cashCtrl.text = newVal.toStringAsFixed(0);
-                    onCash(cashCtrl.text);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: Text('+$amt', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 20),
-      ],
-      
-      // Customer / Rewards Selection
-      if (cart.isNotEmpty)
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          tileColor: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
-          leading: Icon(Icons.stars_rounded, color: Theme.of(context).colorScheme.primary),
-          title: Text(selectedCustomer?.name ?? 'Select Customer for Rewards',
-              style: TextStyle(color: selectedCustomer == null ? Colors.grey : Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14, fontWeight: FontWeight.w700)),
-          subtitle: selectedCustomer != null ? Text('Earns ${(total / 100).floor()} points', style: const TextStyle(fontSize: 10)) : null,
-          trailing: const Icon(Icons.expand_more_rounded),
-          onTap: () => _showCustomerPicker(context),
-        ),
-
-      if (cashNum >= total && cart.isNotEmpty)
-        Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w600)),
-                Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 18)),
+                ...cart.map((item) {
+                  final products = context.read<InventoryProvider>().products;
+                  final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
+                  final stock = product.stock;
+                  
+                  final bool isWholesale = product.wholesalePrice != null && 
+                                         product.wholesaleThreshold != null && 
+                                         item.qty >= product.wholesaleThreshold!;
+                  
+                  final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.name,
+                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Text(formatPeso(effectivePrice),
+                                    style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                                if (isWholesale) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                                    child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      QtyControl(
+                          qty: item.qty,
+                          max: stock,
+                          onChanged: (n) => onAdjust(item.productId, n - item.qty)),
+                      const SizedBox(width: 8),
+                      Text(formatPeso(effectivePrice * item.qty),
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
+                      const SizedBox(width: 4),
+                      IconButton(
+                          onPressed: () => onRemove(item.productId),
+                          icon: Icon(Icons.remove_circle_outline, size: 18, color: Colors.red.shade300),
+                          padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                    ]),
+                  );
+                }).toList(),
+                
+                const Divider(height: 32),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Text(formatPeso(total),
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Theme.of(context).colorScheme.primary)),
+                ]),
+                const SizedBox(height: 20),
+                
+                // Cash Input
+                TextField(
+                  controller: cashCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: onCash,
+                  decoration: InputDecoration(
+                    labelText: 'Cash Received',
+                    prefixText: '₱ ',
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    suffixIcon: cash.isNotEmpty ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        cashCtrl.clear();
+                        onCash('');
+                      },
+                    ) : null,
+                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                
+                // Quick Cash Buttons
+                SizedBox(
+                  height: 32,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [20, 50, 100, 200, 500, 1000].map((amt) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: OutlinedButton(
+                          onPressed: () {
+                            final current = double.tryParse(cash) ?? 0;
+                            final newVal = current + amt;
+                            cashCtrl.text = newVal.toStringAsFixed(0);
+                            onCash(cashCtrl.text);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            minimumSize: const Size(64, 32),
+                            side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: Text('+$amt', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Customer / Rewards Selection
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  tileColor: Theme.of(context).colorScheme.surface,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
+                  leading: Icon(Icons.stars_rounded, color: Theme.of(context).colorScheme.primary),
+                  title: Text(selectedCustomer?.name ?? 'Select Customer for Rewards',
+                      style: TextStyle(color: selectedCustomer == null ? Colors.grey : Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14, fontWeight: FontWeight.w700)),
+                  subtitle: selectedCustomer != null ? Text('Earns ${(total / 100).floor()} points', style: const TextStyle(fontSize: 10)) : null,
+                  trailing: const Icon(Icons.expand_more_rounded),
+                  onTap: () => _showCustomerPicker(context),
+                ),
+                if (selectedCustomer != null && selectedCustomer!.loyaltyPoints >= 10)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: CheckboxListTile(
+                      title: const Text('Redeem Suki Points', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      subtitle: Text('Use ${selectedCustomer!.loyaltyPoints} points for ${formatPeso(selectedCustomer!.loyaltyPoints.toDouble())} discount', style: const TextStyle(fontSize: 11)),
+                      value: redeemPoints,
+                      onChanged: (v) => onRedeemPoints(v ?? false),
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      dense: true,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                
+                // Senior / PWD Toggle
+                Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surface,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
+                  child: CheckboxListTile(
+                    title: const Text('Senior / PWD Discount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    subtitle: const Text('Applies 20% discount (VAT Exempt)', style: TextStyle(fontSize: 11)),
+                    value: isSeniorPWD,
+                    onChanged: (v) => onSeniorToggle(v ?? false),
+                    activeColor: Theme.of(context).colorScheme.primary,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    dense: true,
+                    secondary: const Icon(Icons.badge_outlined, color: Colors.blue),
+                  ),
+                ),
+
+                if (cashNum >= total)
+                  Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w600)),
+                          Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 18)),
+                        ],
+                      )),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                    onPressed: cashNum >= total ? onComplete : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      elevation: 8,
+                      shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_rounded),
+                        SizedBox(width: 10),
+                        Text('COMPLETE SALE'),
+                      ],
+                    )),
               ],
-            )),
-      const SizedBox(height: 20),
-      ElevatedButton(
-          onPressed: cart.isNotEmpty && cashNum >= total ? onComplete : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: Theme.of(context).colorScheme.onPrimary,
-            elevation: 8,
-            shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+            ),
           ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.check_circle_rounded),
-              SizedBox(width: 10),
-              Text('COMPLETE SALE'),
-            ],
-          )),
+        ),
     ]),
   );
 

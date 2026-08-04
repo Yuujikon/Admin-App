@@ -15,8 +15,8 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
   CameraController? _controller;
   final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
   bool _isProcessing = false;
-  RecognizedText? _recognizedText;
-  CustomPaint? _customPaint;
+  bool _flashOn = false;
+  List<String> _candidates = [];
 
   @override
   void initState() {
@@ -30,7 +30,7 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
 
     _controller = CameraController(
       cameras.first,
-      ResolutionPreset.medium,
+      ResolutionPreset.high, // Higher resolution for better accuracy
       enableAudio: false,
       imageFormatGroup: Platform.isAndroid ? ImageFormatGroup.nv21 : ImageFormatGroup.bgra8888,
     );
@@ -60,10 +60,23 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
       final recognizedText = await _textRecognizer.processImage(inputImage);
       
       if (mounted) {
+        // Extract unique lines, prioritizing larger text (brand names are usually big)
+        final lines = recognizedText.blocks
+            .expand((b) => b.lines)
+            .where((l) => l.text.length > 2) // Skip tiny snippets
+            .toList();
+
+        // Sort by bounding box area (larger = more likely to be brand)
+        lines.sort((a, b) {
+          final areaA = a.boundingBox.width * a.boundingBox.height;
+          final areaB = b.boundingBox.width * b.boundingBox.height;
+          return areaB.compareTo(areaA);
+        });
+
+        final uniqueText = lines.map((l) => l.text.trim()).toSet().take(10).toList();
+
         setState(() {
-          _recognizedText = recognizedText;
-          // In a real implementation, we would build a custom painter here to show bounding boxes
-          // For simplicity in this Sari-Sari app, we'll just show a list or let them tap the preview
+          _candidates = uniqueText;
         });
       }
     } catch (e) {
@@ -76,9 +89,6 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
   InputImage? _inputImageFromCameraImage(CameraImage image) {
     final sensorOrientation = _controller?.description.sensorOrientation ?? 0;
     
-    // Simple conversion for the Sari-Sari use case
-    // Note: Detailed byte conversion for all platforms/formats can be complex
-    // This is a standard pattern for ML Kit with Camera package
     final orientations = {
       DeviceOrientation.portraitUp: 0,
       DeviceOrientation.landscapeLeft: 90,
@@ -125,93 +135,83 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Scan Brand Name'),
+        title: const Text('Scan Brand Name', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(_flashOn ? Icons.flash_on : Icons.flash_off),
+            onPressed: () {
+              setState(() => _flashOn = !_flashOn);
+              _controller?.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
+            },
+          ),
+        ],
       ),
-      body: Stack(
-        fit: StackFit.expand,
+      body: Column(
         children: [
-          CameraPreview(_controller!),
-          if (_recognizedText != null)
-            _buildTextOverlays(),
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
+          Expanded(
+            flex: 3,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CameraPreview(_controller!),
+                // Scanning area guide
+                Center(
+                  child: Container(
+                    width: 280,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
-                child: const Text(
-                  'Tap on the brand name to capture',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 24, 24, 8),
+                    child: Text('Captured Text', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24),
+                    child: Text('Tap the brand name below to select it', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500)),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _candidates.isEmpty
+                      ? const Center(child: Text('Searching for text...', style: TextStyle(color: Colors.grey)))
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          itemCount: _candidates.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
+                          itemBuilder: (ctx, i) => ListTile(
+                            title: Text(_candidates[i], style: const TextStyle(fontWeight: FontWeight.bold)),
+                            trailing: const Icon(Icons.add_circle_outline, color: Colors.blue),
+                            onTap: () => Navigator.pop(context, _candidates[i]),
+                          ),
+                        ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
       ),
     );
-  }
-
-  Widget _buildTextOverlays() {
-    return LayoutBuilder(builder: (context, constraints) {
-      final List<Widget> overlays = [];
-      
-      for (final block in _recognizedText!.blocks) {
-        for (final line in block.lines) {
-          // Simplistic hit-test area mapping
-          // In a production app, we would use proper coordinate transformation
-          // from Image space to Screen space based on scale and aspect ratio.
-          overlays.add(
-            Positioned(
-              left: 0, top: 0, // Placeholder - see logic below
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context, line.text),
-                child: Container(
-                  // We'll just show the recognized lines in a scrollable list at the bottom 
-                  // or floating labels if we had full mapping.
-                  // For now, let's provide a selection list for better UX reliability.
-                ),
-              ),
-            )
-          );
-        }
-      }
-
-      return Stack(
-        children: [
-          // Semi-transparent overlay to help text stand out
-          Container(color: Colors.black12),
-          
-          // Selection List at the bottom
-          Align(
-            alignment: Alignment.topCenter,
-            child: Container(
-              margin: const EdgeInsets.all(20),
-              height: 150,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: ListView(
-                padding: const EdgeInsets.all(8),
-                children: _recognizedText!.blocks.expand((b) => b.lines).map((l) => ListTile(
-                  dense: true,
-                  title: Text(l.text, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  trailing: const Icon(Icons.add_circle_outline, color: Colors.green),
-                  onTap: () => Navigator.pop(context, l.text),
-                )).toList(),
-              ),
-            ),
-          ),
-        ],
-      );
-    });
   }
 }

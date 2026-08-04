@@ -77,7 +77,7 @@ class DashboardScreen extends StatelessWidget {
             crossAxisCount: 2, shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 16, mainAxisSpacing: 16,
-            childAspectRatio: 1.25,
+            childAspectRatio: 1.1,
             children: [
               _StatCard("Today's Sales", formatPeso(todaySales),
                   Icons.auto_graph_rounded, semantic.success),

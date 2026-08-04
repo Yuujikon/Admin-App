@@ -10,6 +10,8 @@ import 'reports_screen.dart';
 import 'customer_management_screen.dart';
 import 'bundle_management_screen.dart';
 import 'category_management_screen.dart';
+import 'restock_management_screen.dart';
+import 'restock_management_screen.dart';
 
 class MoreManagementScreen extends StatelessWidget {
   const MoreManagementScreen({super.key});
@@ -45,6 +47,15 @@ class MoreManagementScreen extends StatelessWidget {
             subtitle: 'Manage delivery contacts',
             color: semantic.success,
             target: const SupplierManagementScreen(),
+          ),
+          const SizedBox(height: 12),
+          _menuItem(
+            context,
+            icon: Icons.inventory_2_rounded,
+            title: 'Restock Manager',
+            subtitle: 'Email low-stock items to suppliers',
+            color: Colors.orange.shade800,
+            target: const RestockManagementScreen(),
           ),
           const SizedBox(height: 12),
           if (isAdmin) ...[

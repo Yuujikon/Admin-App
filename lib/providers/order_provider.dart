@@ -19,15 +19,14 @@ class OrderProvider extends ChangeNotifier {
   Timer? _expirationTimer;
 
   List<PreOrder> get orders  => _orders;
+  List<Promotion> get promotions => _promotions;
   List<CartItem> get preCart => _preCart;
 
-  // Streams that auto-update for admin view
-  late final Stream<List<PreOrder>> ordersStream;
+  // Stream that auto-updates for admin view
+  Stream<List<PreOrder>> get ordersStream => _fs.ordersStream();
 
   void initialize() {
     cancelSubscriptions();
-
-    ordersStream = _fs.ordersStream().asBroadcastStream();
 
     _subs.add(ordersStream.listen((list) {
       _orders = list;
@@ -115,6 +114,7 @@ class OrderProvider extends ChangeNotifier {
     required String location,
     required String pickupSlot,
     required List<Product> allProducts,
+    bool isSeniorPWD = false,
   }) async {
     final orderCount = _orders.length + 45;
     // Determine expiration based on items
@@ -132,7 +132,7 @@ class OrderProvider extends ChangeNotifier {
       expiresAt = DateTime.now().add(const Duration(days: 3));
     }
 
-    final total = cart.fold(0.0, (s, i) => s + i.price * i.qty);
+    final total = _preCart.fold(0.0, (s, i) => s + i.price * i.qty);
     
     // Calculate breakdown using PricingEngine
     final breakdown = PricingEngine.calculate(
@@ -157,6 +157,7 @@ class OrderProvider extends ChangeNotifier {
       pickupTime:    pickupSlot,
       createdAt:     DateTime.now(),
       expiresAt:     expiresAt,
+      isSeniorPWD:   isSeniorPWD,
     );
 
     await _fs.addOrder(order);

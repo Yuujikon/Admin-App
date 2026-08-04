@@ -70,6 +70,7 @@ class LossManagementScreen extends StatelessWidget {
       LossType.damaged     => Icon(Icons.broken_image, color: Theme.of(context).colorScheme.error),
       LossType.lost        => Icon(Icons.not_listed_location, color: Theme.of(context).colorScheme.onSurfaceVariant),
       LossType.personalUse => Icon(Icons.person_outline, color: semantic.info),
+      LossType.refundReturn => Icon(Icons.assignment_return_rounded, color: Colors.deepOrange),
     };
   }
 }

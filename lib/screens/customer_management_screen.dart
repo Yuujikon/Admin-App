@@ -88,6 +88,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 
   void _showCustomerSheet(BuildContext context, Customer? customer) {
     final nameCtrl = TextEditingController(text: customer?.name ?? '');
+    final emailCtrl = TextEditingController(text: customer?.email ?? '');
     final phoneCtrl = TextEditingController(text: customer?.phone ?? '');
     final notesCtrl = TextEditingController(text: customer?.notes ?? '');
     bool saving = false;
@@ -111,6 +112,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
               const SizedBox(height: 24),
               TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Full Name', prefixIcon: Icon(Icons.person_outline_rounded))),
               const SizedBox(height: 16),
+              TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email (Optional)', prefixIcon: Icon(Icons.email_outlined))),
+              const SizedBox(height: 16),
               TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone Number', prefixIcon: Icon(Icons.phone_outlined))),
               const SizedBox(height: 16),
               TextField(controller: notesCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Notes / Preferences', prefixIcon: Icon(Icons.note_alt_outlined), hintText: 'e.g. Likes no plastic bags')),
@@ -122,6 +125,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                   final c = Customer(
                     id: customer?.id ?? '',
                     name: nameCtrl.text.trim(),
+                    email: emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
                     phone: phoneCtrl.text.trim(),
                     loyaltyPoints: customer?.loyaltyPoints ?? 0,
                     totalSpent: customer?.totalSpent ?? 0,

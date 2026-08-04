@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 enum OrderStatus { pending, staging, ready, collected, cancelled, refunded, refundRequested, refundRejected }
 
@@ -58,6 +59,7 @@ class PreOrder {
   final double         discount;
   final double         tax;
   final double         total;
+  final int            pointsRedeemed;
   final OrderStatus    status;
   final String         notes;
   final String         location;
@@ -77,6 +79,7 @@ class PreOrder {
     this.discount = 0,
     this.tax = 0,
     required this.total,
+    this.pointsRedeemed = 0,
     required this.status,
     this.notes      = '',
     this.location   = '',
@@ -88,29 +91,44 @@ class PreOrder {
   });
 
   factory PreOrder.fromFirestore(DocumentSnapshot doc) {
-    final d = doc.data() as Map<String, dynamic>;
-    return PreOrder(
-      id:            doc.id,
-      orderId:       d['orderId'] ?? '',
-      customerName:  d['customerName'] ?? '',
-      customerEmail: d['customerEmail'] ?? '',
-      items:         (d['items'] as List? ?? []).map((e) => CartItem.fromMap(e)).toList(),
-      subtotal:      (d['subtotal'] as num? ?? 0).toDouble(),
-      discount:      (d['discount'] as num? ?? 0).toDouble(),
-      tax:           (d['tax'] as num? ?? 0).toDouble(),
-      total:         (d['total'] as num? ?? 0).toDouble(),
-      status: OrderStatus.values.firstWhere(
-        (e) => e.name == (d['status'] ?? 'pending'),
-        orElse: () => OrderStatus.pending,
-      ),
-      notes:         d['notes'] ?? '',
-      location:      d['location'] ?? '',
-      pickupTime:    d['pickupTime'] ?? '',
-      createdAt:     (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      expiresAt:     (d['expiresAt'] as Timestamp?)?.toDate(),
-      rejectionReason: d['rejectionReason'],
-      isSeniorPWD:   d['isSeniorPWD'] ?? false,
-    );
+    try {
+      final d = doc.data() as Map<String, dynamic>? ?? {};
+      return PreOrder(
+        id:            doc.id,
+        orderId:       d['orderId']?.toString() ?? 'GDC-????',
+        customerName:  d['customerName']?.toString() ?? 'Unknown Customer',
+        customerEmail: d['customerEmail']?.toString() ?? '',
+        items:         (d['items'] as List? ?? []).map((e) => CartItem.fromMap(e)).toList(),
+        subtotal:      (d['subtotal'] as num? ?? 0).toDouble(),
+        discount:      (d['discount'] as num? ?? 0).toDouble(),
+        tax:           (d['tax'] as num? ?? 0).toDouble(),
+        total:         (d['total'] as num? ?? 0).toDouble(),
+        pointsRedeemed: (d['pointsRedeemed'] as num? ?? 0).toInt(),
+        status: OrderStatus.values.firstWhere(
+          (e) => e.name == (d['status'] ?? 'pending'),
+          orElse: () => OrderStatus.pending,
+        ),
+        notes:         d['notes']?.toString() ?? '',
+        location:      d['location']?.toString() ?? '',
+        pickupTime:    d['pickupTime']?.toString() ?? '',
+        createdAt:     (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        expiresAt:     (d['expiresAt'] as Timestamp?)?.toDate(),
+        rejectionReason: d['rejectionReason']?.toString(),
+        isSeniorPWD:   d['isSeniorPWD'] ?? false,
+      );
+    } catch (e) {
+      debugPrint('Error parsing PreOrder ${doc.id}: $e');
+      return PreOrder(
+        id: doc.id, 
+        orderId: 'ERROR', 
+        customerName: 'Error Loading', 
+        customerEmail: '', 
+        items: [], 
+        total: 0, 
+        status: OrderStatus.cancelled, 
+        createdAt: DateTime.now()
+      );
+    }
   }
 
   Map<String, dynamic> toFirestore() => {
@@ -122,6 +140,7 @@ class PreOrder {
     'discount':      discount,
     'tax':           tax,
     'total':         total,
+    'pointsRedeemed': pointsRedeemed,
     'status':        status.name,
     'notes':         notes,
     'location':      location,
