@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'order.dart';
 
 enum RefundStatus { pending, approved, rejected }
-enum RefundCondition { good, expired, damaged }
+enum RefundCondition { restockable, expired, damaged }
 
 class RefundRequest {
   final String id;

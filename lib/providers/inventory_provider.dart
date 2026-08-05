@@ -295,9 +295,9 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> saveBundle(ProductBundle b) => _fs.saveBundle(b);
   Future<void> deleteBundle(String id) => _fs.deleteBundle(id);
 
-  Future<void> completeSale(List<CartItem> cart, double cash, {String? customerId, String? customerEmail, int pointsRedeemed = 0, PaymentMethod paymentMethod = PaymentMethod.cash}) async {
-    final total  = cart.fold(0.0, (s, i) => s + i.price * i.qty);
-    final change = paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
+  Future<void> completeSale(List<CartItem> cart, double cash, {double? totalOverride, String? customerId, String? customerEmail, int pointsRedeemed = 0, PaymentMethod paymentMethod = PaymentMethod.cash}) async {
+    final double total  = totalOverride ?? cart.fold<double>(0.0, (s, i) => s + i.price * i.qty);
+    final double change = paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
 
     final tx = StoreTransaction(
       id:        const Uuid().v4(),

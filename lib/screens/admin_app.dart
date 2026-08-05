@@ -39,16 +39,16 @@ class _AdminAppState extends State<AdminApp> {
           });
         }),
         const PosScreen(),
-        InventoryScreen(initialCategory: _inventoryCategory),
         const OrdersScreen(),
+        InventoryScreen(initialCategory: _inventoryCategory),
         const ExpensesScreen(),
         const MoreManagementScreen(),
       ];
       destinations = const [
         NavigationDestination(icon: Icon(Icons.dashboard_outlined),     label: 'Dashboard'),
         NavigationDestination(icon: Icon(Icons.point_of_sale_outlined), label: 'POS'),
-        NavigationDestination(icon: Icon(Icons.inventory_2_outlined),   label: 'Inventory'),
         NavigationDestination(icon: Icon(Icons.receipt_long_outlined),  label: 'Orders'),
+        NavigationDestination(icon: Icon(Icons.inventory_2_outlined),   label: 'Inventory'),
         NavigationDestination(icon: Icon(Icons.attach_money_outlined),  label: 'Expenses'),
         NavigationDestination(icon: Icon(Icons.more_horiz),             label: 'More'),
       ];

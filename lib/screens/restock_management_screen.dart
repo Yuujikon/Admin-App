@@ -74,12 +74,18 @@ class RestockManagementScreen extends StatelessWidget {
                       children: [
                         Text('${p.category} • Current: ${p.stock} ${p.unit}'),
                         if (p.supplierId != null && p.supplierId!.isNotEmpty)
-                          FutureBuilder<Supplier?>(
-                            future: inventory.getSupplierById(p.supplierId!),
-                            builder: (context, snap) => Text(
-                              'Supplier: ${snap.data?.name ?? "..."}', 
-                              style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w600)
-                            ),
+                          Builder(
+                            builder: (context) {
+                              final supplier = inventory.suppliers.firstWhere(
+                                (s) => s.id == p.supplierId, 
+                                orElse: () => const Supplier(id: '', name: '...', email: '', phone: '')
+                              );
+                              if (supplier.id.isEmpty) return const SizedBox.shrink();
+                              return Text(
+                                'Supplier: ${supplier.name}', 
+                                style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w600)
+                              );
+                            }
                           ),
                         Text('Threshold: ${p.lowStockThreshold} ${p.unit}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                       ],

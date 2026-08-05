@@ -1,0 +1,4 @@
+- [ ] Reorder Admin navigation and update Dashboard links
+- [ ] Update POS cart ordering and mobile UI layout
+- [ ] Reorder Orders screen tabs for better workflow
+- [ ] Optimize Restock Management supplier lookup

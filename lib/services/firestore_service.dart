@@ -231,18 +231,24 @@ class FirestoreService {
     });
 
     for (final item in request.items) {
-      final lossDoc = _lossRecords.doc();
-      batch.set(lossDoc, {
-        'productId':   item.productId,
-        'productName': item.name,
-        'qty':         item.qty,
-        'unitPrice':   item.price,
-        'type':        request.condition == RefundCondition.expired ? 'expired' : 'damaged',
-        'notes':       'Refund Return: ${request.reason}',
-        'createdAt':   FieldValue.serverTimestamp(),
-        'processedBy': adminEmail,
-        'referenceId': request.transactionId,
-      });
+      if (request.condition == RefundCondition.restockable) {
+        batch.update(_products.doc(item.productId), {
+          'stock': FieldValue.increment(item.qty),
+        });
+      } else {
+        final lossDoc = _lossRecords.doc();
+        batch.set(lossDoc, {
+          'productId':   item.productId,
+          'productName': item.name,
+          'qty':         item.qty,
+          'unitPrice':   item.price,
+          'type':        request.condition == RefundCondition.expired ? 'expired' : 'damaged',
+          'notes':       'Refund Return: ${request.reason}',
+          'createdAt':   FieldValue.serverTimestamp(),
+          'processedBy': adminEmail,
+          'referenceId': request.transactionId,
+        });
+      }
     }
 
     return batch.commit();

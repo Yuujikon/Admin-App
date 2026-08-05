@@ -89,7 +89,7 @@ class DashboardScreen extends StatelessWidget {
                   onTap: () => onTabChange(4, category: null)), // Go to Expenses
               _StatCard("Pending Orders","$pending",
                   Icons.pending_actions_rounded, semantic.warning,
-                  onTap: () => onTabChange(3, category: null)), // Go to Orders
+                  onTap: () => onTabChange(2, category: null)), // Go to Orders
             ],
           ),
 
@@ -106,7 +106,7 @@ class DashboardScreen extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(child: InkWell(
-                  onTap: () => onTabChange(3, category: null),
+                  onTap: () => onTabChange(2, category: null),
                   child: _MiniStat('Sales', '${todayTx.length}'))),
                 const _Divider(),
                 Expanded(child: _MiniStat('Units',
@@ -224,7 +224,7 @@ class DashboardScreen extends StatelessWidget {
                   final p = lowStock[index];
                   return ListTile(
                     dense: true,
-                    onTap: () => onTabChange(2, category: 'Low Stock'), // Go to Inventory -> Low Stock
+                    onTap: () => onTabChange(3, category: 'Low Stock'), // Go to Inventory -> Low Stock
                     title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(p.category, style: const TextStyle(fontSize: 10)),
                     trailing: Text('${p.stock} ${p.unit} left', style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold)),
