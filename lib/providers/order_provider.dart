@@ -23,10 +23,12 @@ class OrderProvider extends ChangeNotifier {
   List<CartItem> get preCart => _preCart;
 
   // Stream that auto-updates for admin view
-  Stream<List<PreOrder>> get ordersStream => _fs.ordersStream();
+  Stream<List<PreOrder>>? _ordersStream;
+  Stream<List<PreOrder>> get ordersStream => _ordersStream ??= _fs.ordersStream().asBroadcastStream();
 
   void initialize() {
     cancelSubscriptions();
+    _ordersStream = null;
 
     _subs.add(ordersStream.listen((list) {
       _orders = list;

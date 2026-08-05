@@ -258,6 +258,14 @@ class InventoryProvider extends ChangeNotifier {
     await _fs.deleteProduct(id);
   }
 
+  Future<Supplier?> getSupplierById(String id) async {
+    try {
+      return _suppliers.firstWhere((s) => s.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> saveSupplier(Supplier s) {
     if (s.id.isEmpty) return _fs.addSupplier(s);
     return _fs.updateSupplier(s);

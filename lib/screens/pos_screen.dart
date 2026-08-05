@@ -568,203 +568,221 @@ class _CartPanel extends StatelessWidget {
             ],
           ),
         )
-      else
+      else ...[
+        // ── Scrollable Cart Items ──────────────────────────────────────────
         Expanded(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ...cart.map((item) {
-                  final products = context.read<InventoryProvider>().products;
-                  final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
-                  final stock = product.stock;
-                  
-                  final bool isWholesale = product.wholesalePrice != null && 
-                                         product.wholesaleThreshold != null && 
-                                         item.qty >= product.wholesaleThreshold!;
-                  
-                  final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
+          child: ListView.separated(
+            padding: EdgeInsets.zero,
+            itemCount: cart.length,
+            separatorBuilder: (_, __) => const Divider(height: 16, thickness: 0.5),
+            itemBuilder: (ctx, i) {
+              final item = cart[i];
+              final products = context.read<InventoryProvider>().products;
+              final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
+              final stock = product.stock;
+              
+              final bool isWholesale = product.wholesalePrice != null && 
+                                     product.wholesaleThreshold != null && 
+                                     item.qty >= product.wholesaleThreshold!;
+              
+              final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.name,
-                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Text(formatPeso(effectivePrice),
-                                    style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                                if (isWholesale) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                                    child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
-                                  ),
-                                ],
-                              ],
+              return Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(item.name,
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(formatPeso(effectivePrice),
+                              style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                          if (isWholesale) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                              child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
                             ),
                           ],
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      QtyControl(
-                          qty: item.qty,
-                          max: stock,
-                          onChanged: (n) => onAdjust(item.productId, n - item.qty)),
-                      const SizedBox(width: 8),
-                      Text(formatPeso(effectivePrice * item.qty),
-                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
-                      const SizedBox(width: 4),
-                      IconButton(
-                          onPressed: () => onRemove(item.productId),
-                          icon: Icon(Icons.remove_circle_outline, size: 18, color: Colors.red.shade300),
-                          padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-                    ]),
-                  );
-                }).toList(),
-                
-                const Divider(height: 32),
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  Text(formatPeso(total),
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Theme.of(context).colorScheme.primary)),
-                ]),
-                const SizedBox(height: 20),
-                
-                // Cash Input
-                TextField(
-                  controller: cashCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: onCash,
-                  decoration: InputDecoration(
-                    labelText: 'Cash Received',
-                    prefixText: '₱ ',
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    suffixIcon: cash.isNotEmpty ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        cashCtrl.clear();
-                        onCash('');
-                      },
-                    ) : null,
-                  ),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                
-                // Quick Cash Buttons
-                SizedBox(
-                  height: 32,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [20, 50, 100, 200, 500, 1000].map((amt) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: OutlinedButton(
-                          onPressed: () {
-                            final current = double.tryParse(cash) ?? 0;
-                            final newVal = current + amt;
-                            cashCtrl.text = newVal.toStringAsFixed(0);
-                            onCash(cashCtrl.text);
-                          },
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            minimumSize: const Size(64, 32),
-                            side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          child: Text('+$amt', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        ),
-                      );
-                    }).toList(),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(width: 12),
+                QtyControl(
+                    qty: item.qty,
+                    max: stock,
+                    onChanged: (n) => onAdjust(item.productId, n - item.qty)),
+                const SizedBox(width: 8),
+                Text(formatPeso(effectivePrice * item.qty),
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
+                const SizedBox(width: 4),
+                IconButton(
+                    onPressed: () => onRemove(item.productId),
+                    icon: Icon(Icons.remove_circle_outline, size: 18, color: Colors.red.shade300),
+                    padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+              ]);
+            },
+          ),
+        ),
+        
+        const Divider(height: 16),
 
-                // Customer / Rewards Selection
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  tileColor: Theme.of(context).colorScheme.surface,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
-                  leading: Icon(Icons.stars_rounded, color: Theme.of(context).colorScheme.primary),
-                  title: Text(selectedCustomer?.name ?? 'Select Customer for Rewards',
-                      style: TextStyle(color: selectedCustomer == null ? Colors.grey : Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14, fontWeight: FontWeight.w700)),
-                  subtitle: selectedCustomer != null ? Text('Earns ${(total / 100).floor()} points', style: const TextStyle(fontSize: 10)) : null,
-                  trailing: const Icon(Icons.expand_more_rounded),
-                  onTap: () => _showCustomerPicker(context),
-                ),
-                if (selectedCustomer != null && selectedCustomer!.loyaltyPoints >= 10)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: CheckboxListTile(
-                      title: const Text('Redeem Suki Points', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      subtitle: Text('Use ${selectedCustomer!.loyaltyPoints} points for ${formatPeso(selectedCustomer!.loyaltyPoints.toDouble())} discount', style: const TextStyle(fontSize: 11)),
-                      value: redeemPoints,
-                      onChanged: (v) => onRedeemPoints(v ?? false),
-                      activeColor: Theme.of(context).colorScheme.primary,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                      dense: true,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        // ── Fixed Payment Section ──────────────────────────────────────────
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              Text(formatPeso(total),
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Theme.of(context).colorScheme.primary)),
+            ]),
+            const SizedBox(height: 12),
+            
+            // Rewards & Senior Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showCustomerPicker(context),
+                    icon: Icon(Icons.stars_rounded, size: 16, color: selectedCustomer != null ? Theme.of(context).colorScheme.primary : Colors.grey),
+                    label: Text(selectedCustomer?.name ?? 'Rewards', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
-                const SizedBox(height: 12),
-                
-                // Senior / PWD Toggle
-                Card(
-                  elevation: 0,
-                  color: Theme.of(context).colorScheme.surface,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
-                  child: CheckboxListTile(
-                    title: const Text('Senior / PWD Discount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    subtitle: const Text('Applies 20% discount (VAT Exempt)', style: TextStyle(fontSize: 11)),
-                    value: isSeniorPWD,
-                    onChanged: (v) => onSeniorToggle(v ?? false),
-                    activeColor: Theme.of(context).colorScheme.primary,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                    dense: true,
-                    secondary: const Icon(Icons.badge_outlined, color: Colors.blue),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => onSeniorToggle(!isSeniorPWD),
+                    icon: Icon(Icons.badge_outlined, size: 16, color: isSeniorPWD ? Colors.blue : Colors.grey),
+                    label: Text(isSeniorPWD ? 'Senior Applied' : 'Senior/PWD', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      side: isSeniorPWD ? const BorderSide(color: Colors.blue) : null,
+                    ),
                   ),
                 ),
+              ],
+            ),
 
-                if (cashNum >= total)
-                  Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w600)),
-                          Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 18)),
-                        ],
-                      )),
-                const SizedBox(height: 20),
-                ElevatedButton(
+            if (selectedCustomer != null && selectedCustomer!.loyaltyPoints >= 10)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: InkWell(
+                  onTap: () => onRedeemPoints(!redeemPoints),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        height: 24, width: 24,
+                        child: Checkbox(
+                          value: redeemPoints, 
+                          onChanged: (v) => onRedeemPoints(v ?? false),
+                          activeColor: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Redeem ${selectedCustomer!.loyaltyPoints} points (-${formatPeso(selectedCustomer!.loyaltyPoints.toDouble())})', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                    ],
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 12),
+            
+            // Cash Input
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: cashCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: onCash,
+                    decoration: InputDecoration(
+                      labelText: 'Cash Received',
+                      prefixText: '₱ ',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      suffixIcon: cash.isNotEmpty ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          cashCtrl.clear();
+                          onCash('');
+                        },
+                      ) : null,
+                    ),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
                     onPressed: cashNum >= total ? onComplete : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Theme.of(context).colorScheme.primary,
                       foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      elevation: 8,
-                      shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.check_circle_rounded),
-                        SizedBox(width: 10),
-                        Text('COMPLETE SALE'),
-                      ],
-                    )),
+                    child: const Text('PAY', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ),
               ],
             ),
-          ),
+            
+            // Quick Cash
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 28,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [50, 100, 200, 500, 1000].map((amt) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: OutlinedButton(
+                      onPressed: () {
+                        final current = double.tryParse(cash) ?? 0;
+                        final newVal = current + amt;
+                        cashCtrl.text = newVal.toStringAsFixed(0);
+                        onCash(cashCtrl.text);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(50, 28),
+                        side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: Text('+$amt', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            if (cashNum >= total)
+              Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600)),
+                      Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 16)),
+                    ],
+                  )),
+          ],
         ),
+      ]
     ]),
   );
 

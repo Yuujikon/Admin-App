@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/inventory_provider.dart';
 import '../../models/product.dart';
+import '../../models/supplier.dart';
 import '../../utils/format.dart';
 import '../config/theme.dart';
 
@@ -72,7 +73,15 @@ class RestockManagementScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('${p.category} • Current: ${p.stock} ${p.unit}'),
-                        Text('Threshold: ${p.lowStockThreshold} ${p.unit}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        if (p.supplierId != null && p.supplierId!.isNotEmpty)
+                          FutureBuilder<Supplier?>(
+                            future: inventory.getSupplierById(p.supplierId!),
+                            builder: (context, snap) => Text(
+                              'Supplier: ${snap.data?.name ?? "..."}', 
+                              style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w600)
+                            ),
+                          ),
+                        Text('Threshold: ${p.lowStockThreshold} ${p.unit}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                       ],
                     ),
                     trailing: IconButton.filledTonal(

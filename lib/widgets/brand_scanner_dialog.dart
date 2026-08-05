@@ -60,20 +60,22 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
       final recognizedText = await _textRecognizer.processImage(inputImage);
       
       if (mounted) {
-        // Extract unique lines, prioritizing larger text (brand names are usually big)
+        // Extract unique lines, skipping common noisy words
         final lines = recognizedText.blocks
             .expand((b) => b.lines)
-            .where((l) => l.text.length > 2) // Skip tiny snippets
+            .where((l) => l.text.length > 2)
+            .where((l) => !_isCommonNoise(l.text))
             .toList();
 
-        // Sort by bounding box area (larger = more likely to be brand)
+        // Sort by bounding box area (larger text = more likely to be brand)
         lines.sort((a, b) {
           final areaA = a.boundingBox.width * a.boundingBox.height;
           final areaB = b.boundingBox.width * b.boundingBox.height;
           return areaB.compareTo(areaA);
         });
 
-        final uniqueText = lines.map((l) => l.text.trim()).toSet().take(10).toList();
+        // Take the top unique candidates
+        final uniqueText = lines.map((l) => _cleanText(l.text)).toSet().take(8).toList();
 
         setState(() {
           _candidates = uniqueText;
@@ -84,6 +86,17 @@ class _BrandScannerDialogState extends State<BrandScannerDialog> {
     } finally {
       _isProcessing = false;
     }
+  }
+
+  bool _isCommonNoise(String text) {
+    final lower = text.toLowerCase();
+    final noise = ['ingredients', 'nutrition', 'facts', 'weight', 'net', 'grams', 'content', 'expiry', 'best', 'before', 'manufactured', 'distributor'];
+    return noise.any((n) => lower.contains(n));
+  }
+
+  String _cleanText(String text) {
+    // Remove symbols or numbers that might be part of non-brand text
+    return text.replaceAll(RegExp(r'[^\w\s\-]'), '').trim();
   }
 
   InputImage? _inputImageFromCameraImage(CameraImage image) {
