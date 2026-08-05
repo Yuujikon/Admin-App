@@ -26,11 +26,10 @@ class _PosScreenState extends State<PosScreen> {
   final _cashCtrl     = TextEditingController();
   String _cash = '';
   bool   _redeemPoints = false; 
-  bool   _isSeniorPWD = false; // NEW
+  bool   _isSeniorPWD = false; 
   bool   _done = false;
   Customer? _selectedCustomer;
   
-  // Store data for the receipt
   List<CartItem> _lastItems = [];
   double _lastTotal = 0, _lastCash = 0, _lastChange = 0;
 
@@ -45,7 +44,6 @@ class _PosScreenState extends State<PosScreen> {
   double get _total {
     final products = context.read<InventoryProvider>().products;
     final orderProvider = context.read<OrderProvider>();
-    
     final breakdown = PricingEngine.calculate(
       items: _cart, 
       allProducts: products, 
@@ -64,50 +62,30 @@ class _PosScreenState extends State<PosScreen> {
     if (idx >= 0) {
       _cart.removeAt(idx);
     } else {
-      _cart.add(CartItem(
-        productId: p.id, 
-        name: p.name, 
-        price: p.price, 
-        qty: 1, 
-        isPerishable: p.isPerishable
-      ));
+      _cart.add(CartItem(productId: p.id, name: p.name, price: p.price, qty: 1, isPerishable: p.isPerishable));
     }
   });
 
   void _onBarcodeSubmit(String code, List<Product> products) {
     if (code.isEmpty) return;
-    
-    // Search for an exact barcode match
     final matches = products.where((p) => p.barcode == code).toList();
-    
     if (matches.isNotEmpty) {
       final p = matches.first;
       setState(() {
         final idx = _cart.indexWhere((c) => c.productId == p.id);
         if (idx >= 0) {
-          // Increment if within stock
           if (_cart[idx].qty < p.stock) {
             _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty + 1);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Cannot add more. Only ${p.stock} in stock.'))
-            );
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Max stock reached.')));
           }
         } else {
-          _cart.add(CartItem(
-            productId: p.id, 
-            name: p.name, 
-            price: p.price, 
-            qty: 1, 
-            isPerishable: p.isPerishable
-          ));
+          _cart.add(CartItem(productId: p.id, name: p.name, price: p.price, qty: 1, isPerishable: p.isPerishable));
         }
       });
       _barcodeCtrl.clear();
       _barcodeFocus.requestFocus(); 
     } else {
-      // It's likely a search query. The list is already filtered via the TextField's onChanged.
-      // Just hide the keyboard so they can see the results.
       _barcodeFocus.unfocus();
     }
   }
@@ -115,250 +93,84 @@ class _PosScreenState extends State<PosScreen> {
   void _adjustQty(String id, int delta) => setState(() {
     final idx = _cart.indexWhere((c) => c.productId == id);
     if (idx < 0) return;
-    
     final products = context.read<InventoryProvider>().products;
-    final stock = products.firstWhere((p) => p.id == id, orElse: () => throw 'Product not found').stock;
-
+    final stock = products.firstWhere((p) => p.id == id).stock;
     _cart[idx] = _cart[idx].copyWith(qty: (_cart[idx].qty + delta).clamp(1, stock));
   });
 
   Future<void> _completeSale() async {
     final inventory = context.read<InventoryProvider>();
-    
-    // Check if store is closed
-    if (inventory.settings.effectivelyClosed) {
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Store is CLOSED'),
-          content: const Text('The store is currently marked as CLOSED or scheduled to be closed. Do you still want to process this walk-in sale?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Proceed Anyway')),
-          ],
-        ),
-      );
-      if (proceed != true) return;
-    }
-
-    if (_cart.isEmpty) return;
-    if (_cashNum < _total) return;
-
-    // Safety Warning for important action
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Complete Transaction?'),
-        content: Text(
-          'Total: ${formatPeso(_total)}\n'
-          'Cash: ${formatPeso(_cashNum)}\n'
-          'Change: ${formatPeso(_change)}'
-          '${_selectedCustomer != null ? "\nCustomer: ${_selectedCustomer?.name}" : ""}'
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Go Back')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirm Sale')),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
+    if (_cart.isEmpty || _cashNum < _total) return;
     try {
-      final inventory = context.read<InventoryProvider>();
       final products = inventory.products;
-      
-      // Map cart items to their effective prices (handling wholesale)
       final items = _cart.map((item) {
         final p = products.firstWhere((p) => p.id == item.productId);
-        final bool isWholesale = p.wholesalePrice != null && 
-                               p.wholesaleThreshold != null && 
-                               item.qty >= p.wholesaleThreshold!;
+        final bool isWholesale = p.wholesalePrice != null && item.qty >= (p.wholesaleThreshold ?? 999);
         return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
       }).toList();
-
-      final total = _total;
-      final cash = _cashNum;
-      final change = _change;
+      final total = _total; final cash = _cashNum; final change = _change;
       final pointsRedeemed = (_redeemPoints && _selectedCustomer != null) ? _selectedCustomer!.loyaltyPoints : 0;
-
+      await inventory.completeSale(items, cash, customerId: _selectedCustomer?.id, customerEmail: _selectedCustomer?.email, pointsRedeemed: pointsRedeemed);
       final printer = context.read<PrinterProvider>();
-
-      await inventory.completeSale(
-        items, 
-        cash,
-        customerId: _selectedCustomer?.id,
-        customerEmail: _selectedCustomer?.email,
-        pointsRedeemed: pointsRedeemed,
-        paymentMethod: PaymentMethod.cash,
-      );
-      
-      if (!mounted) return;
-
-      // Auto-print if printer is connected
-      if (printer.connected) {
-        printer.printReceipt(
-          items: items,
-          total: total,
-          cash: cash,
-          change: change,
-        );
-      }
-
+      if (printer.connected) printer.printReceipt(items: items, total: total, cash: cash, change: change);
       setState(() { 
-        _lastItems = items;
-        _lastTotal = total;
-        _lastCash = cash;
-        _lastChange = change;
-        _cart.clear(); 
-        _cash = ''; 
-        _cashCtrl.clear();
-        _selectedCustomer = null;
-        _done = true; 
+        _lastItems = items; _lastTotal = total; _lastCash = cash; _lastChange = change;
+        _cart.clear(); _cash = ''; _cashCtrl.clear(); _selectedCustomer = null; _done = true; 
       });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error completing sale: $e'), backgroundColor: Colors.red),
-      );
-    }
+    } catch (e) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'))); }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_done) {
-      return _ReceiptScreen(
-        items: _lastItems,
-        total: _lastTotal,
-        cash: _lastCash,
-        change: _lastChange,
-        onNewSale: () => setState(() => _done = false),
-      );
-    }
+    if (_done) return _ReceiptScreen(items: _lastItems, total: _lastTotal, cash: _lastCash, change: _lastChange, onNewSale: () => setState(() => _done = false));
 
     final inventory = context.watch<InventoryProvider>();
     final products  = inventory.sortedProducts;
     final isTablet  = MediaQuery.of(context).size.width >= 600;
 
-    return Column(
-      children: [
-        // ── Unified Search & Scan Header ───────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _barcodeCtrl,
-                  focusNode: _barcodeFocus,
-                  onSubmitted: (v) => _onBarcodeSubmit(v, products),
-                  onChanged: (_) => setState(() {}), // Trigger real-time filtering
-                  decoration: InputDecoration(
-                    hintText: 'Scan or search products…',
-                    prefixIcon: const Icon(Icons.qr_code_scanner),
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_barcodeCtrl.text.isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () => setState(() {
-                              _barcodeCtrl.clear();
-                              _barcodeFocus.requestFocus();
-                            }),
-                          ),
-                        IconButton(
-                          icon: const Icon(Icons.camera_alt_outlined),
-                          onPressed: () => _scanCamera(products),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        Expanded(child: _buildSaleBody(isTablet, products)),
-      ],
-    );
-  }
-
-  Future<void> _scanCamera(List<Product> products) async {
-    final code = await showDialog<String>(
-      context: context,
-      builder: (ctx) => const ScannerDialog(),
-    );
-    if (code != null) {
-      _onBarcodeSubmit(code, products);
-    }
-  }
-
-  Widget _buildSaleBody(bool isTablet, List<Product> products) {
-    // Filter products based on the search/barcode text if it's not a direct match
     final query = _barcodeCtrl.text.toLowerCase();
     final filtered = products
-        .where((p) => p.stock > 0)
-        .where((p) => p.name.toLowerCase().contains(query) || 
-                      (p.barcode != null && p.barcode!.contains(query)))
+        .where((p) => p.stock > 0 && p.status == ProductStatus.published)
+        .where((p) => p.name.toLowerCase().contains(query) || (p.barcode?.contains(query) ?? false))
         .toList();
 
-    if (isTablet) {
-      return Row(children: [
-        Expanded(child: _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle)),
-        SizedBox(width: 300,
-            child: _CartPanel(
-              cart: _cart, cash: _cash, cashCtrl: _cashCtrl,
-              total: _total, cashNum: _cashNum, change: _change,
-              products: products,
-              selectedCustomer: _selectedCustomer,
-              redeemPoints: _redeemPoints,
-              isSeniorPWD: _isSeniorPWD,
-              onCash: (v) => setState(() => _cash = v),
-              onAdjust:   _adjustQty,
-              onRemove:   (id) => setState(() => _cart.removeWhere((c) => c.productId == id)),
-              onComplete: _completeSale,
-              onSelectCustomer: (c) => setState(() => _selectedCustomer = c),
-              onRedeemPoints: (v) => setState(() => _redeemPoints = v),
-              onSeniorToggle: (v) => setState(() => _isSeniorPWD = v),
-            )),
-      ]);
-    }
-
-    return Column(children: [
-      Expanded(child: _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle)),
-      if (_cart.isNotEmpty)
-        GestureDetector(
-          onVerticalDragUpdate: (_) {}, // Prevent accidental swipes
-          child: Container(
-            // Set a fixed height that works on most phones (approx 60% of screen)
-            height: MediaQuery.of(context).size.height * 0.6,
-            child: _CartPanel(
-              cart: _cart, cash: _cash, cashCtrl: _cashCtrl,
-              total: _total, cashNum: _cashNum, change: _change,
-              products: products,
-              selectedCustomer: _selectedCustomer,
-              redeemPoints: _redeemPoints,
-              isSeniorPWD: _isSeniorPWD,
-              onCash: (v) => setState(() => _cash = v),
-              onAdjust:   _adjustQty,
-              onRemove:   (id) => setState(() => _cart.removeWhere((c) => c.productId == id)),
-              onComplete: _completeSale,
-              onSelectCustomer: (c) => setState(() => _selectedCustomer = c),
-              onRedeemPoints: (v) => setState(() => _redeemPoints = v),
-              onSeniorToggle: (v) => setState(() => _isSeniorPWD = v),
-            ),
-          ),
-        ),
-    ]);
+    return Scaffold(
+      body: Column(children: [
+        Padding(padding: const EdgeInsets.all(12), child: TextField(
+            controller: _barcodeCtrl, focusNode: _barcodeFocus, onSubmitted: (v) => _onBarcodeSubmit(v, products),
+            onChanged: (_) => setState(() {}), decoration: InputDecoration(hintText: 'Scan or search...', prefixIcon: const Icon(Icons.qr_code_scanner), isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              suffixIcon: IconButton(icon: const Icon(Icons.camera_alt_outlined), onPressed: () async {
+                  final code = await showDialog<String>(context: context, builder: (_) => const ScannerDialog());
+                  if (code != null) _onBarcodeSubmit(code, products);
+                })))),
+        Expanded(child: isTablet 
+            ? Row(children: [
+                Expanded(child: _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle)),
+                SizedBox(width: 320, child: _CartPanel(cart: _cart, cash: _cash, cashCtrl: _cashCtrl, total: _total, cashNum: _cashNum, change: _change, products: products, selectedCustomer: _selectedCustomer, redeemPoints: _redeemPoints, isSeniorPWD: _isSeniorPWD, onCash: (v) => setState(() => _cash = v), onAdjust: _adjustQty, onRemove: (id) => setState(() => _cart.removeWhere((c) => c.productId == id)), onComplete: _completeSale, onSelectCustomer: (c) => setState(() => _selectedCustomer = c), onRedeemPoints: (v) => setState(() => _redeemPoints = v), onSeniorToggle: (v) => setState(() => _isSeniorPWD = v))),
+              ])
+            : Stack(children: [
+                _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle),
+                if (_cart.isNotEmpty)
+                  DraggableScrollableSheet(
+                    initialChildSize: 0.18, // Increased peek size to avoid overflow
+                    minChildSize: 0.1, 
+                    maxChildSize: 0.95, 
+                    snap: true, 
+                    snapSizes: const [0.18, 0.6, 0.95],
+                    builder: (ctx, sc) => _CartPanel(
+                      cart: _cart, cash: _cash, cashCtrl: _cashCtrl, total: _total, cashNum: _cashNum, change: _change,
+                      products: products, selectedCustomer: _selectedCustomer, redeemPoints: _redeemPoints, isSeniorPWD: _isSeniorPWD,
+                      onCash: (v) => setState(() => _cash = v), onAdjust: _adjustQty, onRemove: (id) => setState(() => _cart.removeWhere((c) => c.productId == id)),
+                      onComplete: _completeSale, onSelectCustomer: (c) => setState(() => _selectedCustomer = c),
+                      onRedeemPoints: (v) => setState(() => _redeemPoints = v), onSeniorToggle: (v) => setState(() => _isSeniorPWD = v),
+                      scrollController: sc,
+                    ),
+                  ),
+              ])),
+      ]),
+    );
   }
 }
-
-// ── Product grid ───────────────────────────────────────────────────────────
-
 
 class _ProductGrid extends StatefulWidget {
   final List<Product> products;
@@ -370,583 +182,114 @@ class _ProductGrid extends StatefulWidget {
 
 class _ProductGridState extends State<_ProductGrid> {
   String _cat = 'All';
-
   @override
   Widget build(BuildContext context) {
-    final inventory = context.watch<InventoryProvider>();
-    final masterCats = inventory.settings.masterCategories;
-    final cats = ['All', ...masterCats];
-    
-    final filtered = widget.products
-        .where((p) => _cat == 'All' || p.category == _cat)
-        .where((p) => p.status == ProductStatus.published) // Only show published
-        .toList();
-
+    final cats = ['All', ...context.watch<InventoryProvider>().settings.masterCategories];
+    final filtered = widget.products.where((p) => _cat == 'All' || p.category == _cat).toList();
     return Column(children: [
-      SizedBox(height: 52, child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          itemCount: cats.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (_, i) => FilterChip(
-              label: Text(cats[i], style: const TextStyle(fontSize: 12)),
-              selected: _cat == cats[i],
-              onSelected: (_) => setState(() => _cat = cats[i])))),
-      Expanded(
-        child: filtered.isEmpty 
-          ? Center(child: Text('No visible products in $_cat', style: const TextStyle(color: Colors.grey)))
-          : GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 160, childAspectRatio: 0.82,
-                  crossAxisSpacing: 8, mainAxisSpacing: 8),
-              itemCount: filtered.length,
-              itemBuilder: (_, i) {
-                final p      = filtered[i];
-                final inCart = widget.cart.any((c) => c.productId == p.id);
+      SizedBox(height: 52, child: ListView.separated(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), itemCount: cats.length, separatorBuilder: (_, __) => const SizedBox(width: 8), itemBuilder: (_, i) => FilterChip(label: Text(cats[i], style: const TextStyle(fontSize: 12)), selected: _cat == cats[i], onSelected: (_) => setState(() => _cat = cats[i])))),
+      Expanded(child: GridView.builder(padding: const EdgeInsets.fromLTRB(12, 12, 12, 80), // Extra bottom padding for sheet peek
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, childAspectRatio: 0.8, crossAxisSpacing: 8, mainAxisSpacing: 8), itemCount: filtered.length, itemBuilder: (_, i) {
+                final p = filtered[i]; final inCart = widget.cart.any((c) => c.productId == p.id);
                 return _PosProductTile(p: p, inCart: inCart, onToggle: () => widget.onToggle(p));
-              }),
-      ),
+              })),
     ]);
   }
 }
 
 class _PosProductTile extends StatelessWidget {
-  final Product p;
-  final bool inCart;
-  final VoidCallback onToggle;
+  final Product p; final bool inCart; final VoidCallback onToggle;
   const _PosProductTile({required this.p, required this.inCart, required this.onToggle});
-
   @override
   Widget build(BuildContext context) {
     final isLow = p.stock <= p.lowStockThreshold;
-
-    // Calculate effective price for display
-    double effectivePrice = p.price;
-    if (p.discountPercentage > 0) {
-      effectivePrice -= (p.price * (p.discountPercentage / 100));
-    }
-    effectivePrice -= p.discountFixed;
-    
-    return GestureDetector(
-      onTap: onToggle,
-      child: Container(
-        decoration: BoxDecoration(
-          color: inCart ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.05) : Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: inCart ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
-            width: inCart ? 2 : 1,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(
-            child: Container(
-              width: double.infinity,
-              color: Colors.grey.shade50,
-              child: p.photoBase64 != null
-                ? Image.memory(base64Decode(p.photoBase64!), fit: BoxFit.cover)
-                : Icon(Icons.inventory_2_outlined, color: Colors.grey.shade200, size: 32),
-            ),
-          ),
-          Padding(padding: const EdgeInsets.all(8), child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(p.name,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, height: 1.1),
-                maxLines: 2, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (p.discountPercentage > 0 || p.discountFixed > 0)
-                      Text(formatPeso(p.price),
-                          style: const TextStyle(fontSize: 9, color: Colors.grey, decoration: TextDecoration.lineThrough, fontWeight: FontWeight.w600)),
-                    Text(formatPeso(effectivePrice),
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w900, fontSize: 13)),
-                  ],
-                ),
-                if (isLow)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text('${p.stock}',
-                        style: TextStyle(fontSize: 9,
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.w900)),
-                  )
-                else
-                  Text('${p.stock}', style: TextStyle(fontSize: 9, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5))),
-              ],
-            ),
+    return GestureDetector(onTap: onToggle, child: Container(decoration: BoxDecoration(color: inCart ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3) : Theme.of(context).colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(16), border: Border.all(color: inCart ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline.withOpacity(0.2))), clipBehavior: Clip.antiAlias, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Container(width: double.infinity, color: Colors.white, child: p.photoBase64 != null ? Image.memory(base64Decode(p.photoBase64!), fit: BoxFit.cover) : const Icon(Icons.inventory_2_outlined, size: 32))),
+          Padding(padding: const EdgeInsets.all(8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Text(formatPeso(p.price), style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 12)), Text('${p.stock}', style: TextStyle(fontSize: 10, color: isLow ? Colors.red : Colors.grey))]),
           ])),
-        ]),
-      ),
-    );
+        ])));
   }
 }
-
-// ── Cart panel ─────────────────────────────────────────────────────────────
 
 class _CartPanel extends StatelessWidget {
-  final List<CartItem> cart;
-  final String cash;
-  final TextEditingController cashCtrl;
-  final double total, cashNum, change;
-  final List<Product> products;
-  final Customer? selectedCustomer;
-  final ValueChanged<String> onCash;
-  final void Function(String, int) onAdjust;
-  final ValueChanged<String> onRemove;
-  final VoidCallback onComplete;
-  final ValueChanged<Customer?> onSelectCustomer;
+  final List<CartItem> cart; final String cash; final TextEditingController cashCtrl; final double total, cashNum, change; final List<Product> products; final Customer? selectedCustomer; final ValueChanged<String> onCash; final void Function(String, int) onAdjust; final ValueChanged<String> onRemove; final VoidCallback onComplete; final ValueChanged<Customer?> onSelectCustomer; final ScrollController? scrollController; final bool redeemPoints, isSeniorPWD; final ValueChanged<bool> onRedeemPoints, onSeniorToggle;
 
-  final bool redeemPoints;
-  final bool isSeniorPWD;
-  final ValueChanged<bool> onRedeemPoints;
-  final ValueChanged<bool> onSeniorToggle;
-
-  const _CartPanel({
-    required this.cart, required this.cash, required this.cashCtrl,
-    required this.total, required this.cashNum, required this.change,
-    required this.products,
-    required this.selectedCustomer,
-    required this.redeemPoints,
-    required this.isSeniorPWD,
-    required this.onCash, required this.onAdjust,
-    required this.onRemove, required this.onComplete,
-    required this.onSelectCustomer,
-    required this.onRedeemPoints,
-    required this.onSeniorToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.05),
-          blurRadius: 20,
-          offset: const Offset(0, -5),
-        )
-      ],
-    ),
-    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-    child: Column(
-      children: [
-        Container(
-          width: 40, height: 4,
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Your Cart', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
-            if (cart.isNotEmpty)
-              Text('${cart.length} items', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 13)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (cart.isEmpty)
-          const Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.shopping_bag_outlined, color: Colors.grey, size: 64),
-                const SizedBox(height: 12),
-                Text('Cart is empty', style: TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          )
-        else ...[
-          // ── Scrollable Cart Items ──────────────────────────────────────────
-          Expanded(
-            child: Scrollbar(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: cart.length,
-                separatorBuilder: (_, __) => const Divider(height: 16, thickness: 0.5),
-                itemBuilder: (ctx, i) {
-                  final item = cart[i];
-                  final products = context.read<InventoryProvider>().products;
-                  final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
-                  final stock = product.stock;
-                  
-                  final bool isWholesale = product.wholesalePrice != null && 
-                                         product.wholesaleThreshold != null && 
-                                         item.qty >= product.wholesaleThreshold!;
-                  
-                  final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
-
-                  return Row(children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(item.name,
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Text(formatPeso(effectivePrice),
-                                  style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                              if (isWholesale) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                                  child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    QtyControl(
-                        qty: item.qty,
-                        max: stock,
-                        onChanged: (n) => onAdjust(item.productId, n - item.qty)),
-                    const SizedBox(width: 12),
-                    Text(formatPeso(effectivePrice * item.qty),
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
-                    IconButton(
-                        onPressed: () => onRemove(item.productId),
-                        icon: Icon(Icons.close_rounded, size: 18, color: Colors.red.shade200),
-                        padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-                  ]);
-                },
-              ),
-            ),
-          ),
-          
-          const Divider(height: 12),
-
-          // ── Fixed Payment Section ──────────────────────────────────────────
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                Text(formatPeso(total),
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: Theme.of(context).colorScheme.primary)),
-              ]),
-              const SizedBox(height: 10),
-              
-              // Rewards & Senior Buttons (Row)
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => _showCustomerPicker(context),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
-                        child: Row(children: [
-                          Icon(Icons.stars_rounded, size: 14, color: selectedCustomer != null ? Colors.amber : Colors.grey),
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(selectedCustomer?.name ?? 'Rewards', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-                        ]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => onSeniorToggle(!isSeniorPWD),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(border: Border.all(color: isSeniorPWD ? Colors.blue : Colors.grey.shade300), color: isSeniorPWD ? Colors.blue.shade50 : null, borderRadius: BorderRadius.circular(10)),
-                        child: Row(children: [
-                          Icon(Icons.badge_outlined, size: 14, color: isSeniorPWD ? Colors.blue : Colors.grey),
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(isSeniorPWD ? 'Senior ON' : 'Senior/PWD', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSeniorPWD ? Colors.blue : null))),
-                        ]),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              if (selectedCustomer != null && selectedCustomer!.loyaltyPoints >= 10)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: InkWell(
-                    onTap: () => onRedeemPoints(!redeemPoints),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            height: 18, width: 18,
-                            child: Checkbox(
-                              visualDensity: VisualDensity.compact,
-                              value: redeemPoints, 
-                              onChanged: (v) => onRedeemPoints(v ?? false),
-                              activeColor: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text('Redeem ${selectedCustomer!.loyaltyPoints} points (-${formatPeso(selectedCustomer!.loyaltyPoints.toDouble())})', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 12),
-              
-              // Cash Input & Pay (Compact Row)
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: cashCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      onChanged: onCash,
-                      decoration: InputDecoration(
-                        labelText: 'Cash',
-                        prefixText: '₱ ',
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        suffixIcon: cash.isNotEmpty ? IconButton(
-                          icon: const Icon(Icons.clear, size: 16),
-                          onPressed: () { cashCtrl.clear(); onCash(''); },
-                        ) : null,
-                      ),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed: cashNum >= total ? onComplete : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                        minimumSize: const Size(0, 44),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: const Text('PAY', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-                    ),
-                  ),
-                ],
-              ),
-              
-              // Quick Cash
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 28,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [50, 100, 200, 500, 1000].map((amt) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: OutlinedButton(
-                        onPressed: () {
-                          final current = double.tryParse(cash) ?? 0;
-                          final newVal = current + amt;
-                          cashCtrl.text = newVal.toStringAsFixed(0);
-                          onCash(cashCtrl.text);
-                        },
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: const Size(50, 28),
-                          side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        ),
-                        child: Text('+$amt', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              if (cashNum >= total)
-                Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600)),
-                        Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 16)),
-                      ],
-                    )),
-            ],
-          ),
-        ],
-      ]
-    ),
-  );
-
-  void _showCustomerPicker(BuildContext context) async {
-    final inventory = context.read<InventoryProvider>();
-    final customers = inventory.customers;
-
-    final res = await showDialog<Customer>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Select Customer'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: customers.length,
-            itemBuilder: (context, i) => ListTile(
-              leading: Icon(Icons.stars_rounded, color: Theme.of(context).colorScheme.primary),
-              title: Text(customers[i].name),
-              subtitle: Text('Points: ${customers[i].loyaltyPoints}'),
-              onTap: () => Navigator.pop(ctx, customers[i]),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        ],
-      ),
-    );
-    if (res != null) {
-      onSelectCustomer(res);
-    }
-  }
-}
-
-// ── Receipt / done screen ──────────────────────────────────────────────────
-
-class _ReceiptScreen extends StatelessWidget {
-  final List<CartItem> items;
-  final double total, cash, change;
-  final VoidCallback onNewSale;
-  
-  const _ReceiptScreen({
-    required this.items,
-    required this.total,
-    required this.cash,
-    required this.change,
-    required this.onNewSale
-  });
+  const _CartPanel({required this.cart, required this.cash, required this.cashCtrl, required this.total, required this.cashNum, required this.change, required this.products, required this.selectedCustomer, required this.redeemPoints, required this.isSeniorPWD, required this.onCash, required this.onAdjust, required this.onRemove, required this.onComplete, required this.onSelectCustomer, required this.onRedeemPoints, required this.onSeniorToggle, this.scrollController});
 
   @override
   Widget build(BuildContext context) {
-    final printer = context.watch<PrinterProvider>();
-    
-    return Center(child: Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.check_circle, color: GdcColors.successLight, size: 72),
-        const SizedBox(height: 16),
-        Text('Sale Complete!',
-            style: Theme.of(context).textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Text('Transaction saved to Firebase',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 20),
-        
-        // Item Summary in Receipt
-        Container(
-          constraints: const BoxConstraints(maxHeight: 200),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
-          ),
-          child: ListView.separated(
-            padding: const EdgeInsets.all(16),
-            shrinkWrap: true,
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 12),
-            itemBuilder: (_, i) => Row(
-              children: [
-                Expanded(child: Text(items[i].name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-                Text('x${items[i].qty}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(width: 12),
-                Text(formatPeso(items[i].price * items[i].qty), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('TOTAL PAID', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-            Text(formatPeso(total), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)),
+    return LayoutBuilder(builder: (context, constraints) {
+      final isPeek = constraints.maxHeight < 200; // Adjusted threshold
+      return Container(
+        decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: const BorderRadius.vertical(top: Radius.circular(32)), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: const Offset(0, -5))]),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: Column(children: [
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 8), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Your Cart', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
+              Text('${cart.length} items', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            ])),
+            Text(formatPeso(total), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Theme.of(context).colorScheme.primary)),
+          ]),
+          if (!isPeek) ...[
+            const SizedBox(height: 8),
+            Expanded(child: ListView.separated(
+              controller: scrollController, itemCount: cart.length,
+              separatorBuilder: (_, __) => const Divider(height: 12),
+              itemBuilder: (ctx, i) {
+                final item = cart[i]; final product = products.firstWhere((p) => p.id == item.productId);
+                return Row(children: [
+                  Expanded(child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  QtyControl(qty: item.qty, max: product.stock, onChanged: (n) => onAdjust(item.productId, n - item.qty)),
+                  const SizedBox(width: 8),
+                  Text(formatPeso(item.price * item.qty), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  IconButton(onPressed: () => onRemove(item.productId), icon: const Icon(Icons.close, size: 18, color: Colors.red)),
+                ]);
+              },
+            )),
+            const Divider(height: 16),
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(child: OutlinedButton.icon(onPressed: () => _showCustomerPicker(context), icon: const Icon(Icons.person, size: 14), label: Text(selectedCustomer?.name ?? 'Customer', style: const TextStyle(fontSize: 10)))),
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton.icon(onPressed: () => onSeniorToggle(!isSeniorPWD), icon: const Icon(Icons.badge, size: 14), label: Text(isSeniorPWD ? 'Senior ON' : 'Discount', style: const TextStyle(fontSize: 10)))),
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(flex: 3, child: TextField(controller: cashCtrl, keyboardType: TextInputType.number, onChanged: onCash, decoration: const InputDecoration(labelText: 'Cash', prefixText: '₱ ', isDense: true))),
+                const SizedBox(width: 8),
+                Expanded(flex: 2, child: ElevatedButton(onPressed: cashNum >= total ? onComplete : null, child: const Text('PAY'))),
+              ]),
+              if (cashNum >= total) Padding(padding: const EdgeInsets.only(top: 8), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Change:', style: TextStyle(fontSize: 11)), Text(formatPeso(change), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green))])),
+            ]),
           ],
-        ),
-        
-        if (total >= 100) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-            child: Text('+${(total / 100).floor()} Loyalty Points Earned', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13)),
-          ),
-        ],
-        const SizedBox(height: 32),
-        
-        if (printer.connected)
-          ElevatedButton.icon(
-            onPressed: () => printer.printReceipt(
-              items: items, 
-              total: total, 
-              cash: cash, 
-              change: change
-            ), 
-            icon: const Icon(Icons.print),
-            label: const Text('PRINT RECEIPT'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue.shade700,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(52),
-            ),
-          )
-        else
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.shade200),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.warning_amber, color: Colors.orange),
-                SizedBox(width: 12),
-                Expanded(child: Text('Printer not connected. Connect in the top menu to print receipts.', style: TextStyle(fontSize: 12))),
-              ],
-            ),
-          ),
-          
-        const SizedBox(height: 16),
-        OutlinedButton(
-            onPressed: onNewSale, 
-            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-            child: const Text('NEW TRANSACTION'),
-        ),
-      ],
-      ),
-    ));
+        ]),
+      );
+    });
   }
+
+  void _showCustomerPicker(BuildContext context) async {
+    final customers = context.read<InventoryProvider>().customers;
+    final res = await showDialog<Customer>(context: context, builder: (ctx) => AlertDialog(title: const Text('Select Customer'), content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: customers.length, itemBuilder: (_, i) => ListTile(title: Text(customers[i].name), subtitle: Text('${customers[i].loyaltyPoints} pts'), onTap: () => Navigator.pop(ctx, customers[i])))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'))]));
+    if (res != null) onSelectCustomer(res);
+  }
+}
+
+class _ReceiptScreen extends StatelessWidget {
+  final List<CartItem> items; final double total, cash, change; final VoidCallback onNewSale;
+  const _ReceiptScreen({required this.items, required this.total, required this.cash, required this.change, required this.onNewSale});
+  @override
+  Widget build(BuildContext context) => Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+    const Icon(Icons.check_circle, color: Colors.green, size: 64),
+    const Text('Sale Complete!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+    const SizedBox(height: 20),
+    Container(constraints: const BoxConstraints(maxHeight: 200), decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(12)), child: ListView.builder(shrinkWrap: true, itemCount: items.length, itemBuilder: (_, i) => ListTile(dense: true, title: Text(items[i].name), trailing: Text(formatPeso(items[i].price * items[i].qty))))),
+    const SizedBox(height: 20),
+    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total Paid'), Text(formatPeso(total), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18))]),
+    const SizedBox(height: 32),
+    ElevatedButton(onPressed: onNewSale, style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)), child: const Text('NEW SALE')),
+  ])));
 }
