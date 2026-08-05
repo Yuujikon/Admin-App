@@ -334,7 +334,8 @@ class _PosScreenState extends State<PosScreen> {
         GestureDetector(
           onVerticalDragUpdate: (_) {}, // Prevent accidental swipes
           child: Container(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+            // Set a fixed height that works on most phones (approx 60% of screen)
+            height: MediaQuery.of(context).size.height * 0.6,
             child: _CartPanel(
               cart: _cart, cash: _cash, cashCtrl: _cashCtrl,
               total: _total, cashNum: _cashNum, change: _change,
@@ -541,249 +542,261 @@ class _CartPanel extends StatelessWidget {
         )
       ],
     ),
-    padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        width: 40, height: 4,
-        margin: const EdgeInsets.only(bottom: 20),
-        decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(2)),
-      ),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Your Cart', style: Theme.of(context).textTheme.titleLarge),
-          if (cart.isNotEmpty)
-            Text('${cart.length} items', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600, fontSize: 12)),
-        ],
-      ),
-      const SizedBox(height: 16),
-      if (cart.isEmpty)
-        const Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.shopping_bag_outlined, color: Colors.grey, size: 80),
-              const SizedBox(height: 12),
-              Text('Cart is empty', style: TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.w600)),
-            ],
-          ),
-        )
-      else ...[
-        // ── Scrollable Cart Items ──────────────────────────────────────────
-        Expanded(
-          child: ListView.separated(
-            padding: EdgeInsets.zero,
-            itemCount: cart.length,
-            separatorBuilder: (_, __) => const Divider(height: 16, thickness: 0.5),
-            itemBuilder: (ctx, i) {
-              final item = cart[i];
-              final products = context.read<InventoryProvider>().products;
-              final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
-              final stock = product.stock;
-              
-              final bool isWholesale = product.wholesalePrice != null && 
-                                     product.wholesaleThreshold != null && 
-                                     item.qty >= product.wholesaleThreshold!;
-              
-              final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
-
-              return Row(children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.name,
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Text(formatPeso(effectivePrice),
-                              style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                          if (isWholesale) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                              child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                QtyControl(
-                    qty: item.qty,
-                    max: stock,
-                    onChanged: (n) => onAdjust(item.productId, n - item.qty)),
-                const SizedBox(width: 8),
-                Text(formatPeso(effectivePrice * item.qty),
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
-                const SizedBox(width: 4),
-                IconButton(
-                    onPressed: () => onRemove(item.productId),
-                    icon: Icon(Icons.remove_circle_outline, size: 18, color: Colors.red.shade300),
-                    padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-              ]);
-            },
-          ),
+    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+    child: Column(
+      children: [
+        Container(
+          width: 40, height: 4,
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
         ),
-        
-        const Divider(height: 16),
-
-        // ── Fixed Payment Section ──────────────────────────────────────────
-        Column(
-          mainAxisSize: MainAxisSize.min,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              Text(formatPeso(total),
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Theme.of(context).colorScheme.primary)),
-            ]),
-            const SizedBox(height: 12),
-            
-            // Rewards & Senior Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showCustomerPicker(context),
-                    icon: Icon(Icons.stars_rounded, size: 16, color: selectedCustomer != null ? Theme.of(context).colorScheme.primary : Colors.grey),
-                    label: Text(selectedCustomer?.name ?? 'Rewards', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => onSeniorToggle(!isSeniorPWD),
-                    icon: Icon(Icons.badge_outlined, size: 16, color: isSeniorPWD ? Colors.blue : Colors.grey),
-                    label: Text(isSeniorPWD ? 'Senior Applied' : 'Senior/PWD', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      side: isSeniorPWD ? const BorderSide(color: Colors.blue) : null,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            if (selectedCustomer != null && selectedCustomer!.loyaltyPoints >= 10)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: InkWell(
-                  onTap: () => onRedeemPoints(!redeemPoints),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        height: 24, width: 24,
-                        child: Checkbox(
-                          value: redeemPoints, 
-                          onChanged: (v) => onRedeemPoints(v ?? false),
-                          activeColor: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text('Redeem ${selectedCustomer!.loyaltyPoints} points (-${formatPeso(selectedCustomer!.loyaltyPoints.toDouble())})', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                    ],
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 12),
-            
-            // Cash Input
-            Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: cashCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: onCash,
-                    decoration: InputDecoration(
-                      labelText: 'Cash Received',
-                      prefixText: '₱ ',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      suffixIcon: cash.isNotEmpty ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          cashCtrl.clear();
-                          onCash('');
-                        },
-                      ) : null,
-                    ),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: cashNum >= total ? onComplete : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('PAY', style: TextStyle(fontWeight: FontWeight.w900)),
-                  ),
-                ),
-              ],
-            ),
-            
-            // Quick Cash
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 28,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [50, 100, 200, 500, 1000].map((amt) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: OutlinedButton(
-                      onPressed: () {
-                        final current = double.tryParse(cash) ?? 0;
-                        final newVal = current + amt;
-                        cashCtrl.text = newVal.toStringAsFixed(0);
-                        onCash(cashCtrl.text);
-                      },
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: const Size(50, 28),
-                        side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      child: Text('+$amt', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-
-            if (cashNum >= total)
-              Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600)),
-                      Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 16)),
-                    ],
-                  )),
+            Text('Your Cart', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+            if (cart.isNotEmpty)
+              Text('${cart.length} items', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 13)),
           ],
         ),
+        const SizedBox(height: 12),
+        if (cart.isEmpty)
+          const Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.shopping_bag_outlined, color: Colors.grey, size: 64),
+                const SizedBox(height: 12),
+                Text('Cart is empty', style: TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          )
+        else ...[
+          // ── Scrollable Cart Items ──────────────────────────────────────────
+          Expanded(
+            child: Scrollbar(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: cart.length,
+                separatorBuilder: (_, __) => const Divider(height: 16, thickness: 0.5),
+                itemBuilder: (ctx, i) {
+                  final item = cart[i];
+                  final products = context.read<InventoryProvider>().products;
+                  final product = products.firstWhere((p) => p.id == item.productId, orElse: () => throw 'Product not found');
+                  final stock = product.stock;
+                  
+                  final bool isWholesale = product.wholesalePrice != null && 
+                                         product.wholesaleThreshold != null && 
+                                         item.qty >= product.wholesaleThreshold!;
+                  
+                  final effectivePrice = isWholesale ? product.wholesalePrice! : item.price;
+
+                  return Row(children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.name,
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Text(formatPeso(effectivePrice),
+                                  style: TextStyle(fontSize: 12, color: isWholesale ? Colors.blue.shade700 : Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                              if (isWholesale) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                                  child: const Text('WHOLESALE', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.w900)),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    QtyControl(
+                        qty: item.qty,
+                        max: stock,
+                        onChanged: (n) => onAdjust(item.productId, n - item.qty)),
+                    const SizedBox(width: 12),
+                    Text(formatPeso(effectivePrice * item.qty),
+                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Theme.of(context).colorScheme.onSurface)),
+                    IconButton(
+                        onPressed: () => onRemove(item.productId),
+                        icon: Icon(Icons.close_rounded, size: 18, color: Colors.red.shade200),
+                        padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  ]);
+                },
+              ),
+            ),
+          ),
+          
+          const Divider(height: 12),
+
+          // ── Fixed Payment Section ──────────────────────────────────────────
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('Total Amount', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(formatPeso(total),
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: Theme.of(context).colorScheme.primary)),
+              ]),
+              const SizedBox(height: 10),
+              
+              // Rewards & Senior Buttons (Row)
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _showCustomerPicker(context),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
+                        child: Row(children: [
+                          Icon(Icons.stars_rounded, size: 14, color: selectedCustomer != null ? Colors.amber : Colors.grey),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(selectedCustomer?.name ?? 'Rewards', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                        ]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => onSeniorToggle(!isSeniorPWD),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(border: Border.all(color: isSeniorPWD ? Colors.blue : Colors.grey.shade300), color: isSeniorPWD ? Colors.blue.shade50 : null, borderRadius: BorderRadius.circular(10)),
+                        child: Row(children: [
+                          Icon(Icons.badge_outlined, size: 14, color: isSeniorPWD ? Colors.blue : Colors.grey),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(isSeniorPWD ? 'Senior ON' : 'Senior/PWD', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSeniorPWD ? Colors.blue : null))),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              if (selectedCustomer != null && selectedCustomer!.loyaltyPoints >= 10)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: InkWell(
+                    onTap: () => onRedeemPoints(!redeemPoints),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            height: 18, width: 18,
+                            child: Checkbox(
+                              visualDensity: VisualDensity.compact,
+                              value: redeemPoints, 
+                              onChanged: (v) => onRedeemPoints(v ?? false),
+                              activeColor: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text('Redeem ${selectedCustomer!.loyaltyPoints} points (-${formatPeso(selectedCustomer!.loyaltyPoints.toDouble())})', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 12),
+              
+              // Cash Input & Pay (Compact Row)
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: cashCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: onCash,
+                      decoration: InputDecoration(
+                        labelText: 'Cash',
+                        prefixText: '₱ ',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        suffixIcon: cash.isNotEmpty ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () { cashCtrl.clear(); onCash(''); },
+                        ) : null,
+                      ),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: cashNum >= total ? onComplete : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                        minimumSize: const Size(0, 44),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('PAY', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+                    ),
+                  ),
+                ],
+              ),
+              
+              // Quick Cash
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 28,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [50, 100, 200, 500, 1000].map((amt) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: OutlinedButton(
+                        onPressed: () {
+                          final current = double.tryParse(cash) ?? 0;
+                          final newVal = current + amt;
+                          cashCtrl.text = newVal.toStringAsFixed(0);
+                          onCash(cashCtrl.text);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(50, 28),
+                          side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: Text('+$amt', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+
+              if (cashNum >= total)
+                Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Change Due:', style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600)),
+                        Text(formatPeso(change), style: TextStyle(color: Theme.of(context).semantic.success, fontWeight: FontWeight.w900, fontSize: 16)),
+                      ],
+                    )),
+            ],
+          ),
+        ],
       ]
-    ]),
+    ),
   );
 
   void _showCustomerPicker(BuildContext context) async {
