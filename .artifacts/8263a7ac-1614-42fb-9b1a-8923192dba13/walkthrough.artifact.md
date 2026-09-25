@@ -1,23 +1,26 @@
-# POS UI Fixes and Optimization Walkthrough
+# Critical Stability and Logic Polish Walkthrough
 
-I have implemented critical UI and accessibility improvements to the POS screen to resolve overflow errors and improve the staff workflow.
+I have addressed the "Black Screen" crash in Restock Management, stabilized the Pre-Order loading UI, and finalized the flexible product validation.
 
 ## Changes Made
 
-### 1. Fixed POS Cart Overflow
-- **Restructured `_CartPanel`**: I've redesigned the Cart Panel layout to be much more robust. All secondary elements (Items, Customer selection, Discounts, and Pricing Breakdown) are now inside a single scrollable `ListView`.
-- **Fixed Layout**: This restructuring ensures that the "Bottom overflowed" error (which was blocking your buttons) is resolved. The items no longer push the "PAY" button off the screen.
-- **Initial Size**: Increased the starting height of the cart panel to **60%** of the screen so your items are visible immediately.
+### 1. Fixed Restock Management "Black Screen"
+- **Robust Grouping Logic**: Rewrote the supplier grouping and sorting logic with a `try-catch` wrapper and safer null-handling. The app will no longer crash if a supplier is missing or if data changes during a build.
+- **Improved UI State**: Integrated a `Consumer` to ensure the screen rebuilds cleanly when you update a supplier's email, and added clear "No email set" placeholders to keep the layout stable.
 
-### 2. Improved Reachability and Accessibility
-- **Sticky Footer**: The "Cash Received" input and "PAY" button are now pinned to the bottom of the cart panel.
-- **SafeArea & Padding**: Added proper bottom padding and `SafeArea` so buttons are easy to tap and not blocked by the phone's navigation bar.
-- **Taller Buttons**: Increased the size of the "PAY" and "NEW SALE" buttons to make them larger, easier targets for staff during busy hours.
+### 2. Stabilized Pre-Order Loading
+- **Removed Loading Flicker**: Updated the `StreamBuilder` logic in the Orders screen to only show the spinner on the very first load. Once the app has data, it will update seamlessly in the background without showing the "Connecting..." message or spinner again.
+- **Stream Resilience**: Confirmed the broadcast stream in `OrderProvider` is stable and properly initialized.
 
-### 3. Enhanced Receipt View
-- Increased the visible list height for finished sales from `200` to `400`. Staff can now review long orders at a glance without excessive scrolling.
+### 3. Finalized Flexible Product Validation
+- **Optional Barcodes**: Fully enabled the ability to save **new and existing products** without a barcode. This is perfect for bulk items like rice, eggs, or fresh goods.
+- **Strict-but-Fair Rules**: The app now only blocks saving if the **Name or Price** is missing. All other information is optional to ensure speed and flexibility for the admin.
+
+### 4. Centered & Topmost Alerts
+- **Always Visible**: All validation and error dialogs now use the **Root Navigator**. This ensures that no keyboard, bottom sheet, or other UI element can block or hide a warning.
 
 ## Verification Results
-- **Build**: Successfully ran `flutter build bundle --debug`.
-- **Visuals**: Verified via screenshot analysis that the previous "Bottom overflowed" error is addressed by the new scrollable structure.
-- **Performance**: The UI remains responsive even with many items in the cart.
+- **Build**: Successfully built the production-ready bundle.
+- **Crash Test**: Verified that updating supplier emails no longer causes a black screen in Restock Management.
+- **Load Test**: Confirmed that Pre-Orders load once and stay visible without flickering.
+- **Validation Test**: Successfully created products with no barcodes.

@@ -15,6 +15,7 @@ class ExpenseProvider extends ChangeNotifier {
   void initialize() {
     cancelSubscriptions();
     _subs.add(_fs.expensesStream().listen((list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _expenses = list;
       notifyListeners();
     }, onError: (e) => debugPrint('Expenses Stream Error: $e')));

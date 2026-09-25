@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,6 +11,7 @@ import 'providers/expense_provider.dart';
 import 'providers/printer_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/restock_provider.dart';
 import 'screens/staff_login_screen.dart';
 import 'screens/admin_pin_screen.dart';
 import 'screens/admin_app.dart';
@@ -18,14 +20,71 @@ import 'services/notification_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _bgHandler(RemoteMessage message) async {
+  final String recipient = message.data['recipient'] ?? '';
+  if (recipient == 'customer') return;
+
+  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await NotificationService.initializeBackground();
+  
+  final String title = message.notification?.title ?? message.data['title'] ?? 'Alert';
+  final String body = message.notification?.body ?? message.data['body'] ?? 'New notification received.';
+  
+  await NotificationService.showSmsNotificationPopUp(
+    title: title,
+    body: body,
+  );
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await NotificationService.initialize();
-  FirebaseMessaging.onBackgroundMessage(_bgHandler);
+
+  // Catch Flutter framework errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Flutter Error: ${details.exception}');
+  };
+
+  // Catch asynchronous errors outside Flutter framework
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    debugPrint('Uncaught Async Error: $error');
+    return true; // Mark handled
+  };
+
+  // Release mode graceful error builder
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.warning_amber_rounded, size: 48, color: Colors.orange),
+              SizedBox(height: 12),
+              Text('Something went wrong', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              SizedBox(height: 6),
+              Text('Please return to the previous screen or restart the app.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+        ),
+      ),
+    );
+  };
+  
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    
+    // Initialize notification service safely without blocking the main UI rendering frame
+    NotificationService.initialize().catchError((e) {
+      debugPrint('Notification Service Initialization Error: $e');
+    });
+    
+    FirebaseMessaging.onBackgroundMessage(_bgHandler);
+  } catch (e) {
+    debugPrint('Firebase Initialization Error: $e');
+  }
+  
   runApp(const GdcAdminApp());
 }
 
@@ -42,6 +101,7 @@ class GdcAdminApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => OrderProvider()),
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
         ChangeNotifierProvider(create: (_) => PrinterProvider()),
+        ChangeNotifierProvider(create: (_) => RestockProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) => MaterialApp(
@@ -81,11 +141,13 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
           context.read<InventoryProvider>().initialize();
           context.read<OrderProvider>().initialize();
           context.read<ExpenseProvider>().initialize();
+          context.read<RestockProvider>().initialize();
         } else {
           debugPrint('AuthGate: Cancelling subscriptions (Logout)');
           context.read<InventoryProvider>().cancelSubscriptions();
           context.read<OrderProvider>().cancelSubscriptions();
           context.read<ExpenseProvider>().cancelSubscriptions();
+          context.read<RestockProvider>().cancelSubscriptions();
         }
       });
     }

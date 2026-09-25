@@ -5,7 +5,6 @@ class Customer {
   final String name;
   final String? email; // NEW
   final String phone;
-  final int loyaltyPoints;
   final double totalSpent;
   final DateTime? lastVisit;
   final String notes;
@@ -16,7 +15,6 @@ class Customer {
     required this.name,
     this.email,
     required this.phone,
-    this.loyaltyPoints = 0,
     this.totalSpent = 0,
     this.lastVisit,
     this.notes = '',
@@ -29,7 +27,6 @@ class Customer {
       name: map['name'] ?? '',
       email: map['email'],
       phone: map['phone'] ?? '',
-      loyaltyPoints: (map['loyaltyPoints'] ?? 0).toInt(),
       totalSpent: (map['totalSpent'] ?? 0).toDouble(),
       lastVisit: (map['lastVisit'] as Timestamp?)?.toDate(),
       notes: map['notes'] ?? '',
@@ -42,7 +39,6 @@ class Customer {
       'name': name,
       'email': email,
       'phone': phone,
-      'loyaltyPoints': loyaltyPoints,
       'totalSpent': totalSpent,
       'lastVisit': lastVisit != null ? Timestamp.fromDate(lastVisit!) : null,
       'notes': notes,
@@ -50,13 +46,12 @@ class Customer {
     };
   }
 
-  Customer copyWith({String? name, String? email, String? phone, int? loyaltyPoints, double? totalSpent, DateTime? lastVisit, String? notes}) {
+  Customer copyWith({String? name, String? email, String? phone, double? totalSpent, DateTime? lastVisit, String? notes}) {
     return Customer(
       id: id,
       name: name ?? this.name,
       email: email ?? this.email,
       phone: phone ?? this.phone,
-      loyaltyPoints: loyaltyPoints ?? this.loyaltyPoints,
       totalSpent: totalSpent ?? this.totalSpent,
       lastVisit: lastVisit ?? this.lastVisit,
       notes: notes ?? this.notes,

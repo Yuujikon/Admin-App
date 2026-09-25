@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/inventory_provider.dart';
 import '../../models/store_settings.dart';
-import '../config/theme.dart';
 
 class CategoryManagementScreen extends StatelessWidget {
   const CategoryManagementScreen({super.key});
@@ -47,6 +46,7 @@ class CategoryManagementScreen extends StatelessWidget {
     final ctrl = TextEditingController();
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Add Category'),
         content: TextField(
@@ -90,6 +90,7 @@ class CategoryManagementScreen extends StatelessWidget {
   void _confirmDelete(BuildContext context, InventoryProvider inventory, StoreSettings settings, String cat) {
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Category?'),
         content: Text('Remove "$cat" from the master list? This won\'t delete products in this category, but they will become "Others".'),

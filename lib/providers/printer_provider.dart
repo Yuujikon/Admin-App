@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/order.dart';
 import '../utils/format.dart';
+import '../utils/pricing_engine.dart';
 
 class PrinterProvider extends ChangeNotifier {
   BluetoothInfo? _device;
@@ -84,7 +85,7 @@ class PrinterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _cleanPeso(String text) => text.replaceAll('₱', 'P');
+  String _cleanPeso(String text) => text.replaceAll('₱', 'P').replaceAll('\u20b1', 'P');
 
   // Helper to pad strings for manual left-right alignment (32 chars wide for 58mm)
   String _formatRow(String left, String right) {
@@ -93,59 +94,136 @@ class PrinterProvider extends ChangeNotifier {
     return left + (" " * space) + right;
   }
 
-  Future<void> printReceipt({
+  Future<bool> printReceipt({
     required List<CartItem> items,
     required double total,
     required double cash,
     required double change,
     String? orderId,
+    String? customerName,
+    String orderType = "In-store",
+    PricingBreakdown? breakdown,
   }) async {
-    bool isConnected = await PrintBluetoothThermal.connectionStatus;
-    if (!isConnected) return;
+    try {
+      final bool isBluetoothEnabled = await PrintBluetoothThermal.bluetoothEnabled;
+      if (!isBluetoothEnabled) {
+        debugPrint("Bluetooth is disabled");
+        return false;
+      }
 
-    List<int> bytes = [];
-    final profile = await CapabilityProfile.load();
-    final generator = Generator(PaperSize.mm58, profile);
+      bool isConnected = await PrintBluetoothThermal.connectionStatus;
+      if (!isConnected) {
+        debugPrint("Printer not connected, attempting to reconnect...");
+        // If we have a saved device, try one quick reconnect
+        if (_device != null) {
+          await PrintBluetoothThermal.connect(macPrinterAddress: _device!.macAdress)
+              .timeout(const Duration(seconds: 5), onTimeout: () => false);
+          isConnected = await PrintBluetoothThermal.connectionStatus;
+        }
+        
+        if (!isConnected) {
+          _connected = false;
+          notifyListeners();
+          return false;
+        }
+      }
 
-    bytes += generator.reset();
-    
-    // BASIC TEXT ONLY - HIGH COMPATIBILITY
-    bytes += generator.text("GDC SARI-SARI STORE", styles: const PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
-    
-    final date = DateFormat('MM/dd/yy HH:mm').format(DateTime.now());
-    bytes += generator.text("Date: $date");
-    if (orderId != null) {
-      bytes += generator.text("ID: ${orderId.length > 8 ? orderId.substring(0, 8) : orderId}");
+      List<int> bytes = [];
+      CapabilityProfile profile;
+      try {
+        profile = await CapabilityProfile.load();
+      } catch (e) {
+        debugPrint("Failed to load capability profile: $e");
+        // Fallback or rethrow? Let's try to proceed with default if possible
+        // Actually ESC/POS often works with a simple generator if profile fails
+        return false;
+      }
+      
+      final generator = Generator(PaperSize.mm58, profile);
+
+      bytes += generator.reset();
+      
+      // ── Header ───────────────────────────────────────────────────────────
+      bytes += generator.text("GDC SARI-SARI STORE", styles: const PosStyles(align: PosAlign.center, bold: true));
+      bytes += generator.text("123 Barangay St, City Name", styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text("Tel: (02) 888-1234", styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
+      
+      if (orderId != null) {
+        bytes += generator.text(_formatRow("Receipt #:", orderId.toUpperCase().substring(0, 8)));
+      }
+      // Only include customer name for Pre-Orders or Pickups, hide for standard In-Store POS sales
+      if (customerName != null && orderType != "In-store") {
+        bytes += generator.text(_formatRow("Customer:", customerName));
+      }
+      bytes += generator.text(_formatRow("Order Type:", orderType));
+      bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
+
+      // ── Items ────────────────────────────────────────────────────────────
+      // Column headers
+      bytes += generator.text("ITEM            QTY     TOTAL");
+      bytes += generator.text("--------------------------------");
+
+      for (var item in items) {
+        // Line 1: Item Name
+        String name = item.name;
+        if (name.length > 32) name = name.substring(0, 29) + "...";
+        bytes += generator.text(name);
+        
+        // Line 2: Details (Qty @ Price)   Total
+        final qtyPart = "${item.qty} x ${_cleanPeso(formatPeso(item.price))}";
+        final totalPart = _cleanPeso(formatPeso(item.price * item.qty));
+        bytes += generator.text(_formatRow(qtyPart, totalPart));
+      }
+
+      bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
+
+      // ── Summary ──────────────────────────────────────────────────────────
+      final int totalQty = items.fold(0, (sum, item) => sum + item.qty);
+      bytes += generator.text(_formatRow("TOTAL QUANTITY:", totalQty.toString()));
+      bytes += generator.text(_formatRow("TOTAL AMOUNT:", _cleanPeso(formatPeso(total))), styles: const PosStyles(bold: true, height: PosTextSize.size2));
+      bytes += generator.feed(1);
+      bytes += generator.text(_formatRow("CASH TENDERED:", _cleanPeso(formatPeso(cash))));
+      bytes += generator.text(_formatRow("CHANGE DUE:", _cleanPeso(formatPeso(change))), styles: const PosStyles(bold: true));
+      bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
+      
+      // ── Footer ───────────────────────────────────────────────────────────
+      bytes += generator.text("THANK YOU FOR SHOPPING!", styles: const PosStyles(align: PosAlign.center, bold: true));
+      bytes += generator.feed(1);
+      bytes += generator.text("Please keep this receipt", styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text("for returns/refunds within", styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text("24 hours. God Bless!", styles: const PosStyles(align: PosAlign.center));
+      
+      if (orderId != null) {
+        bytes += generator.feed(1);
+        bytes += generator.text("Ref: $orderId", styles: const PosStyles(align: PosAlign.center, height: PosTextSize.size1));
+      }
+      
+      bytes += generator.feed(4); // Extra feed so you can tear it manually
+      
+      final bool result = await PrintBluetoothThermal.writeBytes(bytes);
+      debugPrint("Print result: $result");
+      return result;
+    } catch (e) {
+      debugPrint("Error in printReceipt: $e");
+      return false;
     }
-    bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
-
-    for (var item in items) {
-      final name = item.name.length > 20 ? '${item.name.substring(0, 17)}...' : item.name;
-      bytes += generator.text(_formatRow("${item.qty}x $name", _cleanPeso(formatPeso(item.price * item.qty))));
-    }
-
-    bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
-    bytes += generator.text(_formatRow("TOTAL", _cleanPeso(formatPeso(total))), styles: const PosStyles(bold: true));
-    bytes += generator.text(_formatRow("CASH", _cleanPeso(formatPeso(cash))));
-    bytes += generator.text(_formatRow("CHANGE", _cleanPeso(formatPeso(change))));
-    bytes += generator.text("--------------------------------", styles: const PosStyles(align: PosAlign.center));
-    
-    bytes += generator.text("THANK YOU!", styles: const PosStyles(align: PosAlign.center));
-    
-    bytes += generator.feed(4); // Extra feed so you can tear it manually
-    await PrintBluetoothThermal.writeBytes(bytes);
   }
 
-  Future<void> printTest() async {
-    bool isConnected = await PrintBluetoothThermal.connectionStatus;
-    if (!isConnected) return;
-    List<int> bytes = [];
-    final profile = await CapabilityProfile.load();
-    final generator = Generator(PaperSize.mm58, profile);
-    bytes += generator.reset();
-    bytes += generator.text("PRINTER TEST OK", styles: const PosStyles(align: PosAlign.center));
-    bytes += generator.feed(3);
-    await PrintBluetoothThermal.writeBytes(bytes);
+  Future<bool> printTest() async {
+    try {
+      bool isConnected = await PrintBluetoothThermal.connectionStatus;
+      if (!isConnected) return false;
+      List<int> bytes = [];
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      bytes += generator.reset();
+      bytes += generator.text("PRINTER TEST OK", styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.feed(3);
+      return await PrintBluetoothThermal.writeBytes(bytes);
+    } catch (e) {
+      debugPrint("Error in printTest: $e");
+      return false;
+    }
   }
 }

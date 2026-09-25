@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/printer_provider.dart';
 import '../config/theme.dart';
 import 'user_management_screen.dart';
 import 'supplier_management_screen.dart';
 import 'loss_management_screen.dart';
 import 'reports_screen.dart';
-import 'customer_management_screen.dart';
 import 'bundle_management_screen.dart';
 import 'category_management_screen.dart';
-import 'restock_management_screen.dart';
-import 'restock_management_screen.dart';
+import 'sales_history_screen.dart';
+import 'refund_requests_screen.dart';
 
 class MoreManagementScreen extends StatelessWidget {
   const MoreManagementScreen({super.key});
@@ -44,18 +44,9 @@ class MoreManagementScreen extends StatelessWidget {
             context,
             icon: Icons.local_shipping_outlined,
             title: 'Suppliers',
-            subtitle: 'Manage delivery contacts',
+            subtitle: 'Manage delivery contacts and restocks',
             color: semantic.success,
             target: const SupplierManagementScreen(),
-          ),
-          const SizedBox(height: 12),
-          _menuItem(
-            context,
-            icon: Icons.inventory_2_rounded,
-            title: 'Restock Manager',
-            subtitle: 'Email low-stock items to suppliers',
-            color: Colors.orange.shade800,
-            target: const RestockManagementScreen(),
           ),
           const SizedBox(height: 12),
           if (isAdmin) ...[
@@ -87,16 +78,6 @@ class MoreManagementScreen extends StatelessWidget {
             target: const LossManagementScreen(),
           ),
           const SizedBox(height: 12),
-          if (isAdmin) 
-            _menuItem(
-              context,
-              icon: Icons.stars_rounded,
-              title: 'Customer Rewards',
-              subtitle: 'Loyalty points and history',
-              color: Theme.of(context).colorScheme.primary,
-              target: const CustomerManagementScreen(),
-            ),
-          const SizedBox(height: 12),
           _menuItem(
             context,
             icon: Icons.analytics_outlined,
@@ -106,13 +87,31 @@ class MoreManagementScreen extends StatelessWidget {
             target: const ReportsScreen(),
           ),
           const SizedBox(height: 12),
+          _menuItem(
+            context,
+            icon: Icons.history_rounded,
+            title: 'Sales History',
+            subtitle: 'View past store transactions',
+            color: Colors.blueGrey,
+            target: const SalesHistoryScreen(),
+          ),
+          const SizedBox(height: 12),
+          _menuItem(
+            context,
+            icon: Icons.assignment_return_rounded,
+            title: 'Refund Requests',
+            subtitle: 'Manage online refund claims',
+            color: Theme.of(context).colorScheme.error,
+            target: const RefundRequestsScreen(),
+          ),
+          const SizedBox(height: 12),
           Card(
             child: SwitchListTile(
               title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.bold)),
               subtitle: const Text('Soothing for nighttime use'),
               secondary: Icon(
                 context.watch<ThemeProvider>().isDarkMode ? Icons.dark_mode : Icons.light_mode,
-                color: GdcColors.earthyGold,
+                color: GdcColors.secondaryGreen,
               ),
               value: context.watch<ThemeProvider>().isDarkMode,
               onChanged: (v) => context.read<ThemeProvider>().toggleTheme(v),
@@ -120,6 +119,9 @@ class MoreManagementScreen extends StatelessWidget {
           ),
           const Divider(height: 32),
           const _AdminProfileSection(),
+          const SizedBox(height: 12),
+          const _PrinterToolsSection(),
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -154,6 +156,159 @@ class MoreManagementScreen extends StatelessWidget {
         trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => target)),
       ),
+    );
+  }
+}
+
+class _PrinterToolsSection extends StatelessWidget {
+  const _PrinterToolsSection();
+
+  static void showPrinterDialog(BuildContext context, PrinterProvider printer) async {
+    final devices = await printer.getDevices();
+
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        useRootNavigator: true,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Bluetooth Printer'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: devices.isEmpty
+                ? const Text('No paired bluetooth devices found. Please pair your thermal printer in your device Bluetooth settings first.')
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: devices.length,
+                    itemBuilder: (context, i) {
+                      final d = devices[i];
+                      return ListTile(
+                        leading: const Icon(Icons.bluetooth_rounded, color: Colors.blue),
+                        title: Text(d.name.isEmpty ? 'Unknown Device' : d.name),
+                        subtitle: Text(d.macAdress),
+                        trailing: printer.device?.macAdress == d.macAdress && printer.connected
+                            ? Icon(Icons.check_circle, color: Theme.of(context).semantic.success)
+                            : null,
+                        onTap: () {
+                          printer.connect(d);
+                          Navigator.pop(ctx);
+                        },
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+            if (printer.connected)
+              TextButton(
+                onPressed: () {
+                  printer.disconnect();
+                  Navigator.pop(ctx);
+                },
+                child: Text('Disconnect', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ),
+          ],
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final printer = context.watch<PrinterProvider>();
+    final color = Theme.of(context).colorScheme.primary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text('Printer Tools', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+        ),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: (printer.connected ? Colors.blue : Colors.grey).withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    printer.connected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_disabled_rounded,
+                    color: printer.connected ? Colors.blue : Colors.grey,
+                  ),
+                ),
+                title: Text(
+                  printer.connected
+                      ? (printer.device?.name.isNotEmpty == true ? printer.device!.name : 'Bluetooth Printer')
+                      : 'Bluetooth Printer',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  printer.connected
+                      ? 'Connected (${printer.device?.macAdress ?? ''})'
+                      : 'Tap to connect paired bluetooth printer',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: printer.isConnecting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : OutlinedButton.icon(
+                        icon: Icon(
+                          printer.connected ? Icons.settings_rounded : Icons.bluetooth_searching_rounded,
+                          size: 16,
+                        ),
+                        label: Text(printer.connected ? 'Manage' : 'Connect'),
+                        onPressed: () => showPrinterDialog(context, printer),
+                      ),
+                onTap: () => showPrinterDialog(context, printer),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: Icon(Icons.print_rounded, color: printer.connected ? color : Colors.grey),
+                title: const Text('Test Print', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  printer.connected
+                      ? 'Send sample test ticket to printer'
+                      : 'Connect a printer above to test',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: FilledButton.tonalIcon(
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Test'),
+                  onPressed: printer.connected
+                      ? () async {
+                          final success = await printer.printTest();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(success ? "Test print sent!" : "Test print failed."),
+                              ),
+                            );
+                          }
+                        }
+                      : () => showPrinterDialog(context, printer),
+                ),
+                onTap: printer.connected
+                    ? () async {
+                        final success = await printer.printTest();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success ? "Test print sent!" : "Test print failed."),
+                            ),
+                          );
+                        }
+                      }
+                    : () => showPrinterDialog(context, printer),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -196,7 +351,7 @@ class _AdminProfileSectionState extends State<_AdminProfileSection> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.phone_android, color: GdcColors.earthyGold),
+                    const Icon(Icons.phone_android, color: GdcColors.secondaryGreen),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -230,7 +385,7 @@ class _AdminProfileSectionState extends State<_AdminProfileSection> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'A unique 4-digit PIN will be sent to this number whenever you access the Admin area.',
+                  'A unique 6-digit OTP will be sent to this number whenever you access the Admin area.',
                   style: TextStyle(fontSize: 10, color: Colors.orange, fontStyle: FontStyle.italic),
                 ),
               ],

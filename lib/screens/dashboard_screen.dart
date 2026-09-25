@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../providers/inventory_provider.dart';
-import '../../models/store_settings.dart';
-import '../../providers/order_provider.dart';
-import '../../providers/expense_provider.dart';
-import '../../models/order.dart';
-import '../../utils/format.dart';
+import '../providers/inventory_provider.dart';
+import '../models/store_settings.dart';
+import '../providers/order_provider.dart';
+import '../providers/expense_provider.dart';
+import '../models/order.dart';
+import '../utils/format.dart';
 import '../config/theme.dart';
+
+import '../providers/restock_provider.dart';
+import '../models/restock_inquiry.dart';
+import '../models/product.dart';
 
 class DashboardScreen extends StatelessWidget {
   final Function(int, {String? category}) onTabChange;
@@ -16,8 +20,13 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inventory   = context.watch<InventoryProvider>();
+    final orderProvider = context.watch<OrderProvider>();
+    final restockProvider = context.watch<RestockProvider>();
+
+    final isSyncing = inventory.isLoading || orderProvider.isLoading || restockProvider.isLoading;
+
     final transactions = inventory.transactions;
-    final orders       = context.watch<OrderProvider>().orders;
+    final orders       = orderProvider.orders;
     final expenses     = context.watch<ExpenseProvider>().expenses;
     final isClosed     = inventory.settings.effectivelyClosed;
 
@@ -29,21 +38,33 @@ class DashboardScreen extends StatelessWidget {
         .where((e) => DateFormat('yyyy-MM-dd').format(e.createdAt) == today)
         .fold(0.0, (s, e) => s + e.amount);
     final pending    = orders.where((o) => o.status == OrderStatus.pending).length;
+    final restockPending = restockProvider.inquiries.where((ri) => 
+        ri.status == RestockInquiryStatus.draft || 
+        ri.status == RestockInquiryStatus.pending ||
+        ri.status == RestockInquiryStatus.sent ||
+        ri.status == RestockInquiryStatus.acknowledged ||
+        ri.status == RestockInquiryStatus.partiallyFulfilled).length;
     final net        = todaySales - todayExp;
-    final totalLoss  = inventory.lossRecords.fold(0.0, (s, r) => s + r.totalLoss);
     final semantic = Theme.of(context).semantic;
 
-    // Low Stock Alerts
-    final lowStock = inventory.products.where((p) => p.stock <= 5).toList();
+    // Low Stock Alerts (Checks total stock across variants)
+    final lowStock = inventory.products.where((p) => 
+        p.status == ProductStatus.published && p.totalStock <= p.lowStockThreshold).toList();
 
     // Movement Insights (Last 30 Days)
     final fastMoving = inventory.fastMovingItems;
     final slowMoving = inventory.slowMovingItems;
 
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: ListView(padding: const EdgeInsets.all(20), children: [
+          if (isSyncing) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: 12),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -74,16 +95,17 @@ class DashboardScreen extends StatelessWidget {
 
           // Stat cards
           GridView.count(
-            crossAxisCount: 2, shrinkWrap: true,
+            crossAxisCount: isLandscape ? 4 : 2, 
+            shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 16, mainAxisSpacing: 16,
-            childAspectRatio: 1.1,
+            childAspectRatio: isLandscape ? 1.5 : 1.1,
             children: [
               _StatCard("Today's Sales", formatPeso(todaySales),
                   Icons.auto_graph_rounded, semantic.success),
-              _StatCard("Net Income",    formatPeso(net),
-                  Icons.wallet_rounded,
-                  net >= 0 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.error),
+              _StatCard("Restock Needed", "$restockPending",
+                  Icons.inventory_2_rounded, Colors.orange,
+                  onTap: () => onTabChange(3, category: 'Low Stock')), // Go to Inventory -> Low Stock
               _StatCard("Expenses",      formatPeso(todayExp),
                   Icons.receipt_long_rounded,  Theme.of(context).colorScheme.error, 
                   onTap: () => onTabChange(4, category: null)), // Go to Expenses
@@ -275,6 +297,7 @@ class DashboardScreen extends StatelessWidget {
 
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Store Management'),
@@ -354,7 +377,7 @@ class DashboardScreen extends StatelessWidget {
                   trailing: const Icon(Icons.calendar_today, size: 18),
                   onTap: () async {
                     final date = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 30)));
-                    if (date != null) {
+                    if (date != null && context.mounted) {
                       final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
                       if (time != null) {
                         setDialogState(() => schedClose = DateTime(date.year, date.month, date.day, time.hour, time.minute));
@@ -371,7 +394,7 @@ class DashboardScreen extends StatelessWidget {
                   trailing: const Icon(Icons.restore, size: 18),
                   onTap: () async {
                     final date = await showDatePicker(context: context, initialDate: schedClose ?? DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 30)));
-                    if (date != null) {
+                    if (date != null && context.mounted) {
                       final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 11, minute: 0));
                       if (time != null) {
                         setDialogState(() => schedOpen = DateTime(date.year, date.month, date.day, time.hour, time.minute));
@@ -415,29 +438,6 @@ class DashboardScreen extends StatelessWidget {
                     },
                     child: Text('Clear Schedule', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   ),
-
-                const Divider(height: 48),
-                Text('Store Announcement', style: Theme.of(context).textTheme.titleSmall),
-                Text('Display a scrolling ticker to customers.', style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Current Announcement',
-                    hintText: 'e.g. Fresh batch of donuts at 3PM!',
-                    border: OutlineInputBorder(),
-                  ),
-                  controller: TextEditingController(text: settings.announcement),
-                  onSubmitted: (v) => inventory.saveStoreSettings(StoreSettings(
-                    isClosed: settings.isClosed,
-                    closureMessage: settings.closureMessage,
-                    scheduledCloseAt: settings.scheduledCloseAt,
-                    scheduledOpenAt: settings.scheduledOpenAt,
-                    perishableWindowHours: settings.perishableWindowHours,
-                    mixedWindowHours: settings.mixedWindowHours,
-                    standardWindowHours: settings.standardWindowHours,
-                    announcement: v.trim().isEmpty ? null : v.trim(),
-                  )),
-                ),
 
                 const Divider(height: 48),
                 Text('Order Expiration Windows', style: Theme.of(context).textTheme.titleSmall),

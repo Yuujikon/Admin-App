@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1617956761",
+    "project_id": "gdc-sari-sari-store-d5f06",
+    "storage_bucket": "gdc-sari-sari-store-d5f06.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1617956761:android:d83097bbe32854299dcd08",
+        "android_client_info": {
+          "package_name": "com.example.gdc_sari_sari_admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFXkBEjWb7vRUYZcgAT3dVjka92AA2Pcw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1617956761:android:9e02140fb6a125869dcd08",
+        "android_client_info": {
+          "package_name": "com.example.gdc_sari_sari_customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFXkBEjWb7vRUYZcgAT3dVjka92AA2Pcw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

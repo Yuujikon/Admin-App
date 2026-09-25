@@ -10,7 +10,7 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
     val newSubprojectBuildDir: Directory = if (project.projectDir.absolutePath.startsWith("C:", ignoreCase = true)) {
-        // Fix for "different roots" error on Windows when building across drives.
+        // Fix for \"different roots\" error on Windows when building across drives.
         // If the project is on C: drive (like pub cache), keep its build dir on C:.
         project.layout.projectDirectory.dir("build")
     } else {
@@ -21,6 +21,16 @@ subprojects {
 
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin") {
+                useVersion("2.1.0")
+            }
+        }
+    }
 }
 
 allprojects {

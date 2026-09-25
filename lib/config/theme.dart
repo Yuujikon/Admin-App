@@ -2,19 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class GdcColors {
-  // Soothing Sage & Sand Palette (Light)
-  static const deepSage         = Color(0xFF2C3639);
-  static const sageGreen        = Color(0xFF3F4E4F);
-  static const parchment        = Color(0xFFF7F3E9);
-  static const paper            = Color(0xFFFCF9F2);
-  static const earthyGold       = Color(0xFFA27B5C);
-  static const sand             = Color(0xFFDCD7C9);
+  // Color Hunt Palette: EDF1D6, 9DC08B, 609966, 40513B
+  static const deepGreen         = Color(0xFF40513B); // Darkest - Headers/Text
+  static const primaryGreen      = Color(0xFF609966); // Main Action
+  static const secondaryGreen    = Color(0xFF9DC08B); // Secondary/Accent
+  static const backgroundCream   = Color(0xFFEDF1D6); // Background
   
-  // Dark Mode Palette (Midnight Sage)
-  static const midnight         = Color(0xFF1A1C1E); // Deep background
-  static const slate            = Color(0xFF2D3135); // Card background
-  static const mutedSage        = Color(0xFF8BA688); // Primary in dark mode
-  static const goldDim          = Color(0xFFC9A686); // Accents in dark mode
+  static const paper             = Color(0xFFF7F9E8); // Slightly lighter surface
+  
+  // Dark Mode Palette (Muted Forest)
+  static const midnight          = Color(0xFF1A1C1E); 
+  static const slate             = Color(0xFF2D3135); 
+  static const mutedGreen        = Color(0xFF609966); 
+  static const goldDim           = Color(0xFF9DC08B); 
   
   // Semantic (Universal)
   static const errorLight       = Color(0xFFA04747);
@@ -34,12 +34,12 @@ class GdcTheme {
   static ThemeData _buildTheme(Brightness brightness) {
     final bool isDark = brightness == Brightness.dark;
     
-    final primaryColor   = isDark ? GdcColors.mutedSage : GdcColors.sageGreen;
-    final secondaryColor = isDark ? GdcColors.goldDim : GdcColors.earthyGold;
-    final backgroundColor = isDark ? GdcColors.midnight : GdcColors.parchment;
+    final primaryColor   = isDark ? GdcColors.mutedGreen : GdcColors.primaryGreen;
+    final secondaryColor = isDark ? GdcColors.goldDim : GdcColors.secondaryGreen;
+    final backgroundColor = isDark ? GdcColors.midnight : GdcColors.backgroundCream;
     final surfaceColor    = isDark ? GdcColors.slate : GdcColors.paper;
-    final textColor       = isDark ? Colors.white.withValues(alpha: 0.95) : GdcColors.deepSage;
-    final subTextColor    = isDark ? Colors.white.withValues(alpha: 0.6)  : GdcColors.deepSage.withValues(alpha: 0.6);
+    final textColor       = isDark ? Colors.white.withValues(alpha: 0.95) : GdcColors.deepGreen;
+    final subTextColor    = isDark ? Colors.white.withValues(alpha: 0.6)  : GdcColors.deepGreen.withValues(alpha: 0.6);
     final borderColor     = isDark ? Colors.white.withValues(alpha: 0.1)  : Colors.black.withValues(alpha: 0.08);
 
     final errorColor   = isDark ? GdcColors.errorDark   : GdcColors.errorLight;
@@ -62,7 +62,7 @@ class GdcTheme {
         outline:        borderColor,
         surfaceContainerLowest: isDark ? GdcColors.midnight : Colors.white,
         surfaceContainerLow:    surfaceColor,
-        surfaceContainer:       isDark ? GdcColors.slate.withValues(alpha: 0.5) : GdcColors.sand.withValues(alpha: 0.3),
+        surfaceContainer:       isDark ? GdcColors.slate.withValues(alpha: 0.5) : GdcColors.secondaryGreen.withValues(alpha: 0.3),
         tertiary:       successColor,
         onTertiary:     isDark ? GdcColors.midnight : Colors.white,
       ),
@@ -72,15 +72,24 @@ class GdcTheme {
           warning: warningColor,
           info:    infoColor,
         ),
+        GdcLayoutTheme(
+          cardRadius: 24,
+          sheetRadius: 32,
+          inputRadius: 18,
+          buttonRadius: 20,
+        ),
       ],
       textTheme: GoogleFonts.plusJakartaSansTextTheme().copyWith(
-        headlineMedium: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
-        titleLarge:     GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, letterSpacing: -0.2, color: textColor),
-        titleMedium:    GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: primaryColor),
-        bodyLarge:      TextStyle(color: textColor),
-        bodyMedium:     TextStyle(color: subTextColor),
-        labelMedium:    TextStyle(color: subTextColor, fontWeight: FontWeight.w600),
-        labelSmall:     TextStyle(color: subTextColor, fontSize: 11),
+        headlineLarge: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
+        headlineMedium: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
+        titleLarge:     GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: textColor),
+        titleMedium:    GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600, color: primaryColor),
+        titleSmall:     GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: textColor),
+        bodyLarge:      TextStyle(fontSize: 13, color: textColor),
+        bodyMedium:     TextStyle(fontSize: 12, color: subTextColor),
+        bodySmall:      TextStyle(fontSize: 11, color: subTextColor),
+        labelMedium:    TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.w600),
+        labelSmall:     TextStyle(fontSize: 10, color: subTextColor, fontWeight: FontWeight.w600),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: backgroundColor,
@@ -106,8 +115,8 @@ class GdcTheme {
       chipTheme: ChipThemeData(
         shape:           RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         side:            BorderSide.none,
-        backgroundColor: isDark ? GdcColors.slate : GdcColors.sand.withValues(alpha: 0.4),
-        labelStyle:      TextStyle(color: isDark ? Colors.white : GdcColors.deepSage, fontWeight: FontWeight.w700, fontSize: 11),
+        backgroundColor: isDark ? GdcColors.slate : GdcColors.secondaryGreen.withValues(alpha: 0.4),
+        labelStyle:      TextStyle(color: isDark ? Colors.white : GdcColors.deepGreen, fontWeight: FontWeight.w700, fontSize: 11),
         padding:         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       ),
       dividerTheme: DividerThemeData(
@@ -137,7 +146,7 @@ class GdcTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
-          foregroundColor: isDark ? GdcColors.midnight : GdcColors.parchment,
+          foregroundColor: isDark ? GdcColors.midnight : GdcColors.backgroundCream,
           minimumSize:     const Size.fromHeight(58),
           shape:           RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           elevation:       0,
@@ -204,5 +213,80 @@ class GdcSemanticColors extends ThemeExtension<GdcSemanticColors> {
 }
 
 extension GdcSemanticColorsExtension on ThemeData {
-  GdcSemanticColors get semantic => extension<GdcSemanticColors>()!;
+  GdcSemanticColors get semantic => extension<GdcSemanticColors>() ?? const GdcSemanticColors(
+    success: Colors.green,
+    warning: Colors.orange,
+    info: Colors.blue,
+  );
+
+  GdcLayoutTheme get layout => extension<GdcLayoutTheme>() ?? const GdcLayoutTheme(
+    cardRadius: 24,
+    sheetRadius: 32,
+    inputRadius: 18,
+    buttonRadius: 20,
+  );
+}
+
+class GdcLayoutTheme extends ThemeExtension<GdcLayoutTheme> {
+  final double cardRadius;
+  final double sheetRadius;
+  final double inputRadius;
+  final double buttonRadius;
+
+  const GdcLayoutTheme({
+    required this.cardRadius,
+    required this.sheetRadius,
+    required this.inputRadius,
+    required this.buttonRadius,
+  });
+
+  @override
+  GdcLayoutTheme copyWith({double? cardRadius, double? sheetRadius, double? inputRadius, double? buttonRadius}) {
+    return GdcLayoutTheme(
+      cardRadius: cardRadius ?? this.cardRadius,
+      sheetRadius: sheetRadius ?? this.sheetRadius,
+      inputRadius: inputRadius ?? this.inputRadius,
+      buttonRadius: buttonRadius ?? this.buttonRadius,
+    );
+  }
+
+  @override
+  GdcLayoutTheme lerp(ThemeExtension<GdcLayoutTheme>? other, double t) {
+    if (other is! GdcLayoutTheme) return this;
+    return GdcLayoutTheme(
+      cardRadius:   lerpDouble(cardRadius, other.cardRadius, t)!,
+      sheetRadius:  lerpDouble(sheetRadius, other.sheetRadius, t)!,
+      inputRadius:  lerpDouble(inputRadius, other.inputRadius, t)!,
+      buttonRadius: lerpDouble(buttonRadius, other.buttonRadius, t)!,
+    );
+  }
+
+  double lerpDouble(num a, num b, double t) => a + (b - a) * t;
+}
+
+class BrandStyling {
+  static TextStyle getStyle(String? brand, {double fontSize = 14}) {
+    if (brand == null || brand.isEmpty) {
+      return TextStyle(fontWeight: FontWeight.w900, color: GdcColors.deepGreen, fontSize: fontSize);
+    }
+    
+    final b = brand.toLowerCase();
+    if (b.contains('coca-cola') || b.contains('coke')) {
+      return GoogleFonts.lobster(color: const Color(0xFFF40009), fontWeight: FontWeight.bold, fontSize: fontSize);
+    } else if (b.contains('pepsi')) {
+      return GoogleFonts.bebasNeue(color: const Color(0xFF004B93), fontSize: fontSize);
+    } else if (b.contains('nestle') || b.contains('nescafe')) {
+      return GoogleFonts.merriweather(color: const Color(0xFF6B4226), fontWeight: FontWeight.w900, fontSize: fontSize);
+    } else if (b.contains('unilever')) {
+      return GoogleFonts.comfortaa(color: const Color(0xFF1F36C7), fontWeight: FontWeight.bold, fontSize: fontSize);
+    } else if (b.contains('san miguel')) {
+      return GoogleFonts.playfairDisplay(color: const Color(0xFF8B4513), fontWeight: FontWeight.w900, fontSize: fontSize);
+    } else if (b.contains('lucky me')) {
+      return GoogleFonts.fredoka(color: const Color(0xFFFF8C00), fontWeight: FontWeight.bold, fontSize: fontSize);
+    } else if (b.contains('jack') && b.contains('jill')) {
+       return GoogleFonts.bubblegumSans(color: Colors.red.shade800, fontSize: fontSize);
+    }
+    
+    return TextStyle(fontWeight: FontWeight.w900, color: GdcColors.deepGreen, fontSize: fontSize);
+  }
 }

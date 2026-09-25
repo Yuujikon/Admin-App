@@ -3,43 +3,64 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 import '../models/order.dart';
 import '../models/product.dart';
-import '../models/promotion.dart';
 import '../models/transaction.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../utils/pricing_engine.dart';
 
-class OrderProvider extends ChangeNotifier {
+import 'base_provider.dart';
+
+class OrderProvider extends BaseProvider {
   final _fs = FirestoreService();
-  final List<StreamSubscription> _subs = [];
 
   List<PreOrder> _orders  = [];
-  List<Promotion> _promotions = [];
   final List<CartItem> _preCart = [];
   Timer? _expirationTimer;
+  String _adminName = 'Admin';
+  final Set<String> _processingOrders = {};
+  final Set<String> _knownOrderIds = {};
 
   List<PreOrder> get orders  => _orders;
-  List<Promotion> get promotions => _promotions;
   List<CartItem> get preCart => _preCart;
+  String get adminName => _adminName;
+
+  bool isOrderProcessing(String orderId) => _processingOrders.contains(orderId);
+
+  void setAdminName(String name) {
+    _adminName = name;
+    notifyListeners();
+  }
 
   // Stream that auto-updates for admin view
-  Stream<List<PreOrder>>? _ordersStream;
-  Stream<List<PreOrder>> get ordersStream => _ordersStream ??= _fs.ordersStream().asBroadcastStream();
+  late final Stream<List<PreOrder>> _ordersStream = _fs.ordersStream().asBroadcastStream();
+  Stream<List<PreOrder>> get ordersStream => _ordersStream;
 
   void initialize() {
     cancelSubscriptions();
-    _ordersStream = null;
+    setLoading(true);
 
-    _subs.add(ordersStream.listen((list) {
+    registerSubscription(ordersStream.listen((list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      if (_knownOrderIds.isNotEmpty) {
+        final newOrders = list.where((o) => !_knownOrderIds.contains(o.id) && o.status == OrderStatus.pending);
+        for (final o in newOrders) {
+          NotificationService.showSmsNotificationPopUp(
+            title: '🛍️ New Pre-Order Received!',
+            body: 'Customer ${o.customerName} placed order #${o.orderId} (₱${o.total.toStringAsFixed(2)}).',
+          );
+        }
+      }
+      _knownOrderIds.clear();
+      _knownOrderIds.addAll(list.map((o) => o.id));
+
       _orders = list;
+      setLoading(false);
       _checkExpirations(list);
-      notifyListeners();
-    }, onError: (e) => debugPrint('Orders Stream Error: $e')));
-
-    _subs.add(_fs.promotionsStream().listen((list) {
-      _promotions = list;
-      notifyListeners();
-    }, onError: (e) => debugPrint('Promotions Stream Error: $e')));
+    }, onError: (e) {
+      setLoading(false);
+      debugPrint('Orders Stream Error: $e');
+    }));
     
     // Start a timer to check expirations every minute
     _expirationTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -47,16 +68,8 @@ class OrderProvider extends ChangeNotifier {
     });
   }
 
-  void cancelSubscriptions() {
-    for (var s in _subs) {
-      s.cancel();
-    }
-    _subs.clear();
-  }
-
   @override
   void dispose() {
-    cancelSubscriptions();
     _expirationTimer?.cancel();
     super.dispose();
   }
@@ -64,6 +77,8 @@ class OrderProvider extends ChangeNotifier {
   void _checkExpirations(List<PreOrder> list) {
     final now = DateTime.now();
     for (final order in list) {
+      if (_processingOrders.contains(order.id)) continue;
+      
       if (order.status == OrderStatus.pending || 
           order.status == OrderStatus.staging || 
           order.status == OrderStatus.ready) {
@@ -116,7 +131,6 @@ class OrderProvider extends ChangeNotifier {
     required String location,
     required String pickupSlot,
     required List<Product> allProducts,
-    bool isSeniorPWD = false,
   }) async {
     final orderCount = _orders.length + 45;
     // Determine expiration based on items
@@ -134,13 +148,10 @@ class OrderProvider extends ChangeNotifier {
       expiresAt = DateTime.now().add(const Duration(days: 3));
     }
 
-    final total = _preCart.fold(0.0, (s, i) => s + i.price * i.qty);
-    
     // Calculate breakdown using PricingEngine
     final breakdown = PricingEngine.calculate(
       items: _preCart, 
       allProducts: allProducts, 
-      activePromos: _promotions,
     );
 
     final order = PreOrder(
@@ -150,7 +161,6 @@ class OrderProvider extends ChangeNotifier {
       customerEmail: customerEmail,
       items:         List.from(_preCart),
       subtotal:      breakdown.subtotal,
-      discount:      breakdown.promoDiscount + breakdown.seniorDiscount,
       tax:           breakdown.vAtAmount,
       total:         breakdown.total,
       status:        OrderStatus.pending,
@@ -159,7 +169,7 @@ class OrderProvider extends ChangeNotifier {
       pickupTime:    pickupSlot,
       createdAt:     DateTime.now(),
       expiresAt:     expiresAt,
-      isSeniorPWD:   isSeniorPWD,
+      statusTimeline: {OrderStatus.pending.name: DateTime.now()},
     );
 
     await _fs.addOrder(order);
@@ -179,25 +189,28 @@ class OrderProvider extends ChangeNotifier {
 
   // ── Admin actions ──────────────────────────────────────────────────────────
 
-  Future<void> advanceStatus(String orderId) async {
-    final order = _orders.firstWhere((o) => o.id == orderId);
-    final next  = switch (order.status) {
-      OrderStatus.pending  => OrderStatus.staging,
-      OrderStatus.staging  => OrderStatus.ready,
-      OrderStatus.ready    => OrderStatus.collected,
-      _ => null,
-    };
-    if (next == null) return;
+  Future<void> completePickup(String orderId) async {
+    if (_processingOrders.contains(orderId)) return;
+    _processingOrders.add(orderId);
+    notifyListeners();
 
-    // Deduct stock when admin starts packing (moves to staging)
-    if (next == OrderStatus.staging) {
-      await _fs.decrementStockBatch(order.items);
-    }
+    try {
+      final order = _orders.firstWhere((o) => o.id == orderId);
+      if (order.status == OrderStatus.collected || order.status == OrderStatus.cancelled) return;
 
-    await _fs.updateOrderStatus(orderId, next);
+      // 1. Ensure stock is deducted if not already done (done at 'staging' phase)
+      if (order.status == OrderStatus.pending) {
+        await _fs.decrementStockBatch(order.items);
+      }
 
-    // Record as transaction when collected
-    if (next == OrderStatus.collected) {
+      // 2. Set final status
+      final updatedOrder = order.copyWith(
+        status: OrderStatus.collected,
+        processedBy: _adminName,
+      );
+      await _fs.updateOrder(updatedOrder);
+
+      // 3. Record as transaction
       final tx = StoreTransaction(
         id: const Uuid().v4(), 
         items: order.items,
@@ -206,46 +219,107 @@ class OrderProvider extends ChangeNotifier {
         change: 0,
         createdAt: DateTime.now(),
         customerEmail: order.customerEmail,
+        type: TransactionType.pickup,
       );
       await _fs.addTransaction(tx);
 
-      // Award points for collected pre-order
-      _awardPointsForPreOrder(order);
-    }
-
-    // Notify customer when order is ready
-    if (next == OrderStatus.ready) {
-      await NotificationService.sendOrderReady(order.orderId);
+      // 4. Notify customer
+      await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
+      
+    } finally {
+      _processingOrders.remove(orderId);
+      notifyListeners();
     }
   }
 
-  void _awardPointsForPreOrder(PreOrder order) async {
-    final customer = await _fs.getCustomerByEmail(order.customerEmail);
-    if (customer != null) {
-      final points = (order.total / 100).floor();
-      if (points > 0) {
-        await _fs.updateCustomerPoints(customer.id, points);
+  Future<void> advanceStatus(String orderId) async {
+    if (_processingOrders.contains(orderId)) return;
+    _processingOrders.add(orderId);
+    notifyListeners();
+
+    try {
+      final order = _orders.firstWhere((o) => o.id == orderId);
+      final next  = switch (order.status) {
+        OrderStatus.pending  => OrderStatus.staging,
+        OrderStatus.staging  => OrderStatus.ready,
+        OrderStatus.ready    => OrderStatus.collected,
+        _ => null,
+      };
+      if (next == null) return;
+
+      // Deduct stock when admin starts packing (moves to staging)
+      if (next == OrderStatus.staging) {
+        await _fs.decrementStockBatch(order.items);
       }
+
+      final updatedOrder = order.copyWith(
+        status: next,
+        processedBy: _adminName,
+      );
+
+      await _fs.updateOrder(updatedOrder);
+
+      // Record as transaction when collected
+      if (next == OrderStatus.collected) {
+        final tx = StoreTransaction(
+          id: const Uuid().v4(), 
+          items: order.items,
+          total: order.total,
+          cash: order.total,
+          change: 0,
+          createdAt: DateTime.now(),
+          customerEmail: order.customerEmail,
+          type: TransactionType.pickup,
+        );
+        await _fs.addTransaction(tx);
+      }
+
+      // Notify customer when order is ready
+      if (next == OrderStatus.ready) {
+        await NotificationService.sendOrderReady(order.orderId, order.customerEmail);
+      }
+      
+      // Notify customer when order is collected
+      if (next == OrderStatus.collected) {
+        await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
+      }
+    } finally {
+      _processingOrders.remove(orderId);
+      notifyListeners();
     }
   }
 
-  Future<void> cancelOrder(String orderId, {bool isAuto = false}) async {
-    final order = _orders.firstWhere((o) => o.id == orderId);
-    if (order.status == OrderStatus.cancelled) return;
+  Future<void> cancelOrder(String orderId, {bool isAuto = false, String? reason}) async {
+    if (_processingOrders.contains(orderId)) return;
+    _processingOrders.add(orderId);
+    
+    try {
+      final order = _orders.firstWhere((o) => o.id == orderId);
+      if (order.status == OrderStatus.cancelled) return;
 
-    // If order was already packed/ready/collected, replenish stock on cancel
-    if (order.status == OrderStatus.staging ||
-        order.status == OrderStatus.ready ||
-        order.status == OrderStatus.collected) {
-      // Create inverted cart items to "increment" stock
-      final returnItems = order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
-      await _fs.decrementStockBatch(returnItems);
-    }
+      // Replenish stock on cancellation for active orders (pending, staging, ready, collected)
+      if (order.status == OrderStatus.pending ||
+          order.status == OrderStatus.staging ||
+          order.status == OrderStatus.ready ||
+          order.status == OrderStatus.collected) {
+        // Create inverted cart items to "increment" stock
+        final returnItems = order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
+        await _fs.decrementStockBatch(returnItems);
+      }
 
-    await _fs.updateOrderStatus(orderId, OrderStatus.cancelled);
+      final updatedOrder = order.copyWith(
+        status: OrderStatus.cancelled,
+        processedBy: isAuto ? 'System' : _adminName,
+        rejectionReason: reason,
+      );
+      
+      await _fs.updateOrder(updatedOrder);
 
-    if (isAuto) {
-      await NotificationService.sendOrderAutoCancelled(order.orderId);
+      if (isAuto) {
+        await NotificationService.sendOrderAutoCancelled(order.orderId, order.customerEmail);
+      }
+    } finally {
+      _processingOrders.remove(orderId);
     }
   }
 }

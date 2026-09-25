@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/inventory_provider.dart';
+import '../providers/order_provider.dart';
 import '../services/auth_service.dart';
+import '../utils/format.dart';
 import '../config/theme.dart';
 
 class AdminPinScreen extends StatefulWidget {
@@ -14,8 +17,9 @@ class _AdminPinScreenState extends State<AdminPinScreen> {
   final _pinService = AuthService();
   String _pin    = '';
   bool   _error  = false;
-  String? _currentOtp;
   bool   _isSending = false;
+  bool   _useStaticPin = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -25,62 +29,79 @@ class _AdminPinScreenState extends State<AdminPinScreen> {
 
   Future<void> _sendOtp() async {
     final auth = context.read<AppAuthProvider>();
+    
     if (auth.phoneNumber == null || auth.phoneNumber!.isEmpty) {
-      // If no phone number, we fallback to the static PIN 1234
-      // but warn the user.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No phone number set. Using default PIN 1234.'))
-      );
+      setState(() => _useStaticPin = true);
       return;
     }
 
-    setState(() => _isSending = true);
-    
-    // Generate a random 4-digit code
-    final otp = (1000 + (DateTime.now().millisecond * 9) % 9000).toString();
-    _currentOtp = otp;
+    // Ensure E.164 format for Firebase
+    final phone = formatPhoneNumber(auth.phoneNumber!);
 
-    // Simulate SMS Sending
-    await Future.delayed(const Duration(seconds: 1));
+    setState(() {
+      _isSending = true;
+      _errorMessage = null;
+    });
+
+    // Safety timeout: Never let the spinner run for more than 6 seconds
+    Timer(const Duration(seconds: 6), () {
+      if (mounted && _isSending) {
+        setState(() => _isSending = false);
+      }
+    });
     
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('SMS Sent to ${auth.phoneNumber}: $otp'),
-          duration: const Duration(seconds: 10),
-          action: SnackBarAction(label: 'OK', onPressed: () {}),
-        )
-      );
-      setState(() => _isSending = false);
-    }
+    await auth.sendOtp(
+      phone,
+      onSent: () {
+        if (mounted) {
+          setState(() => _isSending = false);
+        }
+      },
+      onFailed: (err) {
+        if (mounted) {
+          setState(() {
+            _isSending = false;
+            _errorMessage = err;
+          });
+        }
+      }
+    );
   }
 
   void _onKey(String key) {
     if (_isSending) return;
+    final auth = context.read<AppAuthProvider>();
+    final isOtp = !_useStaticPin && auth.phoneNumber != null && auth.phoneNumber!.isNotEmpty;
+    final limit = isOtp ? 6 : 4;
+
     if (key == '⌫') {
       if (_pin.isNotEmpty) setState(() => _pin = _pin.substring(0, _pin.length - 1));
       return;
     }
-    if (_pin.length >= 4) return;
+    if (_pin.length >= limit) return;
     final next = _pin + key;
     setState(() { _pin = next; _error = false; });
-    if (next.length == 4) _verify(next);
+    if (next.length == limit) _verify(next);
   }
 
   Future<void> _verify(String pin) async {
     final auth = context.read<AppAuthProvider>();
     
     bool ok = false;
-    if (auth.phoneNumber != null && auth.phoneNumber!.isNotEmpty) {
-      // Check against the dynamic OTP
-      ok = pin == _currentOtp;
-    } else {
+    if (!_useStaticPin && auth.phoneNumber != null && auth.phoneNumber!.isNotEmpty) {
+      setState(() => _isSending = true);
+      ok = await auth.verifyOtp(pin);
+    }
+    
+    if (!ok) {
       // Fallback to static PIN
       ok = await _pinService.verifyPin(pin);
     }
 
     if (!mounted) return;
     
+    setState(() => _isSending = false);
+
     if (ok) {
       _onSuccess();
     } else {
@@ -91,7 +112,9 @@ class _AdminPinScreenState extends State<AdminPinScreen> {
   void _onSuccess() {
     final auth = context.read<AppAuthProvider>();
     if (auth.currentUser != null) {
-      context.read<InventoryProvider>().setAdminEmail(auth.currentUser!.email!);
+      final email = auth.currentUser!.email!;
+      context.read<InventoryProvider>().setAdminEmail(email);
+      context.read<OrderProvider>().setAdminName(email);
       auth.setAdminVerified(true);
     }
   }
@@ -137,24 +160,37 @@ class _AdminPinScreenState extends State<AdminPinScreen> {
                   const SizedBox(height: 6),
                   Text(email, style: TextStyle(color: Theme.of(context).semantic.success, fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text(auth.phoneNumber != null && auth.phoneNumber!.isNotEmpty 
-                      ? 'Enter the OTP sent to your phone' 
-                      : 'Enter your PIN to continue',
+                  Text(!_useStaticPin && auth.phoneNumber != null && auth.phoneNumber!.isNotEmpty 
+                      ? 'Enter the 6-digit OTP sent to your phone' 
+                      : 'Enter your Admin PIN to continue',
                       style: Theme.of(context).textTheme.bodyMedium),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      _useStaticPin = !_useStaticPin;
+                      _pin = '';
+                    }),
+                    icon: Icon(_useStaticPin ? Icons.phone_android : Icons.pin, size: 16),
+                    label: Text(_useStaticPin ? 'Switch to Phone OTP SMS' : 'Use Offline Static PIN', style: const TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(4, (i) => Container(
-                        width: 16, height: 16, margin: const EdgeInsets.all(8),
+                    children: List.generate(!_useStaticPin && auth.phoneNumber != null && auth.phoneNumber!.isNotEmpty ? 6 : 4, (i) => Container(
+                        width: 14, height: 14, margin: const EdgeInsets.symmetric(horizontal: 6),
                         decoration: BoxDecoration(shape: BoxShape.circle,
                             color: i < _pin.length
                                 ? Theme.of(context).colorScheme.primary
                                 : Theme.of(context).disabledColor))),
                   ),
-                  if (_error) ...[
-                    const SizedBox(height: 8),
-                    Text('Incorrect OTP/PIN',
-                        style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13)),
+                  if (_error || _errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Text(_errorMessage ?? 'Incorrect OTP code',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
                   ],
                   const SizedBox(height: 24),
                   if (_isSending)
@@ -188,9 +224,10 @@ class _AdminPinScreenState extends State<AdminPinScreen> {
                         );
                       }).toList(),
                     ),
-                ],
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
-            ),
           ),
         ),
       ),

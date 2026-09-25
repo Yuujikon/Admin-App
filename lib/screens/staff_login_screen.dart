@@ -14,7 +14,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   final _email   = TextEditingController();
   final _pass    = TextEditingController();
   bool  _loading = false;
-  bool  _isRegistering = false;
   String? _error;
 
   @override
@@ -32,12 +31,12 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
               children: [
                 Icon(Icons.storefront, size: 64, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 24),
-                Text(_isRegistering ? 'Staff Registration' : 'GDC Staff Portal',
+                Text('GDC Staff Portal',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
                 const SizedBox(height: 8),
-                Text(_isRegistering ? 'Create your staff account' : 'Sign in to access POS or Dashboard',
+                Text('Sign in to access POS or Dashboard',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 32),
@@ -67,28 +66,17 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                 ],
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: _loading ? null : (_isRegistering ? _register : _login),
+                  onPressed: _loading ? null : _login,
                   child: _loading 
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_isRegistering ? 'CREATE ACCOUNT' : 'SIGN IN', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    : const Text('SIGN IN', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 16),
                 
                 TextButton(
-                  onPressed: () => setState(() {
-                    _isRegistering = !_isRegistering;
-                    _error = null;
-                  }),
-                  child: Text(_isRegistering 
-                    ? 'Already have an account? Sign In' 
-                    : 'No account? Register as Staff here'),
+                  onPressed: _resetPassword,
+                  child: Text('Forgot Password?', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
                 ),
-
-                if (!_isRegistering)
-                  TextButton(
-                    onPressed: _resetPassword,
-                    child: Text('Forgot Password?', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-                  ),
               ],
             ),
           ),
@@ -105,24 +93,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       await auth.login(_email.text.trim(), _pass.text.trim());
     } catch (e) {
       setState(() { _error = 'Login failed. Check your email/password.'; _loading = false; });
-    }
-  }
-
-  Future<void> _register() async {
-    if (_email.text.isEmpty || _pass.text.isEmpty) return;
-    if (_pass.text.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters.');
-      return;
-    }
-    setState(() { _loading = true; _error = null; });
-    try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _email.text.trim(), 
-        password: _pass.text.trim()
-      );
-      // AppAuthProvider listener in main.dart will handle the rest
-    } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
     }
   }
 

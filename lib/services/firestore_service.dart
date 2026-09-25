@@ -5,27 +5,40 @@ import '../models/transaction.dart';
 import '../models/expense.dart';
 import '../models/refund_request.dart';
 import '../models/bundle.dart';
-import '../models/promotion.dart';
 import '../models/store_settings.dart';
 import '../models/supplier.dart';
 import '../models/loss_record.dart';
 import '../models/customer.dart';
+import '../models/catalog_product.dart';
+import '../models/restock_inquiry.dart';
 
 class FirestoreService {
   final _db = FirebaseFirestore.instance;
 
+  FirestoreService() {
+    try {
+      _db.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
+    } catch (_) {
+      // Settings can only be set once before any Firestore calls
+    }
+  }
+
   // ── Collections ────────────────────────────────────────────────────────────
-  CollectionReference get _products       => _db.collection('products');
-  CollectionReference get _orders         => _db.collection('orders');
-  CollectionReference get _transactions   => _db.collection('transactions');
-  CollectionReference get _expenses       => _db.collection('expenses');
-  CollectionReference get _refundRequests => _db.collection('refund_requests');
-  CollectionReference get _suppliers      => _db.collection('suppliers');
-  CollectionReference get _lossRecords    => _db.collection('loss_records');
-  CollectionReference get _customers      => _db.collection('customers');
-  CollectionReference get _promotions     => _db.collection('promotions');
-  CollectionReference get _bundles        => _db.collection('bundles');
-  DocumentReference   get _settings       => _db.collection('settings').doc('store_settings');
+  CollectionReference get _products          => _db.collection('products');
+  CollectionReference get _catalog           => _db.collection('catalog');
+  CollectionReference get _orders            => _db.collection('orders');
+  CollectionReference get _transactions      => _db.collection('transactions');
+  CollectionReference get _expenses          => _db.collection('expenses');
+  CollectionReference get _refundRequests    => _db.collection('refund_requests');
+  CollectionReference get _suppliers         => _db.collection('suppliers');
+  CollectionReference get _lossRecords       => _db.collection('loss_records');
+  CollectionReference get _customers         => _db.collection('customers');
+  CollectionReference get _bundles           => _db.collection('bundles');
+  CollectionReference get _restockInquiries  => _db.collection('restock_inquiries');
+  DocumentReference   get _settings          => _db.collection('settings').doc('store_settings');
 
   // ── Store Settings ─────────────────────────────────────────────────────────
 
@@ -49,6 +62,12 @@ class FirestoreService {
       _products.orderBy('name').snapshots().map(
               (s) => s.docs.map(Product.fromFirestore).toList());
 
+  /// Use this for public/customer views to ensure internal draft products are hidden
+  Stream<List<Product>> publishedProductsStream() =>
+      _products.where('status', isEqualTo: 'published')
+          .orderBy('name').snapshots().map(
+              (s) => s.docs.map(Product.fromFirestore).toList());
+
   Future<void> addProduct(Product p) =>
       _products.add(p.toFirestore());
 
@@ -61,61 +80,127 @@ class FirestoreService {
   Future<void> updateStock(String productId, int newStock) =>
       _products.doc(productId).update({'stock': newStock});
 
-  Future<void> recordSale(StoreTransaction tx) {
-    final batch = _db.batch();
-    
-    batch.set(_transactions.doc(tx.id), tx.toFirestore());
+  // ── Catalog ────────────────────────────────────────────────────────────────
 
-    for (final item in tx.items) {
-      batch.update(_products.doc(item.productId), {
-        'stock': FieldValue.increment(-item.qty),
-      });
-    }
+  Stream<List<CatalogProduct>> catalogStream() =>
+      _catalog.orderBy('name').snapshots().map(
+              (s) => s.docs.map(CatalogProduct.fromFirestore).toList());
 
-    if (tx.customerId != null) {
-      final pointsAwarded = (tx.total / 100).floor();
-      final netPoints = pointsAwarded - tx.pointsRedeemed;
-      
-      batch.update(_customers.doc(tx.customerId), {
-        'loyaltyPoints': FieldValue.increment(netPoints),
-        'totalSpent':    FieldValue.increment(tx.total),
-        'lastVisit':     FieldValue.serverTimestamp(),
-      });
-    }
+  Future<void> addCatalogProduct(CatalogProduct p) =>
+      _catalog.add(p.toFirestore());
 
-    return batch.commit();
-  }
+  Future<void> updateCatalogProduct(CatalogProduct p) =>
+      _catalog.doc(p.id).update(p.toFirestore());
 
-  Future<void> decrementStockBatch(List<CartItem> items) {
-    final batch = _db.batch();
-    for (final item in items) {
-      batch.update(_products.doc(item.productId), {
-        'stock': FieldValue.increment(-item.qty),
-      });
-    }
-    return batch.commit();
-  }
+  Future<void> deleteCatalogProduct(String id) =>
+      _catalog.doc(id).delete();
 
-  Future<void> refundTransaction(StoreTransaction tx) {
-    final batch = _db.batch();
-    batch.delete(_transactions.doc(tx.id));
+  Future<void> linkBarcodeToCatalog(String catalogId, String barcode) =>
+      _catalog.doc(catalogId).update({'barcode': barcode});
 
-    for (final item in tx.items) {
-      batch.update(_products.doc(item.productId), {
-        'stock': FieldValue.increment(item.qty),
-      });
-    }
+  Future<void> recordSale(StoreTransaction tx) async {
+    return _db.runTransaction((transaction) async {
+      // 1. Verify stock for all items within the transaction (Server-side check)
+      for (final item in tx.items) {
+        final productDoc = await transaction.get(_products.doc(item.productId));
+        if (!productDoc.exists) throw Exception('Product ${item.name} does not exist.');
+        
+        final data = (productDoc.data() as Map<String, dynamic>?) ?? {};
+        
+        if (item.variantId != null) {
+          final variants = data['variants'] as Map? ?? {};
+          final vData = variants[item.variantId] as Map? ?? {};
+          final int stock = (vData['stock'] as num? ?? 0).toInt();
+          if (stock < item.qty) throw Exception('Insufficient stock for ${item.name} (${vData['name']}). Only $stock left.');
+        } else {
+          final int stock = (data['stock'] as num? ?? 0).toInt();
+          if (stock < item.qty) throw Exception('Insufficient stock for ${item.name}. Only $stock left.');
+        }
 
-    if (tx.customerId != null) {
-      final points = (tx.total / 100).floor();
-      if (points > 0) {
-        batch.update(_customers.doc(tx.customerId), {
-          'loyaltyPoints': FieldValue.increment(-points),
-        });
+        if (data['status'] == 'draft') throw Exception('Product ${item.name} is no longer available.');
       }
-    }
 
-    return batch.commit();
+      // 2. Perform updates
+      transaction.set(_transactions.doc(tx.id), tx.toFirestore());
+
+      for (final item in tx.items) {
+        if (item.variantId != null) {
+          transaction.update(_products.doc(item.productId), {
+            'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
+          });
+        } else {
+          transaction.update(_products.doc(item.productId), {
+            'stock': FieldValue.increment(-item.qty),
+          });
+        }
+      }
+
+      if (tx.customerId != null) {
+        transaction.set(_customers.doc(tx.customerId), {
+          'totalSpent':    FieldValue.increment(tx.total),
+          'lastVisit':     FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }).catchError((e) {
+      throw Exception('Failed to record sale: $e');
+    });
+  }
+
+  Future<void> decrementStockBatch(List<CartItem> items) async {
+    return _db.runTransaction((transaction) async {
+      for (final item in items) {
+        final productDoc = await transaction.get(_products.doc(item.productId));
+        if (!productDoc.exists) continue;
+
+        final data = productDoc.data() as Map<String, dynamic>;
+
+        if (item.variantId != null) {
+          final variants = data['variants'] as Map? ?? {};
+          final vData = variants[item.variantId] as Map? ?? {};
+          final int stock = (vData['stock'] as num? ?? 0).toInt();
+          // We allow decrement if it's already negative from a previous error, 
+          // but we prioritize preventing it during the transaction.
+          if (stock < item.qty && item.qty > 0) throw Exception('Insufficient stock for ${item.name}.');
+
+          transaction.update(_products.doc(item.productId), {
+            'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
+          });
+        } else {
+          final int stock = (data['stock'] as num? ?? 0).toInt();
+          if (stock < item.qty && item.qty > 0) throw Exception('Insufficient stock for ${item.name}.');
+
+          transaction.update(_products.doc(item.productId), {
+            'stock': FieldValue.increment(-item.qty),
+          });
+        }
+      }
+    }).catchError((e) {
+      throw Exception('Failed to update stock: $e');
+    });
+  }
+
+  Future<void> refundTransaction(StoreTransaction tx) async {
+    try {
+      final batch = _db.batch();
+      // Mark as refunded instead of deleting
+      batch.update(_transactions.doc(tx.id), {'isRefunded': true});
+
+      for (final item in tx.items) {
+        if (item.variantId != null) {
+          batch.update(_products.doc(item.productId), {
+            'variants.${item.variantId}.stock': FieldValue.increment(item.qty),
+          });
+        } else {
+          batch.update(_products.doc(item.productId), {
+            'stock': FieldValue.increment(item.qty),
+          });
+        }
+      }
+
+      await batch.commit();
+    } catch (e) {
+      throw Exception('Failed to process refund: $e');
+    }
   }
 
   // ── Suppliers ──────────────────────────────────────────────────────────────
@@ -151,26 +236,31 @@ class FirestoreService {
   // ── Orders ─────────────────────────────────────────────────────────────────
 
   Stream<List<PreOrder>> ordersStream() =>
-      _orders.orderBy('createdAt', descending: true).snapshots().map(
+      _orders.snapshots().map(
               (s) => s.docs.map(PreOrder.fromFirestore).toList());
 
   Stream<List<PreOrder>> ordersStreamForEmail(String email) =>
       _orders
           .where('customerEmail', isEqualTo: email)
-          .orderBy('createdAt', descending: true)
           .snapshots()
           .map((s) => s.docs.map(PreOrder.fromFirestore).toList());
 
   Future<DocumentReference> addOrder(PreOrder order) =>
       _orders.add(order.toFirestore());
 
-  Future<void> updateOrderStatus(String orderId, OrderStatus status) =>
-      _orders.doc(orderId).update({'status': status.name});
+  Future<void> updateOrder(PreOrder order) =>
+      _orders.doc(order.id).update(order.toFirestore());
+
+  Future<void> updateOrderStatus(String orderId, OrderStatus status, {String? reason}) =>
+      _orders.doc(orderId).update({
+        'status': status.name,
+        if (reason != null) 'rejectionReason': reason,
+      });
 
   // ── Transactions ───────────────────────────────────────────────────────────
 
   Stream<List<StoreTransaction>> transactionsStream() =>
-      _transactions.orderBy('createdAt', descending: true).snapshots().map(
+      _transactions.snapshots().map(
               (s) => s.docs.map(StoreTransaction.fromFirestore).toList());
 
   Future<void> addTransaction(StoreTransaction tx) =>
@@ -179,7 +269,7 @@ class FirestoreService {
   // ── Expenses ───────────────────────────────────────────────────────────────
 
   Stream<List<Expense>> expensesStream() =>
-      _expenses.orderBy('createdAt', descending: true).snapshots().map(
+      _expenses.snapshots().map(
               (s) => s.docs.map(Expense.fromFirestore).toList());
 
   Future<void> addExpense(Expense e) =>
@@ -206,52 +296,62 @@ class FirestoreService {
     return Customer.fromMap(snap.docs.first.id, snap.docs.first.data() as Map<String, dynamic>);
   }
 
-  Future<void> updateCustomerPoints(String id, int delta) =>
-      _customers.doc(id).update({'loyaltyPoints': FieldValue.increment(delta)});
-
   // ── Refund Requests ────────────────────────────────────────────────────────
 
   Stream<List<RefundRequest>> refundRequestsStream() =>
-      _refundRequests.orderBy('createdAt', descending: true).snapshots().map(
+      _refundRequests.snapshots().map(
               (s) => s.docs.map(RefundRequest.fromFirestore).toList());
 
-  Future<void> updateRefundStatus(String requestId, RefundStatus status, String adminEmail, {String? reason}) =>
+  Future<void> updateRefundStatus(String requestId, RefundStatus status, String adminEmail, {String? reason, String? notes}) =>
       _refundRequests.doc(requestId).update({
         'status': status.name,
         'processedByEmail': adminEmail,
         if (reason != null) 'rejectionReason': reason,
+        if (notes != null) 'adminNotes': notes,
       });
 
-  Future<void> processApprovedRefund(RefundRequest request, String adminEmail) {
-    final batch = _db.batch();
-    
-    batch.update(_refundRequests.doc(request.id), {
-      'status': RefundStatus.approved.name,
-      'processedByEmail': adminEmail,
-    });
+  Future<void> processApprovedRefund(RefundRequest request, String adminEmail) async {
+    try {
+      final batch = _db.batch();
+      
+      batch.update(_refundRequests.doc(request.id), {
+        'status': RefundStatus.approved.name,
+        'processedByEmail': adminEmail,
+        if (request.condition != null) 'condition': request.condition!.name,
+        if (request.adminNotes != null) 'adminNotes': request.adminNotes,
+      });
 
-    for (final item in request.items) {
-      if (request.condition == RefundCondition.restockable) {
-        batch.update(_products.doc(item.productId), {
-          'stock': FieldValue.increment(item.qty),
-        });
-      } else {
-        final lossDoc = _lossRecords.doc();
-        batch.set(lossDoc, {
-          'productId':   item.productId,
-          'productName': item.name,
-          'qty':         item.qty,
-          'unitPrice':   item.price,
-          'type':        request.condition == RefundCondition.expired ? 'expired' : 'damaged',
-          'notes':       'Refund Return: ${request.reason}',
-          'createdAt':   FieldValue.serverTimestamp(),
-          'processedBy': adminEmail,
-          'referenceId': request.transactionId,
-        });
+      for (final item in request.items) {
+        if (request.condition == RefundCondition.restockable) {
+          if (item.variantId != null) {
+            batch.update(_products.doc(item.productId), {
+              'variants.${item.variantId}.stock': FieldValue.increment(item.qty),
+            });
+          } else {
+            batch.update(_products.doc(item.productId), {
+              'stock': FieldValue.increment(item.qty),
+            });
+          }
+        } else {
+          final lossDoc = _lossRecords.doc();
+          batch.set(lossDoc, {
+            'productId':   item.productId,
+            'productName': item.name,
+            'qty':         item.qty,
+            'unitPrice':   item.price,
+            'type':        request.condition == RefundCondition.expired ? 'expired' : 'damaged',
+            'notes':       'Refund Return: ${request.reason}',
+            'createdAt':   FieldValue.serverTimestamp(),
+            'processedBy': adminEmail,
+            'referenceId': request.transactionId,
+          });
+        }
       }
-    }
 
-    return batch.commit();
+      await batch.commit();
+    } catch (e) {
+      throw Exception('Failed to process approved refund: $e');
+    }
   }
 
   // ── Product Watches ────────────────────────────────────────────────────────
@@ -286,15 +386,24 @@ class FirestoreService {
 
   Future<void> deleteBundle(String id) => _bundles.doc(id).delete();
 
-  // ── Promotions ─────────────────────────────────────────────────────────────
+  // ── Restock Inquiries ──────────────────────────────────────────────────────
 
-  Stream<List<Promotion>> promotionsStream() =>
-      _promotions.snapshots().map((s) => s.docs.map(Promotion.fromFirestore).toList());
+  Stream<List<RestockInquiry>> restockInquiriesStream() =>
+      _restockInquiries.orderBy('createdAt', descending: true).snapshots().map(
+              (s) => s.docs.map(RestockInquiry.fromFirestore).toList());
 
-  Future<void> savePromotion(Promotion p) {
-    if (p.id.isEmpty) return _promotions.add(p.toFirestore());
-    return _promotions.doc(p.id).update(p.toFirestore());
-  }
+  Future<void> addRestockInquiry(RestockInquiry ri) =>
+      _restockInquiries.add(ri.toFirestore());
 
-  Future<void> deletePromotion(String id) => _promotions.doc(id).delete();
+  Future<void> updateRestockInquiry(RestockInquiry ri) =>
+      _restockInquiries.doc(ri.id).update(ri.toFirestore());
+
+  Future<void> deleteRestockInquiry(String id) =>
+      _restockInquiries.doc(id).delete();
+
+  Future<void> updateRestockInquiryStatus(String id, RestockInquiryStatus status, {DateTime? sentAt}) =>
+      _restockInquiries.doc(id).update({
+        'status': status.name,
+        if (sentAt != null) 'sentAt': Timestamp.fromDate(sentAt),
+      });
 }

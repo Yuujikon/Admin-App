@@ -29,19 +29,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final monthLabel = DateFormat('MMMM yyyy').format(_selectedMonth);
 
     final monthTx = inventory.transactions.where(
-        (t) => DateFormat('yyyy-MM').format(t.createdAt) == monthStr).toList();
+        (t) => DateFormat('yyyy-MM').format(t.createdAt) == monthStr && !t.isRefunded).toList();
     
     final monthExp = expenses.where(
         (e) => DateFormat('yyyy-MM').format(e.createdAt) == monthStr).toList();
 
     final totalSales = monthTx.fold(0.0, (s, t) => s + t.total);
+    final grossProfit = monthTx.fold(0.0, (s, t) => s + t.items.fold(0.0, (isum, item) => isum + (item.price - item.costPrice) * item.qty));
     final totalExp = monthExp.fold(0.0, (s, e) => s + e.amount);
-    final netIncome = totalSales - totalExp;
+    final netIncome = grossProfit - totalExp;
 
     // Loss in selected month
     final monthLoss = inventory.lossRecords.where(
         (r) => DateFormat('yyyy-MM').format(r.createdAt) == monthStr);
     final totalLoss = monthLoss.fold(0.0, (s, r) => s + r.totalLoss);
+    final netProfit = netIncome - totalLoss;
+    final profitMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0.0;
 
     final semantic = Theme.of(context).semantic;
 
@@ -82,7 +85,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   Text(monthLabel.toUpperCase(), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5), letterSpacing: 1.5)),
                   const SizedBox(height: 24),
-                  _reportRow('Gross Sales', formatPeso(totalSales), semantic.success),
+                  _reportRow('Gross Sales', formatPeso(totalSales), Theme.of(context).colorScheme.onSurface),
+                  const SizedBox(height: 12),
+                  _reportRow('Gross Profit', formatPeso(grossProfit), semantic.success),
                   const SizedBox(height: 12),
                   _reportRow('Total Expenses', '- ${formatPeso(totalExp)}', Theme.of(context).colorScheme.error),
                   const SizedBox(height: 12),
@@ -91,8 +96,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Divider(height: 1),
                   ),
-                  _reportRow('Net Profit', formatPeso(netIncome - totalLoss), 
-                             (netIncome - totalLoss) >= 0 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.error, isBold: true),
+                  _reportRow('Net Profit', formatPeso(netProfit), 
+                             netProfit >= 0 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.error, isBold: true),
+                  const SizedBox(height: 12),
+                  _reportRow('Profit Margin', '${profitMargin.toStringAsFixed(2)}%', 
+                             profitMargin >= 0 ? semantic.success : Theme.of(context).colorScheme.error),
                 ],
               ),
             ),
@@ -117,9 +125,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
               context,
               monthLabel: monthLabel,
               sales: totalSales,
+              profit: grossProfit,
               expenses: totalExp,
               loss: totalLoss,
-              net: netIncome - totalLoss,
+              net: netProfit,
+              margin: profitMargin,
               topProducts: _getTopProductsData(monthTx),
             ), 
             icon: const Icon(Icons.picture_as_pdf), 
@@ -145,9 +155,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
     BuildContext context, {
     required String monthLabel,
     required double sales,
+    required double profit,
     required double expenses,
     required double loss,
     required double net,
+    required double margin,
     required List<MapEntry<String, int>> topProducts,
   }) async {
     final pdf = pw.Document();
@@ -159,7 +171,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Text('GDC Sari-Sari Store - Monthly Report', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+              pw.Header(level: 0, child: pw.Text('GDC Sari-Sari Store - Monthly Report', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold))),
               pw.SizedBox(height: 8),
               pw.Text('Month: $monthLabel', style: const pw.TextStyle(fontSize: 18)),
               pw.Divider(height: 32),
@@ -169,6 +181,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   pw.Text('Gross Sales:'),
                   pw.Text(formatPeso(sales), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+              pw.SizedBox(height: 4),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Gross Profit:', style: const pw.TextStyle(color: PdfColors.green)),
+                  pw.Text(formatPeso(profit), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
                 ],
               ),
               pw.SizedBox(height: 4),
@@ -191,8 +211,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('Net Income:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                  pw.Text('Net Profit:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
                   pw.Text(formatPeso(net), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: net >= 0 ? PdfColors.blue900 : PdfColors.red)),
+                ],
+              ),
+              pw.SizedBox(height: 4),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Profit Margin:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('${margin.toStringAsFixed(2)}%', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: margin >= 0 ? PdfColors.green : PdfColors.red)),
                 ],
               ),
               

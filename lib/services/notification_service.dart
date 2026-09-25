@@ -1,138 +1,216 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
   static final _local  = FlutterLocalNotificationsPlugin();
   static final _fcm    = FirebaseMessaging.instance;
 
-  static const _ordersChannel = AndroidNotificationChannel(
-    'gdc_orders', 'Order Updates',
-    description: 'Order status and pickup reminders',
-    importance: Importance.high,
-  );
-
-  static const _alertsChannel = AndroidNotificationChannel(
-    'gdc_alerts', 'Store Alerts',
-    description: 'Low stock and perishable warnings',
-    importance: Importance.defaultImportance,
+  static const _adminChannel = AndroidNotificationChannel(
+    'gdc_admin_popups', 'GDC Admin Alerts',
+    description: 'High-priority pop-up alerts for GDC Admin Store Staff',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
   );
 
   static Future<void> initialize() async {
     // Request permission (Android 13+, iOS)
     await _fcm.requestPermission(alert: true, badge: true, sound: true);
 
-    // Set up local notifications (for foreground FCM messages)
+    // Set up local notifications
+    await _initLocalNotifications();
+
+    // Subscribe to admin-specific alerts
+    await _fcm.subscribeToTopic('admin_alerts');
+
+    // Show notification when app is in foreground
+    FirebaseMessaging.onMessage.listen((message) {
+      handleMessage(message);
+    });
+  }
+
+  /// Use this for background isolate initialization
+  static Future<void> initializeBackground() async {
+    await _initLocalNotifications();
+  }
+
+  static Future<void> _initLocalNotifications() async {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _local.initialize(const InitializationSettings(android: androidSettings));
 
     final androidImpl = _local.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await androidImpl?.createNotificationChannel(_ordersChannel);
-    await androidImpl?.createNotificationChannel(_alertsChannel);
-
-    // Show notification when app is in foreground
-    FirebaseMessaging.onMessage.listen((message) {
-      final n = message.notification;
-      if (n == null) return;
-      _local.show(
-        n.hashCode,
-        n.title,
-        n.body,
-        const NotificationDetails(android: AndroidNotificationDetails(
-          'gdc_orders', 'Order Updates',
-          importance: Importance.high, priority: Priority.high,
-        )),
-      );
-    });
-
-    // Get and print FCM token (send this to your server/Cloud Function)
-    final token = await _fcm.getToken();
-    // await _fcm.getToken();
-    // debugPrint('FCM Token: $token');
+    await androidImpl?.requestNotificationsPermission();
+    await androidImpl?.createNotificationChannel(_adminChannel);
   }
 
-  // Local notification — order ready
-  static Future<void> sendOrderReady(String orderId) =>
-      _local.show(
-        orderId.hashCode,
-        'Order Ready! 🛍️',
-        'Order $orderId is packed and ready for pickup.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          'gdc_orders', 'Order Updates',
-          importance: Importance.high, priority: Priority.high,
-        )),
+  static void handleMessage(RemoteMessage message) {
+    // Strict Recipient Filter: Admin app ONLY handles admin messages
+    final String recipient = message.data['recipient'] ?? '';
+    if (recipient == 'customer') return;
+
+    String? title = message.notification?.title ?? message.data['title'];
+    String? body  = message.notification?.body  ?? message.data['body'];
+
+    if (title == null && body == null) return;
+    
+    final String displayTitle = title?.startsWith('🛡️ GDC Admin') == true
+        ? title!
+        : '🛡️ GDC Admin • ${title ?? 'Alert'}';
+
+    showSmsNotificationPopUp(
+      id: message.hashCode,
+      title: displayTitle,
+      body: body ?? '',
+    );
+  }
+
+  // ── HEADS-UP ADMIN POP-UP NOTIFICATIONS ────────────────────────────────────
+
+  static Future<void> showSmsNotificationPopUp({
+    required String title,
+    required String body,
+    int? id,
+  }) async {
+    try {
+      final String formattedTitle = title.startsWith('🛡️ GDC Admin') 
+          ? title 
+          : '🛡️ GDC Admin • $title';
+
+      await _local.show(
+        id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        formattedTitle,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'gdc_admin_popups', 'GDC Admin Alerts',
+            channelDescription: 'High-priority pop-up alerts for GDC Admin Store Staff',
+            importance: Importance.max,
+            priority: Priority.high,
+            visibility: NotificationVisibility.public,
+            fullScreenIntent: false,
+            icon: '@mipmap/ic_launcher',
+            playSound: true,
+            enableVibration: true,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+        ),
       );
+    } catch (e) {
+      debugPrint('Local Notification Error: $e');
+    }
+  }
+
+  // ── ADMIN ALERTS (Shown locally on Admin device) ───────────────────────────
 
   static Future<void> showRefundRequestAlert(String transactionId, String customer) =>
-      _local.show(
-        transactionId.hashCode + 2,
-        'New Refund Request 💸',
-        'Customer $customer is requesting a refund for sale #$transactionId.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          'gdc_orders', 'Order Updates',
-          importance: Importance.high, priority: Priority.high,
-        )),
+      showSmsNotificationPopUp(
+        id: transactionId.hashCode + 2,
+        title: 'New Refund Request 💸',
+        body: 'Customer $customer requested a refund for sale #$transactionId.',
       );
 
   static Future<void> showLowStockSupplierAlert(String productName, String supplierName, String phone) =>
-      _local.show(
-        productName.hashCode + 3,
-        'Low Stock: Call Supplier 📞',
-        '$productName is low! Contact $supplierName at $phone.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          'gdc_alerts', 'Store Alerts',
-          importance: Importance.high, priority: Priority.high,
-        )),
+      showSmsNotificationPopUp(
+        id: productName.hashCode + 3,
+        title: 'Low Stock Alert 📞',
+        body: '$productName is low in stock! Contact $supplierName at $phone.',
       );
 
-  static Future<void> sendRefundUpdate(String transactionId, bool approved) =>
-      _local.show(
-        transactionId.hashCode,
-        approved ? 'Refund Approved ✅' : 'Refund Rejected ❌',
-        'Your request for sale #${transactionId.length > 8 ? transactionId.substring(0, 8) : transactionId} has been ${approved ? 'approved' : 'rejected'}.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          'gdc_orders', 'Order Updates',
-          importance: Importance.high, priority: Priority.high,
-        )),
+  static Future<void> showPaymentReceivedAlert(String orderId, double amount, String customerName) =>
+      showSmsNotificationPopUp(
+        id: orderId.hashCode + 4,
+        title: 'Payment Received 💰',
+        body: 'Payment of ₱${amount.toStringAsFixed(2)} confirmed for order $orderId from $customerName.',
       );
 
-  static Future<void> sendOrderAutoCancelled(String orderId) =>
-      _local.show(
-        orderId.hashCode + 1,
-        'Order Expired ⚠️',
-        'Order $orderId was cancelled as the pickup window has passed. Items restocked.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          'gdc_orders', 'Order Updates',
-          importance: Importance.high, priority: Priority.high,
-        )),
+  static Future<void> showNewPreOrderAlert(String orderId, String customerName, double total) =>
+      showSmsNotificationPopUp(
+        id: orderId.hashCode + 5,
+        title: 'New Pre-Order Received 🛍️',
+        body: 'Customer $customerName placed order #$orderId (₱${total.toStringAsFixed(2)}).',
       );
 
-  // Schedule a local reminder for perishable orders
-  static Future<void> schedulePerishableReminder(String id, String orderId) async {
-    // Show a reminder notification now (true scheduling needs flutter_local_notifications zonedSchedule)
-    await _local.show(
-      '${id}remind'.hashCode,
-      'Perishable Order Placed ⏰',
-      'Order $orderId must be collected within 2 hours or it will be auto-cancelled.',
-      const NotificationDetails(android: AndroidNotificationDetails(
-        'gdc_alerts', 'Store Alerts',
-        importance: Importance.defaultImportance,
-      )),
+  // ── CUSTOMER DISPATCHERS (ONLY UPDATE DISPATCH LOGS, DO NOT POP UP ON ADMIN DEVICE) ─
+
+  static String _getTopic(String email) => 
+      'customer_${email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_')}';
+
+  static Future<void> sendOrderUpdate({
+    required String email,
+    required String orderId,
+    required String status,
+    required String title,
+    required String body,
+  }) async {
+    final topic = _getTopic(email);
+    
+    if (kDebugMode) {
+      print('FCM Dispatch to Customer Topic: $topic');
+      print('Payload: { "recipient": "customer", "orderId": "$orderId", "status": "$status" }');
+      print('Title: $title | Body: $body');
+    }
+
+    // NOTE: Does NOT call local showSmsNotificationPopUp on Admin device!
+    // Customer app receives state update via Firestore snapshot listener or FCM payload.
+  }
+
+  static Future<void> sendOrderReady(String orderId, String email) async {
+    await sendOrderUpdate(
+      email: email,
+      orderId: orderId,
+      status: 'ready',
+      title: '📦 Order Ready for Pickup!',
+      body: 'Your order $orderId is packed and ready. Visit GDC Store to collect.',
     );
   }
 
-  static Future<void> sendBackInStock(String productName, String userEmail) async {
-    // In a real app, this would trigger an FCM push to that specific user topic
-    // For now, we simulate with a debug log or a broadcast if needed.
-    // For demo purposes, we show a local notification on admin app too
-    await _local.show(
-      productName.hashCode + 10,
-      'Restock Alert Sent 📢',
-      'Notification sent to watchers of $productName.',
-      const NotificationDetails(android: AndroidNotificationDetails(
-        'gdc_alerts', 'Store Alerts',
-        importance: Importance.low,
-      )),
+  static Future<void> sendOrderCollected(String orderId, String email) async {
+    await sendOrderUpdate(
+      email: email,
+      orderId: orderId,
+      status: 'collected',
+      title: '✅ Order Collected!',
+      body: 'Thank you for shopping! Your order $orderId has been marked as collected.',
     );
+  }
+
+  static Future<void> sendRefundUpdate(String transactionId, String email, bool approved) async {
+    await sendOrderUpdate(
+      email: email,
+      orderId: transactionId,
+      status: approved ? 'refunded' : 'refundRejected',
+      title: approved ? '💸 Refund Approved' : '❌ Refund Rejected',
+      body: approved 
+          ? 'Your refund for #$transactionId has been approved and processed.' 
+          : 'Your refund request for #$transactionId was not approved.',
+    );
+  }
+
+  static Future<void> sendOrderAutoCancelled(String orderId, String email) async {
+    await sendOrderUpdate(
+      email: email,
+      orderId: orderId,
+      status: 'cancelled',
+      title: '⚠️ Order Expired/Cancelled',
+      body: 'Your order $orderId was cancelled as it was not collected within the timeframe.',
+    );
+  }
+
+  static Future<void> schedulePerishableReminder(String id, String orderId) async {
+    if (kDebugMode) {
+      print('Target Customer Reminder Scheduled for $orderId');
+    }
+  }
+
+  static Future<void> sendBackInStock(String productName, String userEmail) async {
+    if (kDebugMode) {
+      print('Target Customer Back-In-Stock Alert for $productName ($userEmail)');
+    }
   }
 }

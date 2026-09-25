@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'order.dart';
 
 enum PaymentMethod { cash }
+enum TransactionType { inStore, pickup }
 
 class StoreTransaction {
   final String         id;
@@ -9,11 +10,12 @@ class StoreTransaction {
   final double         total;
   final double         cash;
   final double         change;
-  final int            pointsRedeemed; // NEW
   final DateTime       createdAt;
   final String?        customerId;
-  final String?        customerEmail; // NEW: Track email for loyalty/stats
+  final String?        customerEmail; // Track email for stats
   final PaymentMethod  paymentMethod;
+  final TransactionType type;
+  final bool           isRefunded;
 
   const StoreTransaction({
     required this.id,
@@ -21,11 +23,12 @@ class StoreTransaction {
     required this.total,
     required this.cash,
     required this.change,
-    this.pointsRedeemed = 0,
     required this.createdAt,
     this.customerId,
     this.customerEmail,
     this.paymentMethod = PaymentMethod.cash,
+    this.type = TransactionType.inStore,
+    this.isRefunded = false,
   });
 
   factory StoreTransaction.fromFirestore(DocumentSnapshot doc) {
@@ -36,7 +39,6 @@ class StoreTransaction {
       total:     (d['total'] as num).toDouble(),
       cash:      (d['cash'] as num).toDouble(),
       change:    (d['change'] as num).toDouble(),
-      pointsRedeemed: (d['pointsRedeemed'] as num? ?? 0).toInt(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       customerId: d['customerId'],
       customerEmail: d['customerEmail'],
@@ -44,6 +46,11 @@ class StoreTransaction {
         (e) => e.name == (d['paymentMethod'] ?? 'cash'),
         orElse: () => PaymentMethod.cash,
       ),
+      type: TransactionType.values.firstWhere(
+        (e) => e.name == (d['type'] ?? 'inStore'),
+        orElse: () => TransactionType.inStore,
+      ),
+      isRefunded: d['isRefunded'] ?? false,
     );
   }
 
@@ -52,10 +59,11 @@ class StoreTransaction {
     'total':         total,
     'cash':          cash,
     'change':        change,
-    'pointsRedeemed': pointsRedeemed,
     'createdAt':     FieldValue.serverTimestamp(),
     'customerId':    customerId,
     'customerEmail': customerEmail,
     'paymentMethod': paymentMethod.name,
+    'type':          type.name,
+    'isRefunded':    isRefunded,
   };
 }

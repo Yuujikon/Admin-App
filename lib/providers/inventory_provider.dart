@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product.dart';
+import '../models/catalog_product.dart';
 import '../models/bundle.dart';
 import '../models/order.dart';
 import '../models/transaction.dart';
@@ -14,11 +15,13 @@ import '../models/customer.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 
-class InventoryProvider extends ChangeNotifier {
+import 'base_provider.dart';
+
+class InventoryProvider extends BaseProvider {
   final _fs = FirestoreService();
-  final List<StreamSubscription> _subs = [];
 
   List<Product>          _products       = [];
+  List<CatalogProduct>   _catalog        = [];
   List<StoreTransaction> _transactions    = [];
   List<RefundRequest>    _refundRequests = [];
   List<Supplier>         _suppliers      = [];
@@ -27,8 +30,10 @@ class InventoryProvider extends ChangeNotifier {
   List<ProductBundle>    _bundles        = [];
   StoreSettings          _settings       = const StoreSettings(isClosed: false);
   String                 _adminName      = 'Admin';
+  bool                   _isProcessingSale = false;
 
   List<Product>          get products       => _products;
+  List<CatalogProduct>   get catalog        => _catalog;
   List<StoreTransaction> get transactions    => _transactions;
   List<RefundRequest>    get refundRequests => _refundRequests;
   List<Supplier>         get suppliers      => _suppliers;
@@ -37,6 +42,7 @@ class InventoryProvider extends ChangeNotifier {
   List<ProductBundle>    get bundles        => _bundles;
   StoreSettings          get settings       => _settings;
   String                 get adminName      => _adminName;
+  bool                   get isProcessingSale => _isProcessingSale;
 
   List<Product>? _cachedSortedProducts;
   DateTime?      _lastSortTime;
@@ -76,8 +82,9 @@ class InventoryProvider extends ChangeNotifier {
       // Available (stock > threshold) first, then Low Stock, then Out of Stock (0).
       
       int getSortOrder(Product p) {
-        if (p.stock <= 0) return 3; // Out of stock last
-        if (p.stock <= p.lowStockThreshold) return 2; // Low stock second
+        final int stock = p.totalStock;
+        if (stock <= 0) return 3; // Out of stock last
+        if (stock <= p.lowStockThreshold) return 2; // Low stock second
         return 1; // Available first
       }
 
@@ -143,22 +150,39 @@ class InventoryProvider extends ChangeNotifier {
     cancelSubscriptions();
     _cachedSortedProducts = null; 
     _cachedRecentCounts = null;
+    setLoading(true);
 
-    _subs.add(_fs.productsStream().listen((list) {
+    Timer(const Duration(seconds: 3), () {
+      if (isLoading) setLoading(false);
+    });
+
+    registerSubscription(_fs.productsStream().listen((list) {
       _products = list;
       _cachedSortedProducts = null;
-      notifyListeners();
-    }, onError: (e) => debugPrint('Inventory Stream Error: $e')));
+      setLoading(false);
+    }, onError: (e) {
+      setLoading(false);
+      debugPrint('Inventory Stream Error: $e');
+    }));
 
-    _subs.add(_fs.transactionsStream().listen((list) {
+    registerSubscription(_fs.catalogStream().listen((list) {
+      _catalog = list;
+      if (_catalog.isEmpty && _products.isNotEmpty) {
+        _migrateProductsToCatalog();
+      }
+      notifyListeners();
+    }, onError: (e) => debugPrint('Catalog Stream Error: $e')));
+
+    registerSubscription(_fs.transactionsStream().listen((list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _transactions = list;
       _cachedSortedProducts = null;
-      _cachedRecentCounts = null; // Invalidate movement counts
+      _cachedRecentCounts = null; 
       notifyListeners();
     }, onError: (e) => debugPrint('Transactions Stream Error: $e')));
 
-    _subs.add(_fs.refundRequestsStream().listen((list) {
-      // Check for new pending requests to show a notification
+    registerSubscription(_fs.refundRequestsStream().listen((list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (_refundRequests.isNotEmpty && list.length > _refundRequests.length) {
         final newOnes = list.where((req) => 
           req.status == RefundStatus.pending && 
@@ -172,44 +196,52 @@ class InventoryProvider extends ChangeNotifier {
       notifyListeners();
     }, onError: (e) => debugPrint('RefundRequests Stream Error: $e')));
 
-    _subs.add(_fs.suppliersStream().listen((list) {
+    registerSubscription(_fs.suppliersStream().listen((list) {
       _suppliers = list;
       notifyListeners();
     }, onError: (e) => debugPrint('Suppliers Stream Error: $e')));
 
-    _subs.add(_fs.lossRecordsStream().listen((list) {
+    registerSubscription(_fs.lossRecordsStream().listen((list) {
       _lossRecords = list;
       notifyListeners();
     }, onError: (e) => debugPrint('LossRecords Stream Error: $e')));
 
-    _subs.add(_fs.customersStream().listen((list) {
+    registerSubscription(_fs.customersStream().listen((list) {
       _customers = list;
       notifyListeners();
     }, onError: (e) => debugPrint('Customers Stream Error: $e')));
 
-    _subs.add(_fs.bundlesStream().listen((list) {
+    registerSubscription(_fs.bundlesStream().listen((list) {
       _bundles = list;
       notifyListeners();
     }, onError: (e) => debugPrint('Bundles Stream Error: $e')));
 
-    _subs.add(_fs.settingsStream().listen((settings) {
+    registerSubscription(_fs.settingsStream().listen((settings) {
       _settings = settings;
+      _cachedSortedProducts = null; 
       notifyListeners();
     }, onError: (e) => debugPrint('Settings Stream Error: $e')));
   }
 
-  void cancelSubscriptions() {
-    for (var s in _subs) {
-      s.cancel();
+  void _migrateProductsToCatalog() async {
+    for (final p in _products) {
+      if (p.barcode != null) {
+        final alreadyInCatalog = _catalog.any((cp) => cp.barcode == p.barcode);
+        if (!alreadyInCatalog) {
+          await saveCatalogProduct(CatalogProduct(
+            id: '',
+            name: p.name,
+            brand: p.brand,
+            category: p.category,
+            barcode: p.barcode,
+            photoBase64: p.photoBase64,
+          ));
+        }
+      }
     }
-    _subs.clear();
   }
 
-  @override
-  void dispose() {
-    cancelSubscriptions();
-    super.dispose();
-  }
+
 
   Future<void> toggleStoreStatus(bool isClosed, {String? message, DateTime? closeAt, DateTime? openAt}) async {
     await _fs.updateStoreStatus(isClosed, message: message, closeAt: closeAt, openAt: openAt);
@@ -258,6 +290,20 @@ class InventoryProvider extends ChangeNotifier {
     await _fs.deleteProduct(id);
   }
 
+  // ── Catalog ────────────────────────────────────────────────────────────────
+
+  Future<void> saveCatalogProduct(CatalogProduct p) {
+    if (p.id.isEmpty) return _fs.addCatalogProduct(p);
+    return _fs.updateCatalogProduct(p);
+  }
+
+  Future<void> deleteCatalogProduct(String id) => _fs.deleteCatalogProduct(id);
+
+  Future<void> linkBarcodeToCatalog(String catalogId, String barcode) =>
+      _fs.linkBarcodeToCatalog(catalogId, barcode);
+
+  // ── Suppliers ──────────────────────────────────────────────────────────────
+
   Future<Supplier?> getSupplierById(String id) async {
     try {
       return _suppliers.firstWhere((s) => s.id == id);
@@ -288,41 +334,82 @@ class InventoryProvider extends ChangeNotifier {
     await _fs.deleteCustomer(id);
   }
 
-  Future<void> adjustPoints(String customerId, int delta) async {
-    await _fs.updateCustomerPoints(customerId, delta);
-  }
-
   Future<void> saveBundle(ProductBundle b) => _fs.saveBundle(b);
   Future<void> deleteBundle(String id) => _fs.deleteBundle(id);
 
-  Future<void> completeSale(List<CartItem> cart, double cash, {double? totalOverride, String? customerId, String? customerEmail, int pointsRedeemed = 0, PaymentMethod paymentMethod = PaymentMethod.cash}) async {
-    final double total  = totalOverride ?? cart.fold<double>(0.0, (s, i) => s + i.price * i.qty);
-    final double change = paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
-
-    final tx = StoreTransaction(
-      id:        const Uuid().v4(),
-      items:     cart,
-      total:     total,
-      cash:      paymentMethod == PaymentMethod.cash ? cash : 0.0,
-      change:    change,
-      pointsRedeemed: pointsRedeemed,
-      createdAt: DateTime.now(),
-      customerId: customerId,
-      customerEmail: customerEmail,
-      paymentMethod: paymentMethod,
-    );
-
-    await _fs.recordSale(tx);
-
-    // Check for low stock after decrement
+  Future<StoreTransaction> completeSale(List<CartItem> cart, double cash, {double? totalOverride, String? customerId, String? customerEmail, PaymentMethod paymentMethod = PaymentMethod.cash, TransactionType type = TransactionType.inStore}) async {
+    if (_isProcessingSale) throw Exception('Transaction in progress');
+    
+    // 1. Final stock check against current local state (synced via snapshots)
     for (var item in cart) {
       try {
         final p = _products.firstWhere((p) => p.id == item.productId);
-        // If stock is now 5 or less
-        if (p.stock - item.qty <= 5) {
-          _notifySupplierLowStock(p);
+        if (item.variantId != null) {
+          final v = p.variants.firstWhere((v) => v.id == item.variantId);
+          if (v.stock < item.qty) {
+            throw Exception('${p.name} (${v.name}) is now out of stock or has insufficient quantity (${v.stock} remaining).');
+          }
+        } else {
+          if (p.stock < item.qty) {
+            throw Exception('${p.name} is now out of stock or has insufficient quantity (${p.stock} remaining).');
+          }
         }
-      } catch (_) {}
+      } catch (e) {
+        if (e is StateError) throw Exception('Product ${item.name} no longer exists in inventory.');
+        rethrow;
+      }
+    }
+
+    _isProcessingSale = true;
+    notifyListeners();
+
+    try {
+      final double total  = totalOverride ?? cart.fold<double>(0.0, (s, i) => s + i.price * i.qty);
+      final double change = paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
+
+      final tx = StoreTransaction(
+        id:        const Uuid().v4(),
+        items:     cart,
+        total:     total,
+        cash:      paymentMethod == PaymentMethod.cash ? cash : 0.0,
+        change:    change,
+        createdAt: DateTime.now(),
+        customerId: customerId,
+        customerEmail: customerEmail,
+        paymentMethod: paymentMethod,
+        type: type,
+      );
+
+      await _fs.recordSale(tx);
+
+      // Trigger heads-up payment pop-up alert (catch errors so notification issues never block sale)
+      try {
+        await NotificationService.showPaymentReceivedAlert(
+          tx.id.length >= 8 ? tx.id.substring(0, 8) : tx.id, 
+          total, 
+          customerEmail ?? 'Walk-in Customer'
+        );
+      } catch (e) {
+        debugPrint('Notification alert error: $e');
+      }
+
+      // Check for low stock after decrement
+      for (var item in cart) {
+        try {
+          final p = _products.firstWhere((p) => p.id == item.productId);
+          final int remainingStock = item.variantId != null 
+              ? p.variants.firstWhere((v) => v.id == item.variantId).stock - item.qty
+              : p.stock - item.qty;
+          if (remainingStock <= 5) {
+            _notifySupplierLowStock(p);
+          }
+        } catch (_) {}
+      }
+
+      return tx;
+    } finally {
+      _isProcessingSale = false;
+      notifyListeners();
     }
   }
 
@@ -340,7 +427,7 @@ class InventoryProvider extends ChangeNotifier {
     await _fs.refundTransaction(tx);
   }
 
-  Future<void> approveRefundRequest(RefundRequest request, {required RefundCondition condition}) async {
+  Future<void> approveRefundRequest(RefundRequest request, {required RefundCondition condition, String? notes}) async {
     // 1. Process the refund in Firestore (updates status and logs Loss)
     final updatedReq = RefundRequest(
       id: request.id,
@@ -350,6 +437,7 @@ class InventoryProvider extends ChangeNotifier {
       items: request.items,
       total: request.total,
       reason: request.reason,
+      adminNotes: notes,
       status: RefundStatus.approved,
       condition: condition,
       createdAt: request.createdAt,
@@ -369,11 +457,11 @@ class InventoryProvider extends ChangeNotifier {
     }
 
     // 3. Send notification to customer
-    await NotificationService.sendRefundUpdate(request.transactionId, true);
+    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, true);
   }
 
-  Future<void> rejectRefundRequest(RefundRequest request, String reason) async {
-    await _fs.updateRefundStatus(request.id, RefundStatus.rejected, _adminName, reason: reason);
+  Future<void> rejectRefundRequest(RefundRequest request, String reason, {String? notes}) async {
+    await _fs.updateRefundStatus(request.id, RefundStatus.rejected, _adminName, reason: reason, notes: notes);
 
     final orderSnap = await FirebaseFirestore.instance.collection('orders')
         .where('orderId', isEqualTo: request.transactionId)
@@ -389,6 +477,6 @@ class InventoryProvider extends ChangeNotifier {
           });
     }
 
-    await NotificationService.sendRefundUpdate(request.transactionId, false);
+    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, false);
   }
 }

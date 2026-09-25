@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/printer_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../config/theme.dart';
 import 'dashboard_screen.dart';
 import 'pos_screen.dart';
 import 'inventory_screen.dart';
-import 'orders_screen.dart';
+import 'pre_orders_screen.dart';
 import 'expenses_screen.dart';
 import 'more_management_screen.dart';
 
@@ -39,7 +38,7 @@ class _AdminAppState extends State<AdminApp> {
           });
         }),
         const PosScreen(),
-        const OrdersScreen(),
+        const PreOrdersScreen(),
         InventoryScreen(initialCategory: _inventoryCategory),
         const ExpensesScreen(),
         const MoreManagementScreen(),
@@ -47,7 +46,7 @@ class _AdminAppState extends State<AdminApp> {
       destinations = const [
         NavigationDestination(icon: Icon(Icons.dashboard_outlined),     label: 'Dashboard'),
         NavigationDestination(icon: Icon(Icons.point_of_sale_outlined), label: 'POS'),
-        NavigationDestination(icon: Icon(Icons.receipt_long_outlined),  label: 'Orders'),
+        NavigationDestination(icon: Icon(Icons.receipt_long_outlined),  label: 'Pre-Orders'),
         NavigationDestination(icon: Icon(Icons.inventory_2_outlined),   label: 'Inventory'),
         NavigationDestination(icon: Icon(Icons.attach_money_outlined),  label: 'Expenses'),
         NavigationDestination(icon: Icon(Icons.more_horiz),             label: 'More'),
@@ -71,11 +70,11 @@ class _AdminAppState extends State<AdminApp> {
     } else {
       children = [
         const PosScreen(),
-        const OrdersScreen(),
+        const PreOrdersScreen(),
       ];
       destinations = const [
         NavigationDestination(icon: Icon(Icons.point_of_sale_outlined), label: 'POS'),
-        NavigationDestination(icon: Icon(Icons.receipt_long_outlined),  label: 'Orders'),
+        NavigationDestination(icon: Icon(Icons.receipt_long_outlined),  label: 'Pre-Orders'),
       ];
     }
 
@@ -107,8 +106,6 @@ class _AdminAppState extends State<AdminApp> {
             onPressed: () => context.read<ThemeProvider>().toggleTheme(!context.read<ThemeProvider>().isDarkMode),
             tooltip: 'Toggle Theme',
           ),
-          _PrinterAction(),
-          const SizedBox(width: 8),
           IconButton.filledTonal(
             icon: const Icon(Icons.logout_rounded, size: 20),
             tooltip: 'Logout',
@@ -134,7 +131,7 @@ class _AdminAppState extends State<AdminApp> {
         height: 65,
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-        indicatorColor: GdcColors.earthyGold.withValues(alpha: 0.15),
+        indicatorColor: GdcColors.secondaryGreen.withValues(alpha: 0.15),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: destinations,
@@ -157,74 +154,5 @@ class _AdminAppState extends State<AdminApp> {
       UserRole.cashier          => semantic.info,
       UserRole.none             => Theme.of(context).colorScheme.error,
     };
-  }
-}
-
-class _PrinterAction extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final printer = context.watch<PrinterProvider>();
-    return IconButton(
-      icon: printer.isConnecting 
-        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-        : Icon(
-            printer.connected ? Icons.print_rounded : Icons.print_disabled_rounded,
-            color: printer.connected ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
-          ),
-      onPressed: () => _showPrinterDialog(context, printer),
-      tooltip: 'Printer Settings',
-    );
-  }
-
-  void _showPrinterDialog(BuildContext context, PrinterProvider printer) async {
-    final devices = await printer.getDevices();
-    
-    if (context.mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Bluetooth Printer'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: devices.isEmpty 
-              ? const Text('No paired bluetooth devices found.')
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: devices.length,
-                  itemBuilder: (context, i) {
-                    final d = devices[i];
-                    return ListTile(
-                      title: Text(d.name),
-                      subtitle: Text(d.macAdress),
-                      trailing: printer.device?.macAdress == d.macAdress && printer.connected
-                        ? Icon(Icons.check_circle, color: Theme.of(context).semantic.success)
-                        : null,
-                      onTap: () {
-                        printer.connect(d);
-                        Navigator.pop(ctx);
-                      },
-                    );
-                  },
-                ),
-          ),
-          actions: [
-            if (printer.connected)
-              TextButton(
-                onPressed: () => printer.printTest(),
-                child: Text('Test Print', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-              ),
-            if (printer.connected)
-              TextButton(
-                onPressed: () {
-                  printer.disconnect();
-                  Navigator.pop(ctx);
-                },
-                child: Text('Disconnect', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          ],
-        ),
-      );
-    }
   }
 }

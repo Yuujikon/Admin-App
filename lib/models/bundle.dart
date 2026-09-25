@@ -4,6 +4,7 @@ class ProductBundle {
   final String id;
   final String name;
   final String description;
+  final String category; // NEW
   final List<String> productIds;
   final String? photoBase64;
   final bool isActive;
@@ -12,6 +13,7 @@ class ProductBundle {
     required this.id,
     required this.name,
     required this.description,
+    this.category = 'General',
     required this.productIds,
     this.photoBase64,
     this.isActive = true,
@@ -23,6 +25,7 @@ class ProductBundle {
       id: doc.id,
       name: d['name'] ?? '',
       description: d['description'] ?? '',
+      category: d['category'] ?? 'General',
       productIds: List<String>.from(d['productIds'] ?? []),
       photoBase64: d['photoBase64'],
       isActive: d['isActive'] ?? true,
@@ -32,6 +35,7 @@ class ProductBundle {
   Map<String, dynamic> toFirestore() => {
     'name': name,
     'description': description,
+    'category': category,
     'productIds': productIds,
     'photoBase64': photoBase64,
     'isActive': isActive,

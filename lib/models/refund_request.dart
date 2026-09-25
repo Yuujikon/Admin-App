@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import 'order.dart';
 
 enum RefundStatus { pending, approved, rejected }
@@ -14,6 +13,7 @@ class RefundRequest {
   final double total;
   final String reason;
   final String? rejectionReason;
+  final String? adminNotes;
   final RefundStatus status;
   final RefundCondition? condition; // Set by admin during processing
   final DateTime createdAt;
@@ -28,6 +28,7 @@ class RefundRequest {
     required this.total,
     required this.reason,
     this.rejectionReason,
+    this.adminNotes,
     required this.status,
     this.condition,
     required this.createdAt,
@@ -58,6 +59,7 @@ class RefundRequest {
       total: (d['total'] as num? ?? 0).toDouble(),
       reason: d['reason'] ?? '',
       rejectionReason: d['rejectionReason'],
+      adminNotes: d['adminNotes'],
       status: status,
       condition: condition,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -73,6 +75,7 @@ class RefundRequest {
     'total': total,
     'reason': reason,
     if (rejectionReason != null) 'rejectionReason': rejectionReason,
+    if (adminNotes != null) 'adminNotes': adminNotes,
     'status': status.name,
     if (condition != null) 'condition': condition!.name,
     'createdAt': FieldValue.serverTimestamp(),
