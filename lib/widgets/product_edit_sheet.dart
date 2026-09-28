@@ -975,6 +975,7 @@ class _ProductSearchDialogState extends State<_ProductSearchDialog> {
       title: const Text('Search Inventory'),
       content: SizedBox(
         width: double.maxFinite,
+        height: MediaQuery.of(context).size.height * 0.5,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

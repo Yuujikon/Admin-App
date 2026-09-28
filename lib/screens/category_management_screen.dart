@@ -66,18 +66,7 @@ class CategoryManagementScreen extends StatelessWidget {
               }
 
               final newCats = List<String>.from(settings.masterCategories)..add(name)..sort();
-              await inventory.saveStoreSettings(StoreSettings(
-                isClosed: settings.isClosed,
-                closureMessage: settings.closureMessage,
-                scheduledCloseAt: settings.scheduledCloseAt,
-                scheduledOpenAt: settings.scheduledOpenAt,
-                perishableWindowHours: settings.perishableWindowHours,
-                mixedWindowHours: settings.mixedWindowHours,
-                standardWindowHours: settings.standardWindowHours,
-                globalLowStockThreshold: settings.globalLowStockThreshold,
-                masterCategories: newCats,
-                announcement: settings.announcement,
-              ));
+              await inventory.saveStoreSettings(settings.copyWith(masterCategories: newCats));
               if (ctx.mounted) Navigator.pop(ctx);
             },
             child: const Text('Add'),
@@ -99,18 +88,7 @@ class CategoryManagementScreen extends StatelessWidget {
           TextButton(
             onPressed: () async {
               final newCats = List<String>.from(settings.masterCategories)..remove(cat);
-              await inventory.saveStoreSettings(StoreSettings(
-                isClosed: settings.isClosed,
-                closureMessage: settings.closureMessage,
-                scheduledCloseAt: settings.scheduledCloseAt,
-                scheduledOpenAt: settings.scheduledOpenAt,
-                perishableWindowHours: settings.perishableWindowHours,
-                mixedWindowHours: settings.mixedWindowHours,
-                standardWindowHours: settings.standardWindowHours,
-                globalLowStockThreshold: settings.globalLowStockThreshold,
-                masterCategories: newCats,
-                announcement: settings.announcement,
-              ));
+              await inventory.saveStoreSettings(settings.copyWith(masterCategories: newCats));
               if (ctx.mounted) Navigator.pop(ctx);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -120,3 +98,4 @@ class CategoryManagementScreen extends StatelessWidget {
     );
   }
 }
+

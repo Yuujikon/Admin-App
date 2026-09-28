@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../models/refund_request.dart';
 import '../providers/inventory_provider.dart';
 import '../utils/format.dart';
@@ -11,28 +12,65 @@ class RefundRequestsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
     final reqs = inventory.refundRequests;
+    final pendingReqs = reqs.where((r) => r.status == RefundStatus.pending).toList();
+    final pastReqs = reqs.where((r) => r.status != RefundStatus.pending).toList();
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(title: const Text('Refund Requests')),
-      body: reqs.isEmpty 
-        ? const Center(child: Text('No refund requests.'))
-        : ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              if (reqs.any((r) => r.status == RefundStatus.pending)) ...[
-                const Text('Pending Requests', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 8),
-                ...reqs.where((r) => r.status == RefundStatus.pending).map((r) => _RefundCard(req: r, inventory: inventory, isPending: true)),
-                const SizedBox(height: 16),
-              ],
-              if (reqs.any((r) => r.status != RefundStatus.pending)) ...[
-                const Text('Past Requests', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                const SizedBox(height: 8),
-                ...reqs.where((r) => r.status != RefundStatus.pending).map((r) => _RefundCard(req: r, inventory: inventory, isPending: false)),
-              ],
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const Text('Refund Requests'),
+            if (pendingReqs.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber),
+                ),
+                child: Text(
+                  '${pendingReqs.length} PENDING',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                ),
+              ),
             ],
-          ),
+          ],
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          inventory.initialize();
+        },
+        child: reqs.isEmpty 
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  child: const Center(child: Text('No refund requests found.', style: TextStyle(color: Colors.grey))),
+                ),
+              ],
+            )
+          : ListView(
+              padding: const EdgeInsets.all(12),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                if (pendingReqs.isNotEmpty) ...[
+                  Text('Pending Requests (${pendingReqs.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  ...pendingReqs.map((r) => _RefundCard(req: r, inventory: inventory, isPending: true)),
+                  const SizedBox(height: 16),
+                ],
+                if (pastReqs.isNotEmpty) ...[
+                  Text('Past Requests (${pastReqs.length})', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  ...pastReqs.map((r) => _RefundCard(req: r, inventory: inventory, isPending: false)),
+                ],
+              ],
+            ),
+      ),
     );
   }
 }
@@ -45,6 +83,8 @@ class _RefundCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dateStr = DateFormat('MMM d, yyyy • h:mm a').format(req.createdAt);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 0,
@@ -75,7 +115,7 @@ class _RefundCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Text('Ref #:${req.transactionId}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+            Text('Ref #: ${req.transactionId} • $dateStr', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
             Text('Reason: ${req.reason}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ),
@@ -100,9 +140,47 @@ class _RefundCard extends StatelessWidget {
                   ),
                 )),
                 const Divider(),
-                if (req.adminNotes != null) ...[
-                  const Text('Admin Notes:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey)),
-                  Text(req.adminNotes!, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                if (req.adminNotes != null && req.adminNotes!.isNotEmpty) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (req.status == RefundStatus.approved ? Colors.green : (req.status == RefundStatus.rejected ? Colors.red : Colors.grey)).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: (req.status == RefundStatus.approved ? Colors.green : (req.status == RefundStatus.rejected ? Colors.red : Colors.grey)).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              req.status == RefundStatus.approved ? Icons.check_circle_outline : Icons.info_outline,
+                              size: 16,
+                              color: req.status == RefundStatus.approved ? Colors.green : Colors.red,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'STORE RESPONSE:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                                color: req.status == RefundStatus.approved ? Colors.green.shade800 : Colors.red.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          req.adminNotes!,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
                   const Divider(),
                 ],
                 if (isPending) ...[
@@ -114,7 +192,7 @@ class _RefundCard extends StatelessWidget {
                         foregroundColor: Theme.of(context).colorScheme.error,
                       ),
                       onPressed: () => _handleRefund(context, req, inventory, false), 
-                      child: const Text('REJECT')
+                      child: const Text('REJECT / REFUSE')
                     )),
                     const SizedBox(width: 12),
                     Expanded(child: ElevatedButton(
@@ -160,80 +238,180 @@ class _RefundCard extends StatelessWidget {
         context: context,
         useRootNavigator: true,
         builder: (ctx) => StatefulBuilder(
-          builder: (context, setSt) => AlertDialog(
-            title: const Text('Approve Refund'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Select item condition:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 8),
-                  _conditionOption(setSt, 'Expired Item', RefundCondition.expired, condition, (v) => condition = v),
-                  _conditionOption(setSt, 'Damaged Item', RefundCondition.damaged, condition, (v) => condition = v),
-                  _conditionOption(setSt, 'Restockable / Return to Shelf', RefundCondition.restockable, condition, (v) => condition = v),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: notesCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Admin Description / Notes',
-                      hintText: 'Add details about the item state...',
-                      border: OutlineInputBorder(),
-                    ),
+          builder: (context, setSt) {
+            final responseText = notesCtrl.text.trim();
+            final bool isValid = condition != null && responseText.isNotEmpty;
+
+            return AlertDialog(
+              title: const Text('Approve Refund Request'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('1. Select Item Condition (Required):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      _conditionOption(setSt, 'Restockable / Return to Shelf', RefundCondition.restockable, condition, (v) => condition = v),
+                      _conditionOption(setSt, 'Damaged Item', RefundCondition.damaged, condition, (v) => condition = v),
+                      _conditionOption(setSt, 'Expired Item', RefundCondition.expired, condition, (v) => condition = v),
+                      const SizedBox(height: 16),
+                      const Text('2. Store Response to Customer (Mandatory *):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: notesCtrl,
+                        maxLines: 3,
+                        onChanged: (_) => setSt(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Enter store explanation or return instructions for customer...',
+                          border: const OutlineInputBorder(),
+                          errorText: responseText.isEmpty ? 'Store response is mandatory to maintain store rating.' : null,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('Quick Suggestions:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          ActionChip(
+                            label: const Text('Approved per return policy', style: TextStyle(fontSize: 10)),
+                            onPressed: () {
+                              notesCtrl.text = 'Approved per store return policy. Thank you for your business!';
+                              setSt(() {});
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          ActionChip(
+                            label: const Text('Item inspected & accepted', style: TextStyle(fontSize: 10)),
+                            onPressed: () {
+                              notesCtrl.text = 'Item state inspected and verified. Refund approved.';
+                              setSt(() {});
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
-              ElevatedButton(
-                onPressed: condition == null ? null : () => Navigator.pop(ctx, true),
-                child: const Text('APPROVE'),
-              ),
-            ],
-          ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+                ElevatedButton(
+                  onPressed: isValid ? () => Navigator.pop(ctx, true) : null,
+                  style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.white),
+                  child: const Text('APPROVE REFUND'),
+                ),
+              ],
+            );
+          },
         ),
       );
 
-      if (res == true && condition != null) {
+      if (res == true && condition != null && notesCtrl.text.trim().isNotEmpty) {
         await inventory.approveRefundRequest(req, condition: condition!, notes: notesCtrl.text.trim());
-        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Refund approved')));
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Refund approved with store response ✅'), backgroundColor: Colors.green),
+          );
+        }
       }
     } else {
       final res = await showDialog<bool>(
         context: context,
         useRootNavigator: true,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Reject Refund'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Provide a reason for the customer:'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: notesCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Rejection Reason',
-                  border: OutlineInputBorder(),
+        builder: (ctx) => StatefulBuilder(
+          builder: (context, setSt) {
+            final responseText = notesCtrl.text.trim();
+            final bool isValid = responseText.isNotEmpty;
+
+            return AlertDialog(
+              title: const Text('Decline / Reject Refund'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Store Response / Rejection Reason (Mandatory *):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'A polite, clear store response is required so customers understand the reason for declining:',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: notesCtrl,
+                        maxLines: 3,
+                        onChanged: (_) => setSt(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Explain why this refund request cannot be granted...',
+                          border: const OutlineInputBorder(),
+                          errorText: responseText.isEmpty ? 'Store response is mandatory to maintain store rating.' : null,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('Quick Suggestions:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          ActionChip(
+                            label: const Text('Beyond return timeframe', style: TextStyle(fontSize: 10)),
+                            onPressed: () {
+                              notesCtrl.text = 'Request exceeds our allowed return timeframe per store policy.';
+                              setSt(() {});
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          ActionChip(
+                            label: const Text('Item consumed/opened', style: TextStyle(fontSize: 10)),
+                            onPressed: () {
+                              notesCtrl.text = 'Item has been consumed or opened beyond store return eligibility.';
+                              setSt(() {});
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          ActionChip(
+                            label: const Text('No valid proof provided', style: TextStyle(fontSize: 10)),
+                            onPressed: () {
+                              notesCtrl.text = 'Unable to verify item condition or receipt details.';
+                              setSt(() {});
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true), 
-              child: const Text('REJECT', style: TextStyle(color: Colors.red))
-            ),
-          ],
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+                ElevatedButton(
+                  onPressed: isValid ? () => Navigator.pop(ctx, true) : null,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                  child: const Text('DECLINE REFUND'),
+                ),
+              ],
+            );
+          },
         ),
       );
 
       if (res == true && notesCtrl.text.trim().isNotEmpty) {
-        await inventory.rejectRefundRequest(req, notesCtrl.text.trim(), notes: 'Rejected: ${notesCtrl.text.trim()}');
-        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Refund rejected')));
+        final storeResponse = notesCtrl.text.trim();
+        await inventory.rejectRefundRequest(req, storeResponse, notes: storeResponse);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Refund request declined with store response.'), backgroundColor: Colors.orange),
+          );
+        }
       }
     }
   }

@@ -20,11 +20,30 @@ class OrderProvider extends BaseProvider {
   final Set<String> _processingOrders = {};
   final Set<String> _knownOrderIds = {};
 
+  final StreamController<PreOrder> _newOrderStreamController = StreamController<PreOrder>.broadcast();
+  Stream<PreOrder> get onNewOrderReceived => _newOrderStreamController.stream;
+
+  final Set<String> _newlyArrivedOrderIds = {};
+
   List<PreOrder> get orders  => _orders;
   List<CartItem> get preCart => _preCart;
   String get adminName => _adminName;
 
   bool isOrderProcessing(String orderId) => _processingOrders.contains(orderId);
+  bool isNewlyArrived(String orderId) => _newlyArrivedOrderIds.contains(orderId);
+
+  void clearNewlyArrived(String orderId) {
+    if (_newlyArrivedOrderIds.remove(orderId)) {
+      notifyListeners();
+    }
+  }
+
+  void clearAllNewlyArrived() {
+    if (_newlyArrivedOrderIds.isNotEmpty) {
+      _newlyArrivedOrderIds.clear();
+      notifyListeners();
+    }
+  }
 
   void setAdminName(String name) {
     _adminName = name;
@@ -32,19 +51,20 @@ class OrderProvider extends BaseProvider {
   }
 
   // Stream that auto-updates for admin view
-  late final Stream<List<PreOrder>> _ordersStream = _fs.ordersStream().asBroadcastStream();
-  Stream<List<PreOrder>> get ordersStream => _ordersStream;
+  Stream<List<PreOrder>> get ordersStream => _fs.ordersStream();
 
   void initialize() {
     cancelSubscriptions();
     setLoading(true);
 
-    registerSubscription(ordersStream.listen((list) {
+    registerSubscription(_fs.ordersStream().listen((list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       if (_knownOrderIds.isNotEmpty) {
         final newOrders = list.where((o) => !_knownOrderIds.contains(o.id) && o.status == OrderStatus.pending);
         for (final o in newOrders) {
+          _newlyArrivedOrderIds.add(o.id);
+          _newOrderStreamController.add(o);
           NotificationService.showSmsNotificationPopUp(
             title: '🛍️ New Pre-Order Received!',
             body: 'Customer ${o.customerName} placed order #${o.orderId} (₱${o.total.toStringAsFixed(2)}).',
@@ -56,13 +76,20 @@ class OrderProvider extends BaseProvider {
 
       _orders = list;
       setLoading(false);
+      notifyListeners();
       _checkExpirations(list);
     }, onError: (e) {
       setLoading(false);
-      debugPrint('Orders Stream Error: $e');
+      debugPrint('Orders Stream Error: $e. Reconnecting in 3 seconds...');
+      Timer(const Duration(seconds: 3), () {
+        if (!isDisposed) {
+          initialize();
+        }
+      });
     }));
     
     // Start a timer to check expirations every minute
+    _expirationTimer?.cancel();
     _expirationTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _checkExpirations(_orders);
     });
@@ -71,6 +98,7 @@ class OrderProvider extends BaseProvider {
   @override
   void dispose() {
     _expirationTimer?.cancel();
+    _newOrderStreamController.close();
     super.dispose();
   }
 
@@ -195,41 +223,44 @@ class OrderProvider extends BaseProvider {
     notifyListeners();
 
     try {
-      final order = _orders.firstWhere((o) => o.id == orderId);
-      if (order.status == OrderStatus.collected || order.status == OrderStatus.cancelled) return;
-
-      // 1. Ensure stock is deducted if not already done (done at 'staging' phase)
-      if (order.status == OrderStatus.pending) {
-        await _fs.decrementStockBatch(order.items);
-      }
-
-      // 2. Set final status
-      final updatedOrder = order.copyWith(
-        status: OrderStatus.collected,
-        processedBy: _adminName,
-      );
-      await _fs.updateOrder(updatedOrder);
-
-      // 3. Record as transaction
-      final tx = StoreTransaction(
-        id: const Uuid().v4(), 
-        items: order.items,
-        total: order.total,
-        cash: order.total,
-        change: 0,
-        createdAt: DateTime.now(),
-        customerEmail: order.customerEmail,
-        type: TransactionType.pickup,
-      );
-      await _fs.addTransaction(tx);
-
-      // 4. Notify customer
-      await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
-      
+      await _completePickupInternal(orderId);
     } finally {
       _processingOrders.remove(orderId);
       notifyListeners();
     }
+  }
+
+  Future<void> _completePickupInternal(String orderId) async {
+    final order = _orders.firstWhere((o) => o.id == orderId);
+    if (order.status == OrderStatus.collected || order.status == OrderStatus.cancelled) return;
+
+    // 1. Ensure stock is deducted if not already done (done at 'staging' phase)
+    if (order.status == OrderStatus.pending) {
+      await _fs.decrementStockBatch(order.items);
+    }
+
+    // 2. Set final status
+    final updatedOrder = order.copyWith(
+      status: OrderStatus.collected,
+      processedBy: _adminName,
+    );
+    await _fs.updateOrder(updatedOrder);
+
+    // 3. Record as transaction
+    final tx = StoreTransaction(
+      id: const Uuid().v4(), 
+      items: order.items,
+      total: order.total,
+      cash: order.total,
+      change: 0,
+      createdAt: DateTime.now(),
+      customerEmail: order.customerEmail,
+      type: TransactionType.pickup,
+    );
+    await _fs.addTransaction(tx);
+
+    // 4. Notify customer
+    await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
   }
 
   Future<void> advanceStatus(String orderId) async {
@@ -238,55 +269,42 @@ class OrderProvider extends BaseProvider {
     notifyListeners();
 
     try {
-      final order = _orders.firstWhere((o) => o.id == orderId);
-      final next  = switch (order.status) {
-        OrderStatus.pending  => OrderStatus.staging,
-        OrderStatus.staging  => OrderStatus.ready,
-        OrderStatus.ready    => OrderStatus.collected,
-        _ => null,
-      };
-      if (next == null) return;
-
-      // Deduct stock when admin starts packing (moves to staging)
-      if (next == OrderStatus.staging) {
-        await _fs.decrementStockBatch(order.items);
-      }
-
-      final updatedOrder = order.copyWith(
-        status: next,
-        processedBy: _adminName,
-      );
-
-      await _fs.updateOrder(updatedOrder);
-
-      // Record as transaction when collected
-      if (next == OrderStatus.collected) {
-        final tx = StoreTransaction(
-          id: const Uuid().v4(), 
-          items: order.items,
-          total: order.total,
-          cash: order.total,
-          change: 0,
-          createdAt: DateTime.now(),
-          customerEmail: order.customerEmail,
-          type: TransactionType.pickup,
-        );
-        await _fs.addTransaction(tx);
-      }
-
-      // Notify customer when order is ready
-      if (next == OrderStatus.ready) {
-        await NotificationService.sendOrderReady(order.orderId, order.customerEmail);
-      }
-      
-      // Notify customer when order is collected
-      if (next == OrderStatus.collected) {
-        await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
-      }
+      await _advanceStatusInternal(orderId);
     } finally {
       _processingOrders.remove(orderId);
       notifyListeners();
     }
+  }
+
+  Future<bool> _advanceStatusInternal(String orderId) async {
+    final index = _orders.indexWhere((o) => o.id == orderId);
+    if (index == -1) return false;
+    final order = _orders[index];
+    final next  = switch (order.status) {
+      OrderStatus.pending  => OrderStatus.staging,
+      OrderStatus.staging  => OrderStatus.ready,
+      _ => null,
+    };
+    if (next == null) return false;
+
+    // Deduct stock when admin starts packing (moves to staging)
+    if (next == OrderStatus.staging) {
+      await _fs.decrementStockBatch(order.items);
+    }
+
+    final updatedOrder = order.copyWith(
+      status: next,
+      processedBy: _adminName,
+    );
+
+    await _fs.updateOrder(updatedOrder);
+
+    // Notify customer when order is ready
+    if (next == OrderStatus.ready) {
+      await NotificationService.sendOrderReady(order.orderId, order.customerEmail);
+    }
+
+    return true;
   }
 
   Future<void> cancelOrder(String orderId, {bool isAuto = false, String? reason}) async {
@@ -294,32 +312,102 @@ class OrderProvider extends BaseProvider {
     _processingOrders.add(orderId);
     
     try {
-      final order = _orders.firstWhere((o) => o.id == orderId);
-      if (order.status == OrderStatus.cancelled) return;
-
-      // Replenish stock on cancellation for active orders (pending, staging, ready, collected)
-      if (order.status == OrderStatus.pending ||
-          order.status == OrderStatus.staging ||
-          order.status == OrderStatus.ready ||
-          order.status == OrderStatus.collected) {
-        // Create inverted cart items to "increment" stock
-        final returnItems = order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
-        await _fs.decrementStockBatch(returnItems);
-      }
-
-      final updatedOrder = order.copyWith(
-        status: OrderStatus.cancelled,
-        processedBy: isAuto ? 'System' : _adminName,
-        rejectionReason: reason,
-      );
-      
-      await _fs.updateOrder(updatedOrder);
-
-      if (isAuto) {
-        await NotificationService.sendOrderAutoCancelled(order.orderId, order.customerEmail);
-      }
+      await _cancelOrderInternal(orderId, isAuto: isAuto, reason: reason);
     } finally {
       _processingOrders.remove(orderId);
+      notifyListeners();
     }
+  }
+
+  Future<void> _cancelOrderInternal(String orderId, {bool isAuto = false, String? reason}) async {
+    final order = _orders.firstWhere((o) => o.id == orderId);
+    if (order.status == OrderStatus.cancelled) return;
+
+    // Replenish stock on cancellation for active orders (pending, staging, ready, collected)
+    if (order.status == OrderStatus.pending ||
+        order.status == OrderStatus.staging ||
+        order.status == OrderStatus.ready ||
+        order.status == OrderStatus.collected) {
+      // Create inverted cart items to "increment" stock
+      final returnItems = order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
+      await _fs.decrementStockBatch(returnItems);
+    }
+
+    final updatedOrder = order.copyWith(
+      status: OrderStatus.cancelled,
+      processedBy: isAuto ? 'System' : _adminName,
+      rejectionReason: reason,
+    );
+    
+    await _fs.updateOrder(updatedOrder);
+
+    if (isAuto) {
+      await NotificationService.sendOrderAutoCancelled(order.orderId, order.customerEmail);
+    }
+  }
+
+  // ── Bulk Admin Actions ─────────────────────────────────────────────────────
+
+  Future<int> bulkAdvanceStatus(List<String> orderIds) async {
+    int count = 0;
+    _processingOrders.addAll(orderIds);
+    notifyListeners();
+
+    try {
+      for (final orderId in orderIds) {
+        try {
+          final success = await _advanceStatusInternal(orderId);
+          if (success) count++;
+        } catch (e) {
+          debugPrint('Bulk advance error for $orderId: $e');
+        }
+      }
+    } finally {
+      _processingOrders.removeAll(orderIds);
+      notifyListeners();
+    }
+    return count;
+  }
+
+  Future<int> bulkCompletePickup(List<String> orderIds) async {
+    int count = 0;
+    _processingOrders.addAll(orderIds);
+    notifyListeners();
+
+    try {
+      for (final orderId in orderIds) {
+        try {
+          await _completePickupInternal(orderId);
+          count++;
+        } catch (e) {
+          debugPrint('Bulk complete error for $orderId: $e');
+        }
+      }
+    } finally {
+      _processingOrders.removeAll(orderIds);
+      notifyListeners();
+    }
+    return count;
+  }
+
+  Future<int> bulkCancelOrders(List<String> orderIds, {String? reason}) async {
+    int count = 0;
+    _processingOrders.addAll(orderIds);
+    notifyListeners();
+
+    try {
+      for (final orderId in orderIds) {
+        try {
+          await _cancelOrderInternal(orderId, reason: reason);
+          count++;
+        } catch (e) {
+          debugPrint('Bulk cancel error for $orderId: $e');
+        }
+      }
+    } finally {
+      _processingOrders.removeAll(orderIds);
+      notifyListeners();
+    }
+    return count;
   }
 }

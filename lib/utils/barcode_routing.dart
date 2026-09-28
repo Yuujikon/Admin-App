@@ -15,7 +15,8 @@ class BarcodeRouting {
 }
 
 /// A widget that intercepts keyboard events globally and routes scanner input correctly.
-/// It "siphons" every character and only releases it to the focused field if determined to be manual.
+/// High-speed scanner input (<65ms per character burst) is siphoned into barcode actions,
+/// while normal manual typing passes through to native Flutter TextFields naturally.
 class BarcodeInterceptor extends StatefulWidget {
   final Widget child;
   final Function(String) onBarcodeDetected;
@@ -43,15 +44,13 @@ class BarcodeInterceptor extends StatefulWidget {
 class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
   final StringBuffer _buffer = StringBuffer();
   DateTime _lastEventTime = DateTime.now();
-  Timer? _releaseTimer;
+  Timer? _scanTimeoutTimer;
   FocusNode? _originalFocus;
   bool _isScanMode = false;
   
   // Timing heuristics
-  // Scanners: typically < 30ms. Slowest scanners/connection: ~50ms.
+  // Hardware scanners: typically < 30ms per character burst.
   static const _scannerSpeedLimit = Duration(milliseconds: 65);
-  // Manual release delay: short enough to be fast, long enough to detect scanner burst.
-  static const _manualTypingDelay = Duration(milliseconds: 75);
 
   @override
   void initState() {
@@ -62,45 +61,33 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
-    _releaseTimer?.cancel();
+    _scanTimeoutTimer?.cancel();
     super.dispose();
   }
 
-  void _releaseBufferToFocusedField() {
-    if (!mounted || _isScanMode) return;
-    
-    final text = _buffer.toString();
-    _buffer.clear();
-    if (text.isEmpty || widget.controllers == null) return;
-
-    FocusNode? focused;
-    widget.controllers!.forEach((node, _) {
-      if (node.hasFocus) focused = node;
-    });
-
-    if (focused != null) {
-      final controller = widget.controllers![focused];
-      if (controller != null) {
-        final val = controller.value;
-        int start = val.selection.start;
-        int end = val.selection.end;
-        if (start == -1) { start = val.text.length; end = val.text.length; }
-        
-        final newText = val.text.replaceRange(start, end, text);
-        controller.value = val.copyWith(
-          text: newText,
-          selection: TextSelection.collapsed(offset: start + text.length),
-        );
-      }
-    }
-  }
-
   bool _handleKeyEvent(KeyEvent event) {
-    if (!widget.enabled || event is! KeyDownEvent) return false;
+    if (!widget.enabled || event is! KeyDownEvent || !mounted) return false;
 
-    // Check route context
+    // Ensure this BarcodeInterceptor is actually rendered and visible
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize || renderObject.size.isEmpty) {
+      return false;
+    }
+
+    // Check route context (only run when active page/modal route is current)
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return false;
+
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    final bool isOtherFieldFocused = primaryFocus != null &&
+        primaryFocus != widget.barcodeFocus &&
+        primaryFocus.context != null;
+
+    // If another field (like quantity input or text box) is currently focused by the user,
+    // and we are NOT in high-speed hardware scanner mode, do not siphon key events!
+    if (isOtherFieldFocused && !_isScanMode) {
+      return false;
+    }
 
     final now = DateTime.now();
     final elapsed = now.difference(_lastEventTime);
@@ -109,7 +96,7 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
     final logicalKey = event.logicalKey;
     String? char = event.character;
     
-    // Manual mapping for HID digit events (where character might be null)
+    // Manual mapping for HID digit events
     if (char == null) {
       final kid = logicalKey.keyId;
       if (kid >= LogicalKeyboardKey.digit0.keyId && kid <= LogicalKeyboardKey.digit9.keyId) {
@@ -121,22 +108,21 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
 
     // Detect Scan Termination (Enter)
     if (logicalKey == LogicalKeyboardKey.enter || logicalKey == LogicalKeyboardKey.numpadEnter) {
-      _releaseTimer?.cancel();
+      _scanTimeoutTimer?.cancel();
       final content = _buffer.toString().trim();
       _buffer.clear();
 
       if (content.isNotEmpty && _isScanMode) {
         _dispatchScanResult(content);
         _isScanMode = false;
-        return true; // Siphoned
+        return true; // Siphoned scan result
       }
       
       _isScanMode = false;
-      _releaseBufferToFocusedField();
       return false; 
     }
 
-    // Skip modifiers without resetting sequence
+    // Skip modifiers
     if (logicalKey == LogicalKeyboardKey.shiftLeft || logicalKey == LogicalKeyboardKey.shiftRight ||
         logicalKey == LogicalKeyboardKey.controlLeft || logicalKey == LogicalKeyboardKey.controlRight ||
         logicalKey == LogicalKeyboardKey.altLeft || logicalKey == LogicalKeyboardKey.altRight) {
@@ -147,35 +133,47 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
     final bool isData = char != null && RegExp(r'[a-zA-Z0-9\s\-_.,]').hasMatch(char);
 
     if (isData) {
-      _releaseTimer?.cancel();
-      _buffer.write(char);
+      _scanTimeoutTimer?.cancel();
 
-      // Heuristic: confirm scan mode if we see a fast sequence
-      if (elapsed < _scannerSpeedLimit && _buffer.length >= 2) {
-        if (!_isScanMode) {
+      // Check if this character arrived at scanner speed (< 65ms)
+      if (elapsed < _scannerSpeedLimit) {
+        _buffer.write(char);
+        if (_buffer.length >= 2 && !_isScanMode) {
           _isScanMode = true;
           _handleScanStarted();
         }
+      } else {
+        // Slow typing: reset buffer unless scan mode was already locked
+        if (!_isScanMode) {
+          _buffer.clear();
+          _buffer.write(char);
+        } else {
+          _buffer.write(char);
+        }
       }
 
-      if (!_isScanMode) {
-        // Potential manual typing
-        _releaseTimer = Timer(_manualTypingDelay, _releaseBufferToFocusedField);
-      } else {
-        // Confirmed scan: keep siphoning until Enter
-        _releaseTimer = Timer(const Duration(milliseconds: 600), () {
+      if (_isScanMode) {
+        // High-speed scan mode: siphon key and set timeout for scan completion
+        _scanTimeoutTimer = Timer(const Duration(milliseconds: 600), () {
            if (mounted) {
+             final content = _buffer.toString().trim();
+             _buffer.clear();
              _isScanMode = false;
-             _releaseBufferToFocusedField();
+             if (content.isNotEmpty) {
+               _dispatchScanResult(content);
+             }
            }
         });
+        return true; // SIPHONED SCANNER KEY
       }
-      return true; // SIPHONED
+
+      // Normal manual typing: DO NOT SIPHON! Let Flutter's native TextField handle it.
+      return false;
     }
 
-    // Reset on any other key
-    _releaseTimer?.cancel();
-    _releaseBufferToFocusedField();
+    // Reset on any other non-data key
+    _scanTimeoutTimer?.cancel();
+    _buffer.clear();
     _isScanMode = false;
     return false;
   }

@@ -198,6 +198,7 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                 ],
               ),
               QtyControl(
+                key: ValueKey('qty_${item.productId}_$index'),
                 qty: item.requestedQty,
                 onChanged: (v) => _updateQty(index, v),
               ),

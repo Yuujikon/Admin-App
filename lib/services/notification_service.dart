@@ -180,15 +180,19 @@ class NotificationService {
     );
   }
 
-  static Future<void> sendRefundUpdate(String transactionId, String email, bool approved) async {
+  static Future<void> sendRefundUpdate(String transactionId, String email, bool approved, {String? storeResponse}) async {
+    final responseText = (storeResponse != null && storeResponse.trim().isNotEmpty)
+        ? '\nStore Response: "${storeResponse.trim()}"'
+        : '';
+
     await sendOrderUpdate(
       email: email,
       orderId: transactionId,
       status: approved ? 'refunded' : 'refundRejected',
-      title: approved ? '💸 Refund Approved' : '❌ Refund Rejected',
+      title: approved ? '💸 Refund Request Approved' : '❌ Refund Request Declined',
       body: approved 
-          ? 'Your refund for #$transactionId has been approved and processed.' 
-          : 'Your refund request for #$transactionId was not approved.',
+          ? 'Your refund request for #$transactionId has been approved by the store.$responseText' 
+          : 'Your refund request for #$transactionId was declined by the store.$responseText',
     );
   }
 

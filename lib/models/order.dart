@@ -28,8 +28,10 @@ class CartItem {
 
   factory CartItem.fromMap(dynamic m) {
     if (m is! Map) {
-      return const CartItem(productId: '', name: 'Unknown Item', price: 0, qty: 0);
+      return const CartItem(productId: '', name: 'Unknown Item', price: 0, qty: 1);
     }
+    final int rawQty = (m['qty'] as num? ?? 1).toInt();
+    final int safeQty = rawQty < 1 ? 1 : rawQty;
     return CartItem(
       productId:    m['productId'] ?? '',
       variantId:    m['variantId'],
@@ -37,7 +39,7 @@ class CartItem {
       variantName:  m['variantName'],
       price:        (m['price'] as num? ?? 0).toDouble(),
       costPrice:    (m['costPrice'] as num? ?? 0).toDouble(),
-      qty:          m['qty'] ?? 1,
+      qty:          safeQty,
       isPerishable: m['isPerishable'] ?? false,
       notes:        m['notes']?.toString(),
     );
@@ -50,7 +52,7 @@ class CartItem {
     if (variantName != null) 'variantName': variantName,
     'price':        price,
     'costPrice':    costPrice,
-    'qty':          qty,
+    'qty':          qty < 1 ? 1 : qty,
     'isPerishable': isPerishable,
     if (notes != null) 'notes': notes,
   };
@@ -63,7 +65,7 @@ class CartItem {
         variantName: variantName,
         price: price ?? this.price, 
         costPrice: costPrice ?? this.costPrice,
-        qty: qty ?? this.qty, 
+        qty: qty != null ? (qty < 1 ? 1 : qty) : this.qty, 
         isPerishable: isPerishable,
         notes: notes ?? this.notes,
       );
@@ -171,7 +173,7 @@ class PreOrder {
     'notes':         notes,
     'location':      location,
     'pickupTime':    pickupTime,
-    'createdAt':     FieldValue.serverTimestamp(),
+    'createdAt':     Timestamp.fromDate(createdAt),
     'expiresAt':     expiresAt != null ? Timestamp.fromDate(expiresAt!) : null,
     'customerPhone': customerPhone,
     'statusTimeline': statusTimeline.map((k, v) => MapEntry(k, Timestamp.fromDate(v))),

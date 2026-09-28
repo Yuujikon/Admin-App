@@ -58,6 +58,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true
+        manifestPlaceholders["applicationName"] = "android.app.Application"
     }
 
     buildTypes {

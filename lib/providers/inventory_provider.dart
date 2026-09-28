@@ -146,11 +146,41 @@ class InventoryProvider extends BaseProvider {
 
   Map<String, int> get recentMovementCounts => _cachedRecentCounts ?? {};
 
+  Timer? _statusTransitionTimer;
+
+  void _checkAutomaticStoreTransitions() {
+    final now = DateTime.now();
+
+    // Auto-clear schedule if reopening time has passed
+    if (_settings.scheduledOpenAt != null && now.isAfter(_settings.scheduledOpenAt!)) {
+      debugPrint('Scheduled store outage expired. Automatically clearing schedule.');
+      clearExpiredSchedule();
+      return;
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> clearExpiredSchedule() async {
+    await _fs.updateStoreStatus(
+      false,
+      message: null,
+      closeAt: null,
+      openAt: null,
+    );
+  }
+
   void initialize() {
     cancelSubscriptions();
+    _statusTransitionTimer?.cancel();
     _cachedSortedProducts = null; 
     _cachedRecentCounts = null;
     setLoading(true);
+
+    _statusTransitionTimer = Timer.periodic(
+      const Duration(seconds: 30), 
+      (_) => _checkAutomaticStoreTransitions(),
+    );
 
     Timer(const Duration(seconds: 3), () {
       if (isLoading) setLoading(false);
@@ -219,8 +249,15 @@ class InventoryProvider extends BaseProvider {
     registerSubscription(_fs.settingsStream().listen((settings) {
       _settings = settings;
       _cachedSortedProducts = null; 
+      _checkAutomaticStoreTransitions();
       notifyListeners();
     }, onError: (e) => debugPrint('Settings Stream Error: $e')));
+  }
+
+  @override
+  void dispose() {
+    _statusTransitionTimer?.cancel();
+    super.dispose();
   }
 
   void _migrateProductsToCatalog() async {
@@ -444,6 +481,12 @@ class InventoryProvider extends BaseProvider {
       processedByEmail: _adminName,
     );
 
+    final index = _refundRequests.indexWhere((r) => r.id == request.id);
+    if (index != -1) {
+      _refundRequests[index] = updatedReq;
+      notifyListeners();
+    }
+
     await _fs.processApprovedRefund(updatedReq, _adminName);
 
     // 2. Find and update the original Order status if it exists
@@ -456,12 +499,32 @@ class InventoryProvider extends BaseProvider {
       await _fs.updateOrderStatus(orderSnap.docs.first.id, OrderStatus.refunded);
     }
 
-    // 3. Send notification to customer
-    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, true);
+    // 3. Send notification to customer with store response
+    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, true, storeResponse: notes);
   }
 
   Future<void> rejectRefundRequest(RefundRequest request, String reason, {String? notes}) async {
-    await _fs.updateRefundStatus(request.id, RefundStatus.rejected, _adminName, reason: reason, notes: notes);
+    final index = _refundRequests.indexWhere((r) => r.id == request.id);
+    if (index != -1) {
+      _refundRequests[index] = RefundRequest(
+        id: request.id,
+        transactionId: request.transactionId,
+        customerEmail: request.customerEmail,
+        customerName: request.customerName,
+        items: request.items,
+        total: request.total,
+        reason: request.reason,
+        rejectionReason: reason,
+        adminNotes: notes ?? reason,
+        status: RefundStatus.rejected,
+        condition: request.condition,
+        createdAt: request.createdAt,
+        processedByEmail: _adminName,
+      );
+      notifyListeners();
+    }
+
+    await _fs.updateRefundStatus(request.id, RefundStatus.rejected, _adminName, reason: reason, notes: notes ?? reason);
 
     final orderSnap = await FirebaseFirestore.instance.collection('orders')
         .where('orderId', isEqualTo: request.transactionId)
@@ -477,6 +540,6 @@ class InventoryProvider extends BaseProvider {
           });
     }
 
-    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, false);
+    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, false, storeResponse: reason);
   }
 }

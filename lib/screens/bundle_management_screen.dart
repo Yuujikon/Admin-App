@@ -141,7 +141,9 @@ class _BundleEditDialogState extends State<_BundleEditDialog> {
 
     return AlertDialog(
       title: Text(widget.bundle == null ? 'Create Bundle' : 'Edit Bundle'),
-      content: SingleChildScrollView(
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -200,6 +202,7 @@ class _BundleEditDialogState extends State<_BundleEditDialog> {
           ],
         ),
       ),
+    ),
       actions: [
         if (widget.bundle != null)
           TextButton(
@@ -213,8 +216,9 @@ class _BundleEditDialogState extends State<_BundleEditDialog> {
         ElevatedButton(
           onPressed: saving ? null : () async {
             if (nameCtrl.text.isEmpty) return;
+            final inv = context.read<InventoryProvider>();
             setState(() => saving = true);
-            await context.read<InventoryProvider>().saveBundle(ProductBundle(
+            await inv.saveBundle(ProductBundle(
               id: widget.bundle?.id ?? '',
               name: nameCtrl.text.trim(),
               description: descCtrl.text.trim(),
@@ -222,7 +226,8 @@ class _BundleEditDialogState extends State<_BundleEditDialog> {
               productIds: selectedIds,
               photoBase64: photoBase64,
             ));
-            if (mounted) Navigator.pop(context);
+            if (!mounted) return;
+            Navigator.pop(context);
           }, 
           child: saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save Bundle')
         ),

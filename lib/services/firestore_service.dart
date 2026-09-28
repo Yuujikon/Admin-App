@@ -152,23 +152,11 @@ class FirestoreService {
         final productDoc = await transaction.get(_products.doc(item.productId));
         if (!productDoc.exists) continue;
 
-        final data = productDoc.data() as Map<String, dynamic>;
-
         if (item.variantId != null) {
-          final variants = data['variants'] as Map? ?? {};
-          final vData = variants[item.variantId] as Map? ?? {};
-          final int stock = (vData['stock'] as num? ?? 0).toInt();
-          // We allow decrement if it's already negative from a previous error, 
-          // but we prioritize preventing it during the transaction.
-          if (stock < item.qty && item.qty > 0) throw Exception('Insufficient stock for ${item.name}.');
-
           transaction.update(_products.doc(item.productId), {
             'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
           });
         } else {
-          final int stock = (data['stock'] as num? ?? 0).toInt();
-          if (stock < item.qty && item.qty > 0) throw Exception('Insufficient stock for ${item.name}.');
-
           transaction.update(_products.doc(item.productId), {
             'stock': FieldValue.increment(-item.qty),
           });
@@ -256,6 +244,15 @@ class FirestoreService {
         'status': status.name,
         if (reason != null) 'rejectionReason': reason,
       });
+
+  Future<void> bulkUpdateOrders(List<PreOrder> orders) async {
+    if (orders.isEmpty) return;
+    final batch = _db.batch();
+    for (final order in orders) {
+      batch.update(_orders.doc(order.id), order.toFirestore());
+    }
+    await batch.commit();
+  }
 
   // ── Transactions ───────────────────────────────────────────────────────────
 

@@ -137,7 +137,11 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
       _activeUid = user?.uid;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (user != null) {
-          debugPrint('AuthGate: Initializing providers for ${user.email}');
+          final email = user.email ?? 'Staff';
+          debugPrint('AuthGate: Initializing providers & identity for $email');
+          context.read<InventoryProvider>().setAdminEmail(email);
+          context.read<OrderProvider>().setAdminName(email);
+
           context.read<InventoryProvider>().initialize();
           context.read<OrderProvider>().initialize();
           context.read<ExpenseProvider>().initialize();
@@ -160,24 +164,47 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
       return const StaffLoginScreen();
     }
 
-    // If logged in but role not fetched yet
+    // If logged in but role not fetched yet or role is 'none'
     if (auth.role == UserRole.none) {
       return Scaffold(
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Checking permissions...'),
-              const SizedBox(height: 16),
-              TextButton(onPressed: () => auth.logout(), child: const Text('Log Out'))
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.shield_outlined, size: 64, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'Access Pending Approval',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your account (${user.email ?? "User"}) requires staff role assignment from an Store Admin.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: () => auth.refreshRole(),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Check Permissions Status'),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => auth.logout(),
+                  child: const Text('Log Out'),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
 
-    // Role-based destination
-    if (auth.role == UserRole.admin && !auth.adminVerified) {
+    // Role-based destination: require 6-digit TOTP/PIN verification for all staff roles when 2FA is enabled
+    if (auth.role != UserRole.none && auth.totpEnabled && !auth.adminVerified) {
       return const AdminPinScreen();
     } else {
       return const AdminApp(); 

@@ -26,6 +26,7 @@ class _CatalogSearchDialogState extends State<CatalogSearchDialog> {
       title: const Text('Search Product Catalog'),
       content: SizedBox(
         width: double.maxFinite,
+        height: MediaQuery.of(context).size.height * 0.5,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

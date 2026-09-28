@@ -40,14 +40,23 @@ class UserManagementScreen extends StatelessWidget {
           }
           
           final docs = snapshot.data?.docs ?? [];
-          final staff = docs.where((d) {
+          
+          final activeStaff = docs.where((d) {
             final data = d.data() as Map<String, dynamic>;
             final role = data['role'] ?? 'none';
-            return role != 'none';
+            final isDisabled = data['isDisabled'] == true;
+            return role != 'none' && role != 'disabled' && !isDisabled;
           }).toList();
 
-          if (staff.isEmpty) {
-            return const Center(child: Text('No active staff found. Click "Add Employee" below.'));
+          final inactiveStaff = docs.where((d) {
+            final data = d.data() as Map<String, dynamic>;
+            final role = data['role'] ?? 'none';
+            final isDisabled = data['isDisabled'] == true;
+            return role == 'disabled' || isDisabled;
+          }).toList();
+
+          if (activeStaff.isEmpty && inactiveStaff.isEmpty) {
+            return const Center(child: Text('No staff found. Click "Add Employee" below.'));
           }
 
           final semantic = Theme.of(context).semantic;
@@ -55,8 +64,24 @@ class UserManagementScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 88),
             children: [
-              _sectionHeader('Active Staff (${staff.length})', semantic.info),
-              ...staff.map((d) => _userCard(context, d)),
+              _sectionHeader('Active Staff (${activeStaff.length})', semantic.info),
+              if (activeStaff.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No active staff currently.', style: TextStyle(color: Colors.grey)),
+                )
+              else
+                ...activeStaff.map((d) => _activeUserCard(context, d)),
+
+              const SizedBox(height: 16),
+              _sectionHeader('Staff History / Inactive (${inactiveStaff.length})', Colors.grey),
+              if (inactiveStaff.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No inactive staff records.', style: TextStyle(color: Colors.grey)),
+                )
+              else
+                ...inactiveStaff.map((d) => _inactiveUserCard(context, d)),
             ],
           );
         },
@@ -71,13 +96,13 @@ class UserManagementScreen extends StatelessWidget {
         children: [
           Container(width: 4, height: 18, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
           const SizedBox(width: 8),
-          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color.withValues(alpha: 0.8))),
+          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color.withValues(alpha: 0.9))),
         ],
       ),
     );
   }
 
-  Widget _userCard(BuildContext context, DocumentSnapshot d) {
+  Widget _activeUserCard(BuildContext context, DocumentSnapshot d) {
     final data = d.data() as Map<String, dynamic>;
     final email = data['email'] ?? 'No email';
     final role = data['role'] ?? 'cashier';
@@ -112,27 +137,89 @@ class UserManagementScreen extends StatelessWidget {
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButton<String>(
-                  underline: const SizedBox(),
-                  value: ['admin', 'inventoryManager', 'cashier'].contains(role) ? role : 'cashier',
-                  onChanged: (newRole) {
-                    if (newRole != null) {
-                      FirebaseFirestore.instance.collection('users').doc(d.id).update({'role': newRole});
-                    }
-                  },
-                  items: const [
-                    DropdownMenuItem(value: 'admin', child: Text('Admin', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'inventoryManager', child: Text('Inv Mgr', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'cashier', child: Text('Cashier', style: TextStyle(fontSize: 13))),
-                  ],
+                SizedBox(
+                  width: 90,
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    value: ['admin', 'inventoryManager', 'cashier'].contains(role) ? role : 'cashier',
+                    onChanged: (newRole) async {
+                      if (newRole != null && newRole != role) {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Change Staff Role?'),
+                            content: Text('Change $email role to ${_getRoleLabel(newRole)}?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+                              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('UPDATE')),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          FirebaseFirestore.instance.collection('users').doc(d.id).update({'role': newRole});
+                        }
+                      }
+                    },
+                    items: const [
+                      DropdownMenuItem(value: 'admin', child: Text('Admin', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'inventoryManager', child: Text('Inv Mgr', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'cashier', child: Text('Cashier', style: TextStyle(fontSize: 12))),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 4),
                 IconButton(
-                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: Theme.of(context).colorScheme.error),
-                  onPressed: () => _confirmDelete(context, d.id, email),
+                  icon: const Icon(Icons.block_rounded, size: 20, color: Colors.orange),
+                  tooltip: 'Disable Employee',
+                  onPressed: () => _confirmDisable(context, d.id, email, role),
                 ),
               ],
             ),
+      ),
+    );
+  }
+
+  Widget _inactiveUserCard(BuildContext context, DocumentSnapshot d) {
+    final data = d.data() as Map<String, dynamic>;
+    final email = data['email'] ?? 'No email';
+    final previousRole = data['previousRole'] ?? 'cashier';
+    final disabledAt = data['disabledAt'] != null ? (data['disabledAt'] as Timestamp).toDate() : null;
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      color: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: const CircleAvatar(
+          backgroundColor: Colors.grey,
+          child: Icon(Icons.person_off_rounded, color: Colors.white),
+        ),
+        title: Text(email, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Previous Role: ${_getRoleLabel(previousRole)}', 
+                 style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+            if (disabledAt != null)
+              Text('Disabled: ${DateFormat('MMM dd, yyyy').format(disabledAt)}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
+        ),
+        trailing: ElevatedButton.icon(
+          onPressed: () => _confirmActivate(context, d.id, email, previousRole),
+          icon: const Icon(Icons.restart_alt_rounded, size: 16),
+          label: const Text('RE-ENABLE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          ),
+        ),
       ),
     );
   }
@@ -161,21 +248,59 @@ class UserManagementScreen extends StatelessWidget {
     _                  => Icons.person_outline_rounded,
   };
 
-  void _confirmDelete(BuildContext context, String id, String email) {
+  void _confirmDisable(BuildContext context, String id, String email, String currentRole) {
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Staff?'),
-        content: Text('Are you sure you want to remove $email? They will lose access to the staff portal immediately.'),
+        title: const Text('Disable Employee Account?'),
+        content: Text('Are you sure you want to disable $email? They will lose access to the staff portal immediately, but their profile history will be saved.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
             onPressed: () {
-              FirebaseFirestore.instance.collection('users').doc(id).delete();
+              FirebaseFirestore.instance.collection('users').doc(id).update({
+                'isDisabled': true,
+                'previousRole': currentRole,
+                'role': 'disabled',
+                'disabledAt': FieldValue.serverTimestamp(),
+              });
               Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Disabled $email. Account moved to Staff History.')),
+              );
             },
-            child: Text('Remove', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: const Text('DISABLE EMPLOYEE'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmActivate(BuildContext context, String id, String email, String previousRole) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Re-enable Employee?'),
+        content: Text('Are you sure you want to re-activate $email with role ${_getRoleLabel(previousRole)}? They will regain access to the staff portal.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+            onPressed: () {
+              FirebaseFirestore.instance.collection('users').doc(id).update({
+                'isDisabled': false,
+                'role': previousRole,
+                'activatedAt': FieldValue.serverTimestamp(),
+              });
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Re-activated $email successfully!')),
+              );
+            },
+            child: const Text('RE-ACTIVATE STAFF'),
           ),
         ],
       ),
@@ -196,7 +321,7 @@ class UserManagementScreen extends StatelessWidget {
       context: context,
       useRootNavigator: true,
       builder: (ctx) => const AlertDialog(
-        title: Text('Role Permissions'),
+        title: Text('Role Permissions & Status'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,6 +331,8 @@ class UserManagementScreen extends StatelessWidget {
             Text('• Inv Mgr: Manage Inventory Stock, Suppliers, and Loss.', style: TextStyle(fontSize: 13)),
             SizedBox(height: 6),
             Text('• Cashier: Access to POS and Pre-Orders only.', style: TextStyle(fontSize: 13)),
+            SizedBox(height: 12),
+            Text('• Disable: Inactive employees lose portal access while preserving account history. You can re-enable them anytime if they return.', style: TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
       ),
@@ -272,6 +399,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
         await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'email': email,
           'role': _selectedRole,
+          'isDisabled': false,
           'isCustomer': false,
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -321,65 +449,68 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
           Text('Add New Employee', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ],
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Enter the email and password for the new staff member. They will use these credentials to log in.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _emailCtrl,
-              enabled: !_loading,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Staff Email',
-                prefixIcon: Icon(Icons.email_outlined),
-                border: OutlineInputBorder(),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Enter the email and password for the new staff member. They will use these credentials to log in.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _passCtrl,
-              enabled: !_loading,
-              obscureText: _obscurePass,
-              decoration: InputDecoration(
-                labelText: 'Temporary Password',
-                prefixIcon: const Icon(Icons.lock_outline),
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility),
-                  onPressed: () => setState(() => _obscurePass = !_obscurePass),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _emailCtrl,
+                enabled: !_loading,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Staff Email',
+                  prefixIcon: Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _selectedRole,
-              decoration: const InputDecoration(
-                labelText: 'Assigned Role',
-                prefixIcon: Icon(Icons.admin_panel_settings_outlined),
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
-                DropdownMenuItem(value: 'inventoryManager', child: Text('Inventory Manager')),
-                DropdownMenuItem(value: 'admin', child: Text('Admin')),
-              ],
-              onChanged: _loading ? null : (v) {
-                if (v != null) setState(() => _selectedRole = v);
-              },
-            ),
-            if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12, fontWeight: FontWeight.bold),
+              TextField(
+                controller: _passCtrl,
+                enabled: !_loading,
+                obscureText: _obscurePass,
+                decoration: InputDecoration(
+                  labelText: 'Temporary Password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                  ),
+                ),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedRole,
+                decoration: const InputDecoration(
+                  labelText: 'Assigned Role',
+                  prefixIcon: Icon(Icons.admin_panel_settings_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
+                  DropdownMenuItem(value: 'inventoryManager', child: Text('Inventory Manager')),
+                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                ],
+                onChanged: _loading ? null : (v) {
+                  if (v != null) setState(() => _selectedRole = v);
+                },
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [

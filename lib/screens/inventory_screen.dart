@@ -31,9 +31,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     _focusMap = {
       _searchFocus: _searchCtrl,
     };
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _searchFocus.requestFocus();
-    });
   }
 
   @override
@@ -209,10 +206,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       ),
                     )
                   : ListView.builder(
+                      cacheExtent: 1000,
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: filtered.length,
                       itemBuilder: (_, i) => _ProductRow(
+                        key: ValueKey(filtered[i].id),
                         product: filtered[i],
                         onEdit:  () => _showSheet(context, filtered[i]),
                       ))),
@@ -237,7 +236,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 class _ProductRow extends StatelessWidget {
   final Product product;
   final VoidCallback onEdit;
-  const _ProductRow({required this.product, required this.onEdit});
+  const _ProductRow({super.key, required this.product, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {

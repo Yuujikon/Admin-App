@@ -20,9 +20,11 @@ class SalesHistoryScreen extends StatelessWidget {
       body: txs.isEmpty 
         ? const Center(child: Text('No transactions yet.'))
         : ListView.builder(
+            cacheExtent: 1000,
             padding: const EdgeInsets.all(12),
             itemCount: txs.length,
             itemBuilder: (_, i) => Card(
+              key: ValueKey(txs[i].id),
               child: ListTile(
                 onTap: () => _showTxDetails(context, txs[i], inventory),
                 leading: CircleAvatar(
@@ -58,9 +60,9 @@ class SalesHistoryScreen extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         height: MediaQuery.of(context).size.height * 0.85,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: Column(
           children: [

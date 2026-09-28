@@ -25,6 +25,7 @@ dependencies:
   flutter_local_notifications: ^17.1.2
 
   # Utilities
+  crypto:              ^3.0.3
   uuid:                ^4.3.3
   shared_preferences:  ^2.2.3   # stores admin PIN
   mobile_scanner:      ^7.4.0   # camera barcode scanner

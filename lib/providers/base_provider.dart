@@ -6,12 +6,15 @@ import 'package:flutter/material.dart';
 abstract class BaseProvider extends ChangeNotifier {
   final List<StreamSubscription> _subscriptions = [];
   bool _isLoading = false;
+  bool _isDisposed = false;
 
   bool get isLoading => _isLoading;
+  bool get isDisposed => _isDisposed;
 
   /// Sets the loading state and notifies listeners.
   @protected
   void setLoading(bool val) {
+    if (_isDisposed) return;
     _isLoading = val;
     notifyListeners();
   }
@@ -32,6 +35,7 @@ abstract class BaseProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     cancelSubscriptions();
     super.dispose();
   }
@@ -39,6 +43,8 @@ abstract class BaseProvider extends ChangeNotifier {
   /// Safe way to notify listeners only if the provider hasn't been disposed.
   @override
   void notifyListeners() {
-    super.notifyListeners();
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
   }
 }

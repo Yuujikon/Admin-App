@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../models/bundle.dart';
@@ -10,7 +11,6 @@ import '../widgets/scanner_dialog.dart';
 import '../utils/barcode_routing.dart';
 import '../utils/format.dart';
 import '../models/customer.dart';
-import '../providers/order_provider.dart';
 import '../providers/printer_provider.dart';
 import '../utils/pricing_engine.dart';
 
@@ -30,11 +30,7 @@ class _PosScreenState extends State<PosScreen> {
   bool   _saving = false;
   Customer? _selectedCustomer;
   
-  String? _lastTxId;
-  String? _lastCustomerName;
-  List<CartItem> _lastItems = [];
-  double _lastTotal = 0, _lastCash = 0, _lastChange = 0;
-  PricingBreakdown? _lastBreakdown;
+  double _lastTotal = 0, _lastChange = 0;
 
   @override
   void initState() {
@@ -44,10 +40,6 @@ class _PosScreenState extends State<PosScreen> {
       _cashFocus: _cashCtrl,
     };
     _cashCtrl.addListener(() => setState(() {}));
-    // Auto-focus barcode search on start
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _barcodeFocus.requestFocus();
-    });
   }
 
   @override
@@ -61,7 +53,6 @@ class _PosScreenState extends State<PosScreen> {
 
   PricingBreakdown get _breakdown {
     final products = context.read<InventoryProvider>().products;
-    final orderProvider = context.read<OrderProvider>();
     
     // Apply wholesale prices to items before calculating
     final itemsWithWholesale = _cart.map((item) {
@@ -210,17 +201,27 @@ class _PosScreenState extends State<PosScreen> {
     _barcodeFocus.requestFocus();
   }
 
+  void _setCartQty(String id, String? variantId, int targetQty) => setState(() {
+    final idx = _cart.indexWhere((c) => c.productId == id && c.variantId == variantId);
+    if (idx < 0) return;
+    
+    int stock = 9999;
+    final products = context.read<InventoryProvider>().products;
+    try {
+      final p = products.firstWhere((p) => p.id == id);
+      stock = variantId != null
+          ? p.variants.firstWhere((v) => v.id == variantId).stock
+          : p.stock;
+    } catch (_) {}
+
+    final int maxStock = stock < 1 ? 1 : stock;
+    _cart[idx] = _cart[idx].copyWith(qty: targetQty.clamp(1, maxStock));
+  });
+
   void _adjustQty(String id, String? variantId, int delta) => setState(() {
     final idx = _cart.indexWhere((c) => c.productId == id && c.variantId == variantId);
     if (idx < 0) return;
-    final products = context.read<InventoryProvider>().products;
-    final p = products.firstWhere((p) => p.id == id);
-
-    final int stock = variantId != null
-        ? p.variants.firstWhere((v) => v.id == variantId).stock
-        : p.stock;
-
-    _cart[idx] = _cart[idx].copyWith(qty: (_cart[idx].qty + delta).clamp(1, stock));
+    _setCartQty(id, variantId, _cart[idx].qty + delta);
   });
 
   Future<void> _completeSale() async {
@@ -306,11 +307,9 @@ class _PosScreenState extends State<PosScreen> {
       
       if (mounted) {
         setState(() { 
-          _lastItems = items; _lastTotal = total; _lastCash = cash; _lastChange = change;
-          _lastTxId = tx.id;
-          _lastCustomerName = _selectedCustomer?.name;
-          _lastBreakdown = breakdown;
-          _cart.clear(); _cashCtrl.clear(); _selectedCustomer = null; _done = true; _saving = false;
+          _lastTotal = total; _lastChange = change;
+          _cart.clear(); _cashCtrl.clear(); _selectedCustomer = null; 
+          _done = true; _saving = false;
         });
       }
     } catch (e) { 
@@ -355,13 +354,28 @@ class _PosScreenState extends State<PosScreen> {
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         body: Column(children: [
-          Padding(padding: const EdgeInsets.all(12), child: TextField(
-              controller: _barcodeCtrl, focusNode: _barcodeFocus, onSubmitted: (v) => _onBarcodeSubmit(v, products),
-              onChanged: (_) => setState(() {}), decoration: InputDecoration(hintText: 'Scan or search...', prefixIcon: const Icon(Icons.qr_code_scanner), isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                suffixIcon: IconButton(icon: const Icon(Icons.camera_alt_outlined), onPressed: () async {
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: TextField(
+              controller: _barcodeCtrl, 
+              focusNode: _barcodeFocus, 
+              onSubmitted: (v) => _onBarcodeSubmit(v, products),
+              onChanged: (_) => setState(() {}), 
+              decoration: InputDecoration(
+                hintText: 'Scan or search products...', 
+                prefixIcon: const Icon(Icons.qr_code_scanner), 
+                isDense: true, 
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.camera_alt_outlined), 
+                  onPressed: () async {
                     final code = await showDialog<String>(context: context, useRootNavigator: true, builder: (_) => const ScannerDialog());
                     if (code != null) _onBarcodeSubmit(code, products);
-                  })))),
+                  },
+                ),
+              ),
+            ),
+          ),
   
           Expanded(child: isTablet 
               ? Row(children: [
@@ -371,10 +385,13 @@ class _PosScreenState extends State<PosScreen> {
                     products: products, selectedCustomer: _selectedCustomer, 
                     saving: _saving, cashFocus: _cashFocus,
                     onAdjust: _adjustQty, 
+                    onSetQty: _setCartQty,
                     onRemove: (id, vid) => setState(() => _cart.removeWhere((c) => c.productId == id && c.variantId == vid)), 
                     onComplete: _completeSale, 
                     onSelectCustomer: (c) => setState(() => _selectedCustomer = c), 
-                    onClear: () => setState(() => _cart.clear()))),
+                    onClear: () => setState(() {
+                      _cart.clear();
+                    }))),
                 ])
               : Stack(children: [
                   Positioned.fill(child: _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle, onBundleToggle: _toggleBundle)),
@@ -392,10 +409,13 @@ class _PosScreenState extends State<PosScreen> {
                           products: products, selectedCustomer: _selectedCustomer,
                           saving: _saving, cashFocus: _cashFocus,
                           onAdjust: _adjustQty, 
+                          onSetQty: _setCartQty,
                           onRemove: (id, vid) => setState(() => _cart.removeWhere((c) => c.productId == id && c.variantId == vid)),
                           onComplete: _completeSale, 
                           onSelectCustomer: (c) => setState(() => _selectedCustomer = c),
-                          onClear: () => setState(() => _cart.clear()),
+                          onClear: () => setState(() {
+                            _cart.clear();
+                          }),
                           scrollController: sc,
                         ),
                       ),
@@ -427,19 +447,27 @@ class _ProductGridState extends State<_ProductGrid> {
       final bundles = inventory.bundles.where((b) => b.isActive).toList();
       return Column(children: [
         SizedBox(height: 52, child: ListView.separated(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), itemCount: cats.length, separatorBuilder: (_, __) => const SizedBox(width: 8), itemBuilder: (_, i) => FilterChip(label: Text(cats[i], style: const TextStyle(fontSize: 12)), selected: _cat == cats[i], onSelected: (_) => setState(() => _cat = cats[i])))),
-        Expanded(child: GridView.builder(padding: const EdgeInsets.fromLTRB(12, 12, 12, 160), gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, childAspectRatio: 0.8, crossAxisSpacing: 8, mainAxisSpacing: 8), itemCount: bundles.length, itemBuilder: (_, i) {
+        Expanded(
+          child: bundles.isEmpty
+              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('No active bundles available', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 13))))
+              : GridView.builder(padding: const EdgeInsets.fromLTRB(12, 12, 12, 160), gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, childAspectRatio: 0.8, crossAxisSpacing: 8, mainAxisSpacing: 8), itemCount: bundles.length, itemBuilder: (_, i) {
                   return _BundleTile(bundle: bundles[i], onToggle: () => widget.onBundleToggle(bundles[i]));
-                })),
+                }),
+        ),
       ]);
     }
 
     final filtered = widget.products.where((p) => _cat == 'All' || p.category == _cat).toList();
     return Column(children: [
       SizedBox(height: 52, child: ListView.separated(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), itemCount: cats.length, separatorBuilder: (_, __) => const SizedBox(width: 8), itemBuilder: (_, i) => FilterChip(label: Text(cats[i], style: const TextStyle(fontSize: 12)), selected: _cat == cats[i], onSelected: (_) => setState(() => _cat = cats[i])))),
-      Expanded(child: GridView.builder(padding: const EdgeInsets.fromLTRB(12, 12, 12, 160), gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, childAspectRatio: 0.8, crossAxisSpacing: 8, mainAxisSpacing: 8), itemCount: filtered.length, itemBuilder: (_, i) {
+      Expanded(
+        child: filtered.isEmpty
+            ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.inventory_2_outlined, size: 36, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4)), const SizedBox(height: 8), Text('No products available', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.bold))])))
+            : GridView.builder(padding: const EdgeInsets.fromLTRB(12, 12, 12, 160), gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, childAspectRatio: 0.8, crossAxisSpacing: 8, mainAxisSpacing: 8), itemCount: filtered.length, itemBuilder: (_, i) {
                 final p = filtered[i]; final inCart = widget.cart.any((c) => c.productId == p.id);
                 return _PosProductTile(p: p, inCart: inCart, onToggle: () => widget.onToggle(p));
-              })),
+              }),
+      ),
     ]);
   }
 }
@@ -510,10 +538,39 @@ class _PosProductTile extends StatelessWidget {
 }
 
 class _CartPanel extends StatelessWidget {
-  final List<CartItem> cart; final TextEditingController cashCtrl; final PricingBreakdown breakdown; final double cashNum, change; final List<Product> products; final Customer? selectedCustomer; final void Function(String, String?, int) onAdjust; final void Function(String, String?) onRemove; final VoidCallback onComplete, onClear; final ValueChanged<Customer?> onSelectCustomer; final ScrollController? scrollController; final bool saving;
+  final List<CartItem> cart; 
+  final TextEditingController cashCtrl; 
+  final PricingBreakdown breakdown; 
+  final double cashNum, change; 
+  final List<Product> products; 
+  final Customer? selectedCustomer; 
+  final void Function(String, String?, int) onAdjust; 
+  final void Function(String, String?, int) onSetQty; 
+  final void Function(String, String?) onRemove; 
+  final VoidCallback onComplete, onClear; 
+  final ValueChanged<Customer?> onSelectCustomer; 
+  final ScrollController? scrollController; 
+  final bool saving;
   final FocusNode cashFocus;
 
-  const _CartPanel({required this.cart, required this.cashCtrl, required this.breakdown, required this.cashNum, required this.change, required this.products, required this.selectedCustomer, required this.onAdjust, required this.onRemove, required this.onComplete, required this.onClear, required this.onSelectCustomer, required this.saving, required this.cashFocus, this.scrollController});
+  const _CartPanel({
+    required this.cart, 
+    required this.cashCtrl, 
+    required this.breakdown, 
+    required this.cashNum, 
+    required this.change, 
+    required this.products, 
+    required this.selectedCustomer, 
+    required this.onAdjust, 
+    required this.onSetQty, 
+    required this.onRemove, 
+    required this.onComplete, 
+    required this.onClear, 
+    required this.onSelectCustomer, 
+    required this.saving, 
+    required this.cashFocus, 
+    this.scrollController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -575,9 +632,10 @@ class _CartPanel extends StatelessWidget {
                           Row(children: [
                             Expanded(child: Text(item.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: isOutOfStock ? TextDecoration.lineThrough : null, color: isOutOfStock ? Colors.grey : null), maxLines: 1, overflow: TextOverflow.ellipsis)),
                             QtyControl(
+                              key: ValueKey('qty_${item.productId}_${item.variantId ?? 'base'}'),
                               qty: item.qty, 
                               max: stock, 
-                              onChanged: (n) => onAdjust(item.productId, item.variantId, n - item.qty)
+                              onChanged: (n) => onSetQty(item.productId, item.variantId, n)
                             ),
                             const SizedBox(width: 8),
                             Text(formatPeso(currentPrice * item.qty), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isOutOfStock ? Colors.grey : null)),
@@ -647,7 +705,10 @@ class _CartPanel extends StatelessWidget {
                           Expanded(flex: 3, child: TextField(
                             controller: cashCtrl, 
                             focusNode: cashFocus,
-                            keyboardType: TextInputType.number, 
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false), 
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                            ],
                             decoration: const InputDecoration(labelText: 'Cash Received', prefixText: '₱ ', isDense: true))),
                           const SizedBox(width: 12),
                           Expanded(flex: 2, child: ElevatedButton(
@@ -670,28 +731,6 @@ class _CartPanel extends StatelessWidget {
         ),
       );
     });
-  }
-
-  Widget _breakdownRow(String label, double value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 1),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis)),
-        const SizedBox(width: 8),
-        Text(formatPeso(value), style: TextStyle(fontSize: 10, color: value < 0 ? Colors.green : Colors.grey, fontWeight: value < 0 ? FontWeight.bold : FontWeight.normal)),
-      ],
-    ),
-  );
-
-  void _showCustomerPicker(BuildContext context) async {
-    final customers = context.read<InventoryProvider>().customers;
-    final res = await showDialog<Customer>(
-      context: context, 
-      useRootNavigator: true,
-      builder: (ctx) => _CustomerPickerDialog(customers: customers),
-    );
-    if (res != null) onSelectCustomer(res);
   }
 }
 
@@ -803,46 +842,10 @@ class _SuccessView extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 64),
-              ElevatedButton.icon(
-                onPressed: onNewSale,
-                icon: const Icon(Icons.add),
-                label: const Text('NEW SALE'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(64),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                ),
-              ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _DashedDivider extends StatelessWidget {
-  const _DashedDivider();
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final boxWidth = constraints.constrainWidth();
-        const dashWidth = 4.0;
-        const dashHeight = 1.0;
-        final dashCount = (boxWidth / (2 * dashWidth)).floor();
-        return Flex(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          direction: Axis.horizontal,
-          children: List.generate(dashCount, (_) {
-            return const SizedBox(
-              width: dashWidth,
-              height: dashHeight,
-              child: DecoratedBox(decoration: BoxDecoration(color: Colors.grey)),
-            );
-          }),
-        );
-      },
     );
   }
 }

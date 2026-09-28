@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../providers/auth_provider.dart';
 import '../providers/inventory_provider.dart';
-import '../models/store_settings.dart';
 import '../providers/order_provider.dart';
 import '../providers/expense_provider.dart';
 import '../models/order.dart';
@@ -12,9 +12,10 @@ import '../config/theme.dart';
 import '../providers/restock_provider.dart';
 import '../models/restock_inquiry.dart';
 import '../models/product.dart';
+import 'admin_app.dart';
 
 class DashboardScreen extends StatelessWidget {
-  final Function(int, {String? category}) onTabChange;
+  final Function(AppTab, {String? category}) onTabChange;
   const DashboardScreen({super.key, required this.onTabChange});
 
   @override
@@ -28,7 +29,6 @@ class DashboardScreen extends StatelessWidget {
     final transactions = inventory.transactions;
     final orders       = orderProvider.orders;
     final expenses     = context.watch<ExpenseProvider>().expenses;
-    final isClosed     = inventory.settings.effectivelyClosed;
 
     final today      = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final todayTx    = transactions.where(
@@ -37,14 +37,13 @@ class DashboardScreen extends StatelessWidget {
     final todayExp   = expenses
         .where((e) => DateFormat('yyyy-MM-dd').format(e.createdAt) == today)
         .fold(0.0, (s, e) => s + e.amount);
-    final pending    = orders.where((o) => o.status == OrderStatus.pending).length;
+    final toProcess  = orders.where((o) => o.status == OrderStatus.pending || o.status == OrderStatus.staging).length;
     final restockPending = restockProvider.inquiries.where((ri) => 
         ri.status == RestockInquiryStatus.draft || 
         ri.status == RestockInquiryStatus.pending ||
         ri.status == RestockInquiryStatus.sent ||
         ri.status == RestockInquiryStatus.acknowledged ||
         ri.status == RestockInquiryStatus.partiallyFulfilled).length;
-    final net        = todaySales - todayExp;
     final semantic = Theme.of(context).semantic;
 
     // Low Stock Alerts (Checks total stock across variants)
@@ -79,65 +78,138 @@ class DashboardScreen extends StatelessWidget {
                 ],
               ),
               // Store Status Toggle
-              ActionChip(
-                backgroundColor: isClosed ? Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.1) : (inventory.settings.scheduledCloseAt != null ? semantic.warning.withValues(alpha: 0.1) : semantic.success.withValues(alpha: 0.1)),
-                side: BorderSide(color: isClosed ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2) : (inventory.settings.scheduledCloseAt != null ? semantic.warning.withValues(alpha: 0.2) : semantic.success.withValues(alpha: 0.2))),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-                avatar: Icon(isClosed ? Icons.storefront_outlined : (inventory.settings.scheduledCloseAt != null ? Icons.schedule : Icons.storefront), 
-                             size: 16, color: isClosed ? Theme.of(context).colorScheme.error : (inventory.settings.scheduledCloseAt != null ? semantic.warning : semantic.success)),
-                label: Text(isClosed ? 'CLOSED' : (inventory.settings.scheduledCloseAt != null ? 'SCHEDULED' : 'OPEN'),
-                            style: TextStyle(color: isClosed ? Theme.of(context).colorScheme.error : (inventory.settings.scheduledCloseAt != null ? semantic.warning : semantic.success), fontWeight: FontWeight.w800, fontSize: 11)),
-                onPressed: () => _showStatusDialog(context, inventory),
+              Builder(
+                builder: (context) {
+                  final statusLabel = inventory.settings.statusLabel;
+                  Color statusColor;
+                  IconData statusIcon;
+
+                  switch (statusLabel) {
+                    case 'CLOSED':
+                      statusColor = Theme.of(context).colorScheme.error;
+                      statusIcon = Icons.storefront_outlined;
+                      break;
+                    case 'SCHEDULED':
+                      statusColor = semantic.warning;
+                      statusIcon = Icons.schedule;
+                      break;
+                    case 'OUT OF HOURS':
+                      statusColor = Colors.orange.shade700;
+                      statusIcon = Icons.access_time_rounded;
+                      break;
+                    case 'OPEN':
+                    default:
+                      statusColor = semantic.success;
+                      statusIcon = Icons.storefront;
+                      break;
+                  }
+
+                  return ActionChip(
+                    backgroundColor: statusColor.withValues(alpha: 0.1),
+                    side: BorderSide(color: statusColor.withValues(alpha: 0.2)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                    avatar: Icon(statusIcon, size: 16, color: statusColor),
+                    label: Text(
+                      statusLabel,
+                      style: TextStyle(color: statusColor, fontWeight: FontWeight.w800, fontSize: 11),
+                    ),
+                    onPressed: () => _showStatusDialog(context, inventory),
+                  );
+                },
               ),
             ],
           ),
           const SizedBox(height: 24),
 
-          // Stat cards
-          GridView.count(
-            crossAxisCount: isLandscape ? 4 : 2, 
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 16, mainAxisSpacing: 16,
-            childAspectRatio: isLandscape ? 1.5 : 1.1,
-            children: [
-              _StatCard("Today's Sales", formatPeso(todaySales),
-                  Icons.auto_graph_rounded, semantic.success),
-              _StatCard("Restock Needed", "$restockPending",
-                  Icons.inventory_2_rounded, Colors.orange,
-                  onTap: () => onTabChange(3, category: 'Low Stock')), // Go to Inventory -> Low Stock
-              _StatCard("Expenses",      formatPeso(todayExp),
-                  Icons.receipt_long_rounded,  Theme.of(context).colorScheme.error, 
-                  onTap: () => onTabChange(4, category: null)), // Go to Expenses
-              _StatCard("Pending Orders","$pending",
-                  Icons.pending_actions_rounded, semantic.warning,
-                  onTap: () => onTabChange(2, category: null)), // Go to Orders
-            ],
+          // Stat cards (Customized by Role)
+          Builder(
+            builder: (context) {
+              final auth = context.watch<AppAuthProvider>();
+              final bool isAdmin = auth.role == UserRole.admin;
+
+              if (isAdmin) {
+                return GridView.count(
+                  crossAxisCount: isLandscape ? 4 : 2, 
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 16, mainAxisSpacing: 16,
+                  childAspectRatio: isLandscape ? 1.5 : 1.1,
+                  children: [
+                    _StatCard("Today's Sales", formatPeso(todaySales),
+                        Icons.auto_graph_rounded, semantic.success),
+                    _StatCard("Restock Needed", "$restockPending",
+                        Icons.inventory_2_rounded, Colors.orange,
+                        onTap: () => onTabChange(AppTab.inventory, category: 'Low Stock')),
+                    _StatCard("Expenses",      formatPeso(todayExp),
+                        Icons.receipt_long_rounded,  Theme.of(context).colorScheme.error, 
+                        onTap: () => onTabChange(AppTab.expenses, category: null)),
+                    _StatCard("Orders To Process","$toProcess",
+                        Icons.pending_actions_rounded, semantic.warning,
+                        onTap: () => onTabChange(AppTab.preOrders, category: null)),
+                  ],
+                );
+              } else {
+                // Inventory Manager focused stat cards
+                return GridView.count(
+                  crossAxisCount: isLandscape ? 4 : 2, 
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 16, mainAxisSpacing: 16,
+                  childAspectRatio: isLandscape ? 1.5 : 1.1,
+                  children: [
+                    _StatCard("Total Products", "${inventory.products.length}",
+                        Icons.inventory_2_rounded, semantic.info,
+                        onTap: () => onTabChange(AppTab.inventory, category: null)),
+                    _StatCard("Restock Needed", "$restockPending",
+                        Icons.add_shopping_cart_rounded, Colors.orange,
+                        onTap: () => onTabChange(AppTab.inventory, category: 'Low Stock')),
+                    _StatCard("Low Stock Alerts", "${lowStock.length}",
+                        Icons.warning_amber_rounded, Theme.of(context).colorScheme.error,
+                        onTap: () => onTabChange(AppTab.inventory, category: 'Low Stock')),
+                    _StatCard("Categories", "${inventory.products.map((p) => p.category).toSet().length}",
+                        Icons.category_rounded, Colors.blue.shade700),
+                  ],
+                );
+              }
+            },
           ),
 
           const SizedBox(height: 16),
 
           // Summary row
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5)),
-            ),
-            child: Row(
-              children: [
-                Expanded(child: InkWell(
-                  onTap: () => onTabChange(2, category: null),
-                  child: _MiniStat('Sales', '${todayTx.length}'))),
-                const _Divider(),
-                Expanded(child: _MiniStat('Units',
-                    '${todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}')),
-                const _Divider(),
-                Expanded(child: _MiniStat('Average', todayTx.isEmpty
-                    ? '—' : formatPeso(todaySales / todayTx.length))),
-              ],
-            ),
+          Builder(
+            builder: (context) {
+              final auth = context.watch<AppAuthProvider>();
+              final bool isAdmin = auth.role == UserRole.admin;
+
+              return Container(
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  children: isAdmin ? [
+                    Expanded(child: InkWell(
+                      onTap: () => onTabChange(AppTab.preOrders, category: null),
+                      child: _MiniStat('Sales', '${todayTx.length}'))),
+                    const _Divider(),
+                    Expanded(child: _MiniStat('Units',
+                        '${todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}')),
+                    const _Divider(),
+                    Expanded(child: _MiniStat('Average', todayTx.isEmpty
+                        ? '—' : formatPeso(todaySales / todayTx.length))),
+                  ] : [
+                    Expanded(child: _MiniStat('Total Items', '${inventory.products.length}')),
+                    const _Divider(),
+                    Expanded(child: _MiniStat('Low Stock', '${lowStock.length}')),
+                    const _Divider(),
+                    Expanded(child: _MiniStat('Categories', '${inventory.products.map((p) => p.category).toSet().length}')),
+                  ],
+                ),
+              );
+            },
           ),
 
           const SizedBox(height: 24),
@@ -246,7 +318,7 @@ class DashboardScreen extends StatelessWidget {
                   final p = lowStock[index];
                   return ListTile(
                     dense: true,
-                    onTap: () => onTabChange(3, category: 'Low Stock'), // Go to Inventory -> Low Stock
+                    onTap: () => onTabChange(AppTab.inventory, category: 'Low Stock'), // Go to Inventory -> Low Stock
                     title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(p.category, style: const TextStyle(fontSize: 10)),
                     trailing: Text('${p.stock} ${p.unit} left', style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold)),
@@ -295,208 +367,315 @@ class DashboardScreen extends StatelessWidget {
     DateTime? schedClose = settings.scheduledCloseAt;
     DateTime? schedOpen = settings.scheduledOpenAt;
 
+    bool operatingEnabled = settings.operatingHoursEnabled;
+    TimeOfDay openTime = _parseTimeOfDay(settings.dailyOpenTime, const TimeOfDay(hour: 8, minute: 0));
+    TimeOfDay closeTime = _parseTimeOfDay(settings.dailyCloseTime, const TimeOfDay(hour: 21, minute: 0));
+
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Store Management'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── Status Overview ──────────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isClosed ? Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.1) : Theme.of(context).semantic.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(isClosed ? Icons.lock : Icons.lock_open, color: isClosed ? Theme.of(context).colorScheme.error : Theme.of(context).semantic.success),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          isClosed ? 'Store is currently CLOSED' : 'Store is currently OPEN',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: isClosed ? Theme.of(context).colorScheme.error : Theme.of(context).semantic.success),
-                        ),
+        builder: (context, setDialogState) {
+          final isEffectivelyClosed = settings.effectivelyClosed;
+          final closureReason = settings.closureReason;
+
+          return AlertDialog(
+            title: const Text('Store Management'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(context).size.height * 0.7,
+              child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── Status Overview Banner ───────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isEffectivelyClosed 
+                          ? Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.15) 
+                          : Theme.of(context).semantic.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isEffectivelyClosed
+                            ? Theme.of(context).colorScheme.error.withValues(alpha: 0.3)
+                            : Theme.of(context).semantic.success.withValues(alpha: 0.3),
                       ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-                const Text('Manual Toggle', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: controller,
-                  decoration: const InputDecoration(
-                    labelText: 'Closure Notice',
-                    hintText: 'Optional message for customers',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isClosed ? Theme.of(context).semantic.success : Theme.of(context).colorScheme.error,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () async {
-                    try {
-                      await inventory.toggleStoreStatus(!isClosed, message: controller.text.trim());
-                      if (!ctx.mounted) return;
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Store status updated successfully')),
-                      );
-                    } catch (e) {
-                      if (!ctx.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: $e'), backgroundColor: Theme.of(context).colorScheme.error),
-                      );
-                    }
-                  },
-                  icon: Icon(isClosed ? Icons.play_arrow_rounded : Icons.power_settings_new_rounded),
-                  label: Text(isClosed ? 'Open Store Now' : 'Close Store Now'),
-                ),
-
-                const Divider(height: 48),
-                Text('Scheduled Outing', style: Theme.of(context).textTheme.titleSmall),
-                Text('Automatically close and reopen the store.', style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 16),
-                
-                // Start Time
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Starts At', style: TextStyle(fontSize: 13)),
-                  subtitle: Text(schedClose == null ? 'Not set' : DateFormat('MMM d, h:mm a').format(schedClose!)),
-                  trailing: const Icon(Icons.calendar_today, size: 18),
-                  onTap: () async {
-                    final date = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 30)));
-                    if (date != null && context.mounted) {
-                      final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-                      if (time != null) {
-                        setDialogState(() => schedClose = DateTime(date.year, date.month, date.day, time.hour, time.minute));
-                      }
-                    }
-                  },
-                ),
-
-                // End Time
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Reopens At', style: TextStyle(fontSize: 13)),
-                  subtitle: Text(schedOpen == null ? 'Not set' : DateFormat('MMM d, h:mm a').format(schedOpen!)),
-                  trailing: const Icon(Icons.restore, size: 18),
-                  onTap: () async {
-                    final date = await showDatePicker(context: context, initialDate: schedClose ?? DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 30)));
-                    if (date != null && context.mounted) {
-                      final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 11, minute: 0));
-                      if (time != null) {
-                        setDialogState(() => schedOpen = DateTime(date.year, date.month, date.day, time.hour, time.minute));
-                      }
-                    }
-                  },
-                ),
-
-                if (schedClose != null && schedOpen != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        try {
-                          await inventory.toggleStoreStatus(isClosed, 
-                            message: 'Scheduled Closure: ${DateFormat('MMM d').format(schedClose!)} – ${DateFormat('MMM d').format(schedOpen!)}',
-                            closeAt: schedClose,
-                            openAt: schedOpen,
-                          );
-                          if (!ctx.mounted) return;
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Schedule saved successfully')),
-                          );
-                        } catch (e) {
-                          if (!ctx.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Error: $e'), backgroundColor: Theme.of(context).colorScheme.error),
-                          );
-                        }
-                      },
-                      child: const Text('Save Schedule'),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isEffectivelyClosed ? Icons.lock_clock_rounded : Icons.storefront_rounded,
+                          color: isEffectivelyClosed ? Theme.of(context).colorScheme.error : Theme.of(context).semantic.success,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isEffectivelyClosed ? 'Store is CLOSED' : 'Store is OPEN',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isEffectivelyClosed ? Theme.of(context).colorScheme.error : Theme.of(context).semantic.success,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                closureReason,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
-                if (settings.scheduledCloseAt != null)
-                  TextButton(
+                  const SizedBox(height: 20),
+                  const Text('Manual Store Control', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      labelText: 'Closure Notice',
+                      hintText: 'Optional message for customers when closed',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isClosed ? Theme.of(context).semantic.success : Theme.of(context).colorScheme.error,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: () async {
-                      await inventory.toggleStoreStatus(isClosed, closeAt: null, openAt: null);
-                      if (ctx.mounted) Navigator.pop(ctx);
+                      try {
+                        await inventory.toggleStoreStatus(!isClosed, message: controller.text.trim());
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Store status updated successfully')),
+                        );
+                      } catch (e) {
+                        if (!ctx.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+                        );
+                      }
                     },
-                    child: Text('Clear Schedule', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    icon: Icon(isClosed ? Icons.play_arrow_rounded : Icons.power_settings_new_rounded),
+                    label: Text(isClosed ? 'Open Store Now' : 'Close Store Now'),
                   ),
 
-                const Divider(height: 48),
-                Text('Order Expiration Windows', style: Theme.of(context).textTheme.titleSmall),
-                Text('Time customers have to pick up their orders.', style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 16),
+                  const Divider(height: 36),
+                  Text('Daily Operating Hours', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('Automatically open and close every day.', style: Theme.of(context).textTheme.labelSmall),
+                  const SizedBox(height: 8),
 
-                _WindowInput(
-                  label: 'Perishables Only',
-                  hint: 'e.g. 2 hours',
-                  value: settings.perishableWindowHours,
-                  onChanged: (v) => inventory.saveStoreSettings(StoreSettings(
-                    isClosed: settings.isClosed,
-                    closureMessage: settings.closureMessage,
-                    scheduledCloseAt: settings.scheduledCloseAt,
-                    scheduledOpenAt: settings.scheduledOpenAt,
-                    perishableWindowHours: v,
-                    mixedWindowHours: settings.mixedWindowHours,
-                    standardWindowHours: settings.standardWindowHours,
-                  )),
-                ),
-                const SizedBox(height: 12),
-                _WindowInput(
-                  label: 'Mixed Orders',
-                  hint: 'e.g. 24 hours',
-                  value: settings.mixedWindowHours,
-                  onChanged: (v) => inventory.saveStoreSettings(StoreSettings(
-                    isClosed: settings.isClosed,
-                    closureMessage: settings.closureMessage,
-                    scheduledCloseAt: settings.scheduledCloseAt,
-                    scheduledOpenAt: settings.scheduledOpenAt,
-                    perishableWindowHours: settings.perishableWindowHours,
-                    mixedWindowHours: v,
-                    standardWindowHours: settings.standardWindowHours,
-                  )),
-                ),
-                const SizedBox(height: 12),
-                _WindowInput(
-                  label: 'Non-Perishables',
-                  hint: 'e.g. 72 hours',
-                  value: settings.standardWindowHours,
-                  onChanged: (v) => inventory.saveStoreSettings(StoreSettings(
-                    isClosed: settings.isClosed,
-                    closureMessage: settings.closureMessage,
-                    scheduledCloseAt: settings.scheduledCloseAt,
-                    scheduledOpenAt: settings.scheduledOpenAt,
-                    perishableWindowHours: settings.perishableWindowHours,
-                    mixedWindowHours: settings.mixedWindowHours,
-                    standardWindowHours: v,
-                  )),
-                ),
-              ],
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Enable Daily Schedule', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    value: operatingEnabled,
+                    onChanged: (val) async {
+                      setDialogState(() => operatingEnabled = val);
+                      final openStr = _formatTimeOfDay(openTime);
+                      final closeStr = _formatTimeOfDay(closeTime);
+                      await inventory.saveStoreSettings(settings.copyWith(
+                        operatingHoursEnabled: val,
+                        dailyOpenTime: openStr,
+                        dailyCloseTime: closeStr,
+                      ));
+                    },
+                  ),
+
+                  if (operatingEnabled) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Opening Time', style: TextStyle(fontSize: 12)),
+                            subtitle: Text(_formatTimeOfDayDisplay(openTime), style: const TextStyle(fontWeight: FontWeight.bold)),
+                            trailing: const Icon(Icons.access_time, size: 18),
+                            onTap: () async {
+                              final picked = await showTimePicker(context: context, initialTime: openTime);
+                              if (picked != null && context.mounted) {
+                                setDialogState(() => openTime = picked);
+                                await inventory.saveStoreSettings(settings.copyWith(
+                                  dailyOpenTime: _formatTimeOfDay(picked),
+                                  dailyCloseTime: _formatTimeOfDay(closeTime),
+                                ));
+                              }
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Closing Time', style: TextStyle(fontSize: 12)),
+                            subtitle: Text(_formatTimeOfDayDisplay(closeTime), style: const TextStyle(fontWeight: FontWeight.bold)),
+                            trailing: const Icon(Icons.access_time_filled, size: 18),
+                            onTap: () async {
+                              final picked = await showTimePicker(context: context, initialTime: closeTime);
+                              if (picked != null && context.mounted) {
+                                setDialogState(() => closeTime = picked);
+                                await inventory.saveStoreSettings(settings.copyWith(
+                                  dailyOpenTime: _formatTimeOfDay(openTime),
+                                  dailyCloseTime: _formatTimeOfDay(picked),
+                                ));
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const Divider(height: 36),
+                  Text('Scheduled Outing / Vacation', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('Temporarily close the store for a specific date range.', style: Theme.of(context).textTheme.labelSmall),
+                  const SizedBox(height: 12),
+                  
+                  // Start Time
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Starts At', style: TextStyle(fontSize: 13)),
+                    subtitle: Text(schedClose == null ? 'Not set' : DateFormat('MMM d, yyyy, h:mm a').format(schedClose!)),
+                    trailing: const Icon(Icons.calendar_today, size: 18),
+                    onTap: () async {
+                      final date = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 90)));
+                      if (date != null && context.mounted) {
+                        final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                        if (time != null) {
+                          setDialogState(() => schedClose = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+                        }
+                      }
+                    },
+                  ),
+
+                  // End Time
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Reopens At', style: TextStyle(fontSize: 13)),
+                    subtitle: Text(schedOpen == null ? 'Not set' : DateFormat('MMM d, yyyy, h:mm a').format(schedOpen!)),
+                    trailing: const Icon(Icons.restore, size: 18),
+                    onTap: () async {
+                      final date = await showDatePicker(context: context, initialDate: schedClose ?? DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 90)));
+                      if (date != null && context.mounted) {
+                        final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 8, minute: 0));
+                        if (time != null) {
+                          setDialogState(() => schedOpen = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+                        }
+                      }
+                    },
+                  ),
+
+                  if (schedClose != null && schedOpen != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.save_rounded, size: 18),
+                        label: const Text('Save Schedule'),
+                        onPressed: () async {
+                          try {
+                            await inventory.toggleStoreStatus(
+                              isClosed, 
+                              message: 'Scheduled Outage: ${DateFormat('MMM d').format(schedClose!)} – ${DateFormat('MMM d').format(schedOpen!)}',
+                              closeAt: schedClose,
+                              openAt: schedOpen,
+                            );
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Schedule saved successfully')),
+                            );
+                          } catch (e) {
+                            if (!ctx.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+
+                  if (settings.scheduledCloseAt != null || settings.scheduledOpenAt != null)
+                    TextButton.icon(
+                      icon: const Icon(Icons.cleaning_services_rounded, size: 16),
+                      label: const Text('Clear Outage Schedule'),
+                      onPressed: () async {
+                        await inventory.toggleStoreStatus(isClosed, closeAt: null, openAt: null);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+
+                  const Divider(height: 36),
+                  Text('Order Expiration Windows', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('Time customers have to pick up their orders.', style: Theme.of(context).textTheme.labelSmall),
+                  const SizedBox(height: 12),
+
+                  _WindowInput(
+                    label: 'Perishables Only',
+                    hint: 'e.g. 2 hours',
+                    value: settings.perishableWindowHours,
+                    onChanged: (v) => inventory.saveStoreSettings(settings.copyWith(perishableWindowHours: v)),
+                  ),
+                  const SizedBox(height: 12),
+                  _WindowInput(
+                    label: 'Mixed Orders',
+                    hint: 'e.g. 24 hours',
+                    value: settings.mixedWindowHours,
+                    onChanged: (v) => inventory.saveStoreSettings(settings.copyWith(mixedWindowHours: v)),
+                  ),
+                  const SizedBox(height: 12),
+                  _WindowInput(
+                    label: 'Non-Perishables',
+                    hint: 'e.g. 72 hours',
+                    value: settings.standardWindowHours,
+                    onChanged: (v) => inventory.saveStoreSettings(settings.copyWith(standardWindowHours: v)),
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          ],
-        ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  static TimeOfDay _parseTimeOfDay(String? timeStr, TimeOfDay fallback) {
+    if (timeStr == null || !timeStr.contains(':')) return fallback;
+    try {
+      final parts = timeStr.split(':');
+      return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  static String _formatTimeOfDay(TimeOfDay time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  static String _formatTimeOfDayDisplay(TimeOfDay time) {
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    final h12 = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final mStr = time.minute.toString().padLeft(2, '0');
+    return '$h12:$mStr $period';
   }
 }
 
