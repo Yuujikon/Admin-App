@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+/// Camera barcode scanner modal dialog utilizing device camera feed.
 class ScannerDialog extends StatefulWidget {
+  /// Creates a [ScannerDialog] instance.
   const ScannerDialog({super.key});
 
   @override

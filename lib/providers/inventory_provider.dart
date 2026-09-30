@@ -12,40 +12,78 @@ import '../models/store_settings.dart';
 import '../models/supplier.dart';
 import '../models/loss_record.dart';
 import '../models/customer.dart';
+import '../models/restock_inquiry.dart';
+import '../models/delivery_log.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 
 import 'base_provider.dart';
 
+/// Central provider managing inventory stock, product catalog, sales checkout transactions,
+/// supplier records, customer profiles, and store settings.
 class InventoryProvider extends BaseProvider {
   final _fs = FirestoreService();
 
-  List<Product>          _products       = [];
-  List<CatalogProduct>   _catalog        = [];
-  List<StoreTransaction> _transactions    = [];
-  List<RefundRequest>    _refundRequests = [];
-  List<Supplier>         _suppliers      = [];
-  List<LossRecord>       _lossRecords    = [];
-  List<Customer>         _customers      = [];
-  List<ProductBundle>    _bundles        = [];
-  StoreSettings          _settings       = const StoreSettings(isClosed: false);
-  String                 _adminName      = 'Admin';
-  bool                   _isProcessingSale = false;
+  List<Product> _products = [];
+  List<CatalogProduct> _catalog = [];
+  List<StoreTransaction> _transactions = [];
+  List<RefundRequest> _refundRequests = [];
+  List<Supplier> _suppliers = [];
+  List<LossRecord> _lossRecords = [];
+  List<Customer> _customers = [];
+  List<ProductBundle> _bundles = [];
+  List<DeliveryLog> _deliveryLogs = [];
+  StoreSettings _settings = const StoreSettings(isClosed: false);
+  String _adminName = 'Admin';
+  bool _isProcessingSale = false;
 
-  List<Product>          get products       => _products;
-  List<CatalogProduct>   get catalog        => _catalog;
-  List<StoreTransaction> get transactions    => _transactions;
-  List<RefundRequest>    get refundRequests => _refundRequests;
-  List<Supplier>         get suppliers      => _suppliers;
-  List<LossRecord>       get lossRecords    => _lossRecords;
-  List<Customer>         get customers      => _customers;
-  List<ProductBundle>    get bundles        => _bundles;
-  StoreSettings          get settings       => _settings;
-  String                 get adminName      => _adminName;
-  bool                   get isProcessingSale => _isProcessingSale;
+  // Granular Loading Flags
+  bool _isProductsLoading = true;
+  bool _isCatalogLoading = true;
+  bool _isTransactionsLoading = true;
+  bool _isRefundRequestsLoading = true;
+  bool _isSuppliersLoading = true;
+  bool _isLossRecordsLoading = true;
+  bool _isCustomersLoading = true;
+  bool _isBundlesLoading = true;
+  bool _isDeliveryLogsLoading = true;
+  bool _isSettingsLoading = true;
+
+  List<Product> get products => _products;
+  List<CatalogProduct> get catalog => _catalog;
+  List<StoreTransaction> get transactions => _transactions;
+  List<RefundRequest> get refundRequests => _refundRequests;
+  List<Supplier> get suppliers => _suppliers;
+  List<LossRecord> get lossRecords => _lossRecords;
+  List<Customer> get customers => _customers;
+  List<ProductBundle> get bundles => _bundles;
+  List<DeliveryLog> get deliveryLogs => _deliveryLogs;
+  StoreSettings get settings => _settings;
+  String get adminName => _adminName;
+  bool get isProcessingSale => _isProcessingSale;
+
+  bool get isProductsLoading => _isProductsLoading;
+  bool get isCatalogLoading => _isCatalogLoading;
+  bool get isTransactionsLoading => _isTransactionsLoading;
+  bool get isRefundRequestsLoading => _isRefundRequestsLoading;
+  bool get isSuppliersLoading => _isSuppliersLoading;
+  bool get isLossRecordsLoading => _isLossRecordsLoading;
+  bool get isDeliveryLogsLoading => _isDeliveryLogsLoading;
+  bool get isCustomersLoading => _isCustomersLoading;
+  bool get isBundlesLoading => _isBundlesLoading;
+  bool get isSettingsLoading => _isSettingsLoading;
+
+  @override
+  bool get isLoading =>
+      _isProductsLoading ||
+      _isTransactionsLoading ||
+      _isCatalogLoading ||
+      _isSuppliersLoading ||
+      _isLossRecordsLoading ||
+      _isSettingsLoading;
 
   List<Product>? _cachedSortedProducts;
-  DateTime?      _lastSortTime;
+  DateTime? _lastSortTime;
 
   // ── Sorting Logic ──────────────────────────────────────────────────────────
 
@@ -53,10 +91,10 @@ class InventoryProvider extends BaseProvider {
   /// Fast-moving first, slow-moving later.
   List<Product> get sortedProducts {
     if (_products.isEmpty) return [];
-    
+
     // Cache for 1 minute or until data changes
-    if (_cachedSortedProducts != null && 
-        _lastSortTime != null && 
+    if (_cachedSortedProducts != null &&
+        _lastSortTime != null &&
         DateTime.now().difference(_lastSortTime!).inMinutes < 1) {
       return _cachedSortedProducts!;
     }
@@ -66,11 +104,12 @@ class InventoryProvider extends BaseProvider {
     // 1. Calculate sales volume per product name in the last 30 days
     final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
     final recentCounts = <String, int>{};
-    
+
     for (final tx in _transactions) {
       if (tx.createdAt.isAfter(thirtyDaysAgo)) {
         for (final item in tx.items) {
-          recentCounts[item.productId] = (recentCounts[item.productId] ?? 0) + item.qty;
+          recentCounts[item.productId] =
+              (recentCounts[item.productId] ?? 0) + item.qty;
         }
       }
     }
@@ -80,7 +119,7 @@ class InventoryProvider extends BaseProvider {
     sorted.sort((a, b) {
       // REQUIREMENT 14: SORTING
       // Available (stock > threshold) first, then Low Stock, then Out of Stock (0).
-      
+
       int getSortOrder(Product p) {
         final int stock = p.totalStock;
         if (stock <= 0) return 3; // Out of stock last
@@ -108,7 +147,7 @@ class InventoryProvider extends BaseProvider {
   Map<String, int>? _cachedRecentCounts;
   List<MapEntry<String, int>> get fastMovingItems {
     if (_transactions.isEmpty) return [];
-    
+
     if (_cachedRecentCounts != null) {
       final entries = _cachedRecentCounts!.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
@@ -134,17 +173,36 @@ class InventoryProvider extends BaseProvider {
     final counts = _cachedRecentCounts ?? {};
     if (counts.isEmpty && _transactions.isNotEmpty) {
       // Force a calculation of recent counts if it's missing but we have transactions
-      final _ = fastMovingItems; 
+      final _ = fastMovingItems;
     }
-    
-    final slow = _products
-        .where((p) => (counts[p.name] ?? 0) <= 2)
-        .toList();
+
+    final slow = _products.where((p) => (counts[p.name] ?? 0) <= 2).toList();
     slow.sort((a, b) => (counts[a.name] ?? 0).compareTo(counts[b.name] ?? 0));
     return slow;
   }
 
   Map<String, int> get recentMovementCounts => _cachedRecentCounts ?? {};
+
+  /// Get all child products belonging to a parent variant group ID
+  List<Product> getProductsByParentId(String parentId) {
+    final cleanId = parentId.trim().toLowerCase();
+    if (cleanId.isEmpty) return [];
+    return _products
+        .where((p) =>
+            p.parentId != null && p.parentId!.trim().toLowerCase() == cleanId)
+        .toList();
+  }
+
+  /// Get list of all unique Parent Group IDs present in the store inventory
+  List<String> get uniqueParentIds {
+    return _products
+        .map((p) => p.parentId?.trim())
+        .where((id) => id != null && id.isNotEmpty)
+        .cast<String>()
+        .toSet()
+        .toList()
+      ..sort();
+  }
 
   Timer? _statusTransitionTimer;
 
@@ -152,8 +210,10 @@ class InventoryProvider extends BaseProvider {
     final now = DateTime.now();
 
     // Auto-clear schedule if reopening time has passed
-    if (_settings.scheduledOpenAt != null && now.isAfter(_settings.scheduledOpenAt!)) {
-      debugPrint('Scheduled store outage expired. Automatically clearing schedule.');
+    if (_settings.scheduledOpenAt != null &&
+        now.isAfter(_settings.scheduledOpenAt!)) {
+      debugPrint(
+          'Scheduled store outage expired. Automatically clearing schedule.');
       clearExpiredSchedule();
       return;
     }
@@ -173,85 +233,159 @@ class InventoryProvider extends BaseProvider {
   void initialize() {
     cancelSubscriptions();
     _statusTransitionTimer?.cancel();
-    _cachedSortedProducts = null; 
+    _cachedSortedProducts = null;
     _cachedRecentCounts = null;
-    setLoading(true);
+
+    _isProductsLoading = true;
+    _isCatalogLoading = true;
+    _isTransactionsLoading = true;
+    _isRefundRequestsLoading = true;
+    _isSuppliersLoading = true;
+    _isLossRecordsLoading = true;
+    _isCustomersLoading = true;
+    _isBundlesLoading = true;
+    _isDeliveryLogsLoading = true;
+    _isSettingsLoading = true;
 
     _statusTransitionTimer = Timer.periodic(
-      const Duration(seconds: 30), 
+      const Duration(seconds: 30),
       (_) => _checkAutomaticStoreTransitions(),
     );
 
     Timer(const Duration(seconds: 3), () {
-      if (isLoading) setLoading(false);
+      if (isLoading) {
+        _isProductsLoading = false;
+        _isCatalogLoading = false;
+        _isTransactionsLoading = false;
+        _isRefundRequestsLoading = false;
+        _isSuppliersLoading = false;
+        _isLossRecordsLoading = false;
+        _isCustomersLoading = false;
+        _isBundlesLoading = false;
+        _isDeliveryLogsLoading = false;
+        _isSettingsLoading = false;
+        notifyListeners();
+      }
     });
 
-    registerSubscription(_fs.productsStream().listen((list) {
+    registerSubscription(_fs.productsStream().handleError((e) {
+      debugPrint('Products Stream Error: $e');
+      _isProductsLoading = false;
+      notifyListeners();
+    }).listen((list) {
       _products = list;
       _cachedSortedProducts = null;
-      setLoading(false);
-    }, onError: (e) {
-      setLoading(false);
-      debugPrint('Inventory Stream Error: $e');
+      _isProductsLoading = false;
+      notifyListeners();
     }));
 
-    registerSubscription(_fs.catalogStream().listen((list) {
+    registerSubscription(_fs.catalogStream().handleError((e) {
+      debugPrint('Catalog Stream Error: $e');
+      _isCatalogLoading = false;
+      notifyListeners();
+    }).listen((list) {
       _catalog = list;
       if (_catalog.isEmpty && _products.isNotEmpty) {
         _migrateProductsToCatalog();
       }
+      _isCatalogLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('Catalog Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.transactionsStream().listen((list) {
+    registerSubscription(_fs.transactionsStream().handleError((e) {
+      debugPrint('Transactions Stream Error: $e');
+      _isTransactionsLoading = false;
+      notifyListeners();
+    }).listen((list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _transactions = list;
       _cachedSortedProducts = null;
-      _cachedRecentCounts = null; 
+      _cachedRecentCounts = null;
+      _isTransactionsLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('Transactions Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.refundRequestsStream().listen((list) {
+    registerSubscription(_fs.refundRequestsStream().handleError((e) {
+      debugPrint('RefundRequests Stream Error: $e');
+      _isRefundRequestsLoading = false;
+      notifyListeners();
+    }).listen((list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (_refundRequests.isNotEmpty && list.length > _refundRequests.length) {
-        final newOnes = list.where((req) => 
-          req.status == RefundStatus.pending && 
-          !_refundRequests.any((old) => old.id == req.id)
-        );
+        final newOnes = list.where((req) =>
+            req.status == RefundStatus.pending &&
+            !_refundRequests.any((old) => old.id == req.id));
         for (var req in newOnes) {
-          NotificationService.showRefundRequestAlert(req.transactionId, req.customerName);
+          NotificationService.showRefundRequestAlert(
+              req.transactionId, req.customerName);
         }
       }
       _refundRequests = list;
+      _isRefundRequestsLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('RefundRequests Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.suppliersStream().listen((list) {
+    registerSubscription(_fs.suppliersStream().handleError((e) {
+      debugPrint('Suppliers Stream Error: $e');
+      _isSuppliersLoading = false;
+      notifyListeners();
+    }).listen((list) {
       _suppliers = list;
+      _isSuppliersLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('Suppliers Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.lossRecordsStream().listen((list) {
+    registerSubscription(_fs.lossRecordsStream().handleError((e) {
+      debugPrint('LossRecords Stream Error: $e');
+      _isLossRecordsLoading = false;
+      notifyListeners();
+    }).listen((list) {
       _lossRecords = list;
+      _isLossRecordsLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('LossRecords Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.customersStream().listen((list) {
+    registerSubscription(_fs.customersStream().handleError((e) {
+      debugPrint('Customers Stream Error: $e');
+      _isCustomersLoading = false;
+      notifyListeners();
+    }).listen((list) {
       _customers = list;
+      _isCustomersLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('Customers Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.bundlesStream().listen((list) {
+    registerSubscription(_fs.bundlesStream().handleError((e) {
+      debugPrint('Bundles Stream Error: $e');
+      _isBundlesLoading = false;
+      notifyListeners();
+    }).listen((list) {
       _bundles = list;
+      _isBundlesLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('Bundles Stream Error: $e')));
+    }));
 
-    registerSubscription(_fs.settingsStream().listen((settings) {
-      _settings = settings;
-      _cachedSortedProducts = null; 
-      _checkAutomaticStoreTransitions();
+    registerSubscription(_fs.settingsStream().handleError((e) {
+      debugPrint('Settings Stream Error: $e');
+      _isSettingsLoading = false;
       notifyListeners();
-    }, onError: (e) => debugPrint('Settings Stream Error: $e')));
+    }).listen((settings) {
+      _settings = settings;
+      _cachedSortedProducts = null;
+      _checkAutomaticStoreTransitions();
+      _isSettingsLoading = false;
+      notifyListeners();
+    }));
+
+    registerSubscription(_fs.deliveryLogsStream().handleError((e) {
+      debugPrint('DeliveryLogs Stream Error: $e');
+      _isDeliveryLogsLoading = false;
+      notifyListeners();
+    }).listen((list) {
+      _deliveryLogs = list;
+      _isDeliveryLogsLoading = false;
+      notifyListeners();
+    }));
   }
 
   @override
@@ -278,10 +412,10 @@ class InventoryProvider extends BaseProvider {
     }
   }
 
-
-
-  Future<void> toggleStoreStatus(bool isClosed, {String? message, DateTime? closeAt, DateTime? openAt}) async {
-    await _fs.updateStoreStatus(isClosed, message: message, closeAt: closeAt, openAt: openAt);
+  Future<void> toggleStoreStatus(bool isClosed,
+      {String? message, DateTime? closeAt, DateTime? openAt}) async {
+    await _fs.updateStoreStatus(isClosed,
+        message: message, closeAt: closeAt, openAt: openAt);
   }
 
   Future<void> saveStoreSettings(StoreSettings s) async {
@@ -311,6 +445,39 @@ class InventoryProvider extends BaseProvider {
     }
   }
 
+  Future<void> bulkAssignSupplier(
+      List<String> productIds, String? supplierId) async {
+    if (productIds.isEmpty) return;
+    final batch = FirebaseFirestore.instance.batch();
+    for (final id in productIds) {
+      final ref = FirebaseFirestore.instance.collection('products').doc(id);
+      batch.update(ref, {
+        'supplierId': supplierId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  Future<void> saveProductWithBatch({
+    required Product product,
+    required ProductBatch initialBatch,
+    String? receivedBy,
+    String? notes,
+  }) async {
+    if (initialBatch.expiryDate == null) {
+      throw ArgumentError(
+          'Batch expiration date is mandatory to maintain strict inventory control.');
+    }
+    await _fs.saveProductWithBatch(
+      product: product,
+      initialBatch: initialBatch,
+      receivedBy: receivedBy,
+      notes: notes,
+    );
+    notifyListeners();
+  }
+
   void _notifyBackInStock(Product p) async {
     final watchers = await _fs.getWatchersForProduct(p.id);
     if (watchers.isEmpty) return;
@@ -318,13 +485,175 @@ class InventoryProvider extends BaseProvider {
     for (var email in watchers) {
       await NotificationService.sendBackInStock(p.name, email);
     }
-    
+
     // Clear watches after notifying
     await _fs.removeWatchesForProduct(p.id);
   }
 
   Future<void> deleteProduct(String id) async {
     await _fs.deleteProduct(id);
+  }
+
+  // ── Goods Receiving / Restock Delivery ──────────────────────────────────────
+
+  /// Receives stock delivery with optional Bulk-to-Single UOM conversion.
+  Future<void> receiveDeliveryWithUom({
+    required Product product,
+    required int inputQuantity, // Could be 50 pieces OR 2 boxes
+    required double inputCost, // Could be ₱20/pc OR ₱480/box
+    bool isBulkDelivery = false,
+    DateTime? batchExpiryDate,
+    String? invoiceNumber,
+    String? notes,
+  }) async {
+    if (batchExpiryDate == null) {
+      throw ArgumentError(
+          'Batch expiration date is mandatory to maintain strict inventory control.');
+    }
+    final int sanitizedQty = inputQuantity < 0 ? 0 : inputQuantity;
+    final double sanitizedCost = inputCost < 0 ? 0.0 : inputCost;
+
+    // 1. Convert to Base Units (Pieces)
+    final int totalBaseUnits = isBulkDelivery
+        ? product.convertBulkToUnits(sanitizedQty)
+        : sanitizedQty;
+
+    // 2. Convert to Unit Cost (COGS per piece)
+    final double calculatedPieceCost = isBulkDelivery
+        ? product.calculateUnitCostFromPack(sanitizedCost)
+        : sanitizedCost;
+
+    // 3. Create the FEFO Batch
+    final newBatch = ProductBatch(
+      id: const Uuid().v4(),
+      productId: product.id,
+      quantity: totalBaseUnits,
+      unitCost: calculatedPieceCost,
+      expiryDate: batchExpiryDate,
+      createdAt: DateTime.now(),
+      invoiceNumber: invoiceNumber,
+    );
+
+    Product updatedProduct = product;
+    if (isBulkDelivery && sanitizedCost > 0) {
+      updatedProduct = product.copyWith(packCost: sanitizedCost);
+    }
+
+    // 4. Execute atomic batch write
+    await _fs.processSingleDeliveryAtomic(
+      product: updatedProduct,
+      newBatch: newBatch,
+      receivedBy: _adminName,
+      invoiceNumber: invoiceNumber,
+      notes: notes,
+    );
+
+    notifyListeners();
+  }
+
+  Future<void> receiveDelivery({
+    required Product product,
+    required int qtyReceived,
+    required double unitCost,
+    bool isBulkDelivery = false,
+    DateTime? batchExpiryDate,
+    String? invoiceNumber,
+    String? notes,
+  }) async {
+    return receiveDeliveryWithUom(
+      product: product,
+      inputQuantity: qtyReceived,
+      inputCost: unitCost,
+      isBulkDelivery: isBulkDelivery,
+      batchExpiryDate: batchExpiryDate,
+      invoiceNumber: invoiceNumber,
+      notes: notes,
+    );
+  }
+
+  Future<void> processInquiryDelivery({
+    required RestockInquiry inquiry,
+    required List<Map<String, dynamic>> receivedItemData,
+    String? invoiceNumber,
+    String? notes,
+  }) async {
+    bool isShortDelivery = false;
+    final List<DeliveryItemPayload> deliveryPayloads = [];
+    final List<RestockInquiryItem> updatedInquiryItems = [];
+
+    for (final expectedItem in inquiry.items) {
+      final itemMap = receivedItemData.firstWhere(
+        (m) => m['productId'] == expectedItem.productId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      final int qtyRec = itemMap['receivedQty'] != null
+          ? (itemMap['receivedQty'] as num).toInt()
+          : expectedItem.requestedQty;
+      final double unitCost =
+          itemMap['costPrice'] != null && (itemMap['costPrice'] as num) > 0
+              ? (itemMap['costPrice'] as num).toDouble()
+              : expectedItem.costPrice;
+      final DateTime? expDate = itemMap['expiryDate'] as DateTime?;
+      final String? itemNote = itemMap['discrepancyNote']?.toString();
+
+      updatedInquiryItems.add(expectedItem.copyWith(
+        receivedQty: qtyRec,
+        receivedCostPrice: unitCost,
+        discrepancyNote: itemNote,
+      ));
+
+      if (qtyRec < expectedItem.requestedQty) {
+        isShortDelivery = true;
+      }
+
+      if (qtyRec <= 0) continue;
+
+      try {
+        final prod =
+            _products.firstWhere((p) => p.id == expectedItem.productId);
+
+        final newBatch = ProductBatch(
+          id: const Uuid().v4(),
+          productId: prod.id,
+          quantity: qtyRec,
+          unitCost: unitCost > 0 ? unitCost : prod.costPrice,
+          expiryDate: expDate,
+          createdAt: DateTime.now(),
+          invoiceNumber: invoiceNumber,
+        );
+
+        deliveryPayloads.add(DeliveryItemPayload(
+          product: prod,
+          qtyReceived: qtyRec,
+          unitCost: unitCost > 0 ? unitCost : prod.costPrice,
+          newBatch: newBatch,
+          orderedQty: expectedItem.requestedQty,
+          orderedUnitCost: expectedItem.costPrice,
+          discrepancyNote: itemNote,
+          supplierId: inquiry.supplierId,
+          supplierName: inquiry.supplierName,
+        ));
+      } catch (e) {
+        debugPrint('Error preparing product payload for delivery: $e');
+      }
+    }
+
+    final RestockInquiryStatus newStatus = isShortDelivery
+        ? RestockInquiryStatus.partiallyFulfilled
+        : RestockInquiryStatus.fulfilled;
+
+    await _fs.processInquiryDeliveryAtomic(
+      inquiryId: inquiry.id,
+      newStatus: newStatus,
+      items: deliveryPayloads,
+      receivedBy: _adminName,
+      updatedInquiryItems: updatedInquiryItems.map((i) => i.toMap()).toList(),
+      invoiceNumber: invoiceNumber,
+      notes: notes,
+    );
+
+    notifyListeners();
   }
 
   // ── Catalog ────────────────────────────────────────────────────────────────
@@ -374,9 +703,14 @@ class InventoryProvider extends BaseProvider {
   Future<void> saveBundle(ProductBundle b) => _fs.saveBundle(b);
   Future<void> deleteBundle(String id) => _fs.deleteBundle(id);
 
-  Future<StoreTransaction> completeSale(List<CartItem> cart, double cash, {double? totalOverride, String? customerId, String? customerEmail, PaymentMethod paymentMethod = PaymentMethod.cash, TransactionType type = TransactionType.inStore}) async {
+  Future<StoreTransaction> completeSale(List<CartItem> cart, double cash,
+      {double? totalOverride,
+      String? customerId,
+      String? customerEmail,
+      PaymentMethod paymentMethod = PaymentMethod.cash,
+      TransactionType type = TransactionType.inStore}) async {
     if (_isProcessingSale) throw Exception('Transaction in progress');
-    
+
     // 1. Final stock check against current local state (synced via snapshots)
     for (var item in cart) {
       try {
@@ -384,15 +718,19 @@ class InventoryProvider extends BaseProvider {
         if (item.variantId != null) {
           final v = p.variants.firstWhere((v) => v.id == item.variantId);
           if (v.stock < item.qty) {
-            throw Exception('${p.name} (${v.name}) is now out of stock or has insufficient quantity (${v.stock} remaining).');
+            throw Exception(
+                '${p.name} (${v.name}) is now out of stock or has insufficient quantity (${v.stock} remaining).');
           }
         } else {
           if (p.stock < item.qty) {
-            throw Exception('${p.name} is now out of stock or has insufficient quantity (${p.stock} remaining).');
+            throw Exception(
+                '${p.name} is now out of stock or has insufficient quantity (${p.stock} remaining).');
           }
         }
       } catch (e) {
-        if (e is StateError) throw Exception('Product ${item.name} no longer exists in inventory.');
+        if (e is StateError)
+          throw Exception(
+              'Product ${item.name} no longer exists in inventory.');
         rethrow;
       }
     }
@@ -401,15 +739,21 @@ class InventoryProvider extends BaseProvider {
     notifyListeners();
 
     try {
-      final double total  = totalOverride ?? cart.fold<double>(0.0, (s, i) => s + i.price * i.qty);
-      final double change = paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
+      final double total = totalOverride ??
+          cart.fold<double>(0.0, (s, i) => s + i.price * i.qty);
+      final double change =
+          paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
+
+      // 1. Apply local optimistic stock deduction & build accurate line items with totalCogs & depletedBatches
+      final List<CartItem> processedItems =
+          _applyLocalOptimisticStockDeductionAndBuildLineItems(cart);
 
       final tx = StoreTransaction(
-        id:        const Uuid().v4(),
-        items:     cart,
-        total:     total,
-        cash:      paymentMethod == PaymentMethod.cash ? cash : 0.0,
-        change:    change,
+        id: const Uuid().v4(),
+        items: processedItems,
+        total: total,
+        cashTendered: paymentMethod == PaymentMethod.cash ? cash : 0.0,
+        changeGiven: change,
         createdAt: DateTime.now(),
         customerId: customerId,
         customerEmail: customerEmail,
@@ -417,15 +761,15 @@ class InventoryProvider extends BaseProvider {
         type: type,
       );
 
-      await _fs.recordSale(tx);
+      // 2. Commit WriteBatch to local cache (works 100% offline & auto-syncs)
+      await _fs.recordSaleOfflineFirst(tx: tx, cachedProducts: _products);
 
       // Trigger heads-up payment pop-up alert (catch errors so notification issues never block sale)
       try {
         await NotificationService.showPaymentReceivedAlert(
-          tx.id.length >= 8 ? tx.id.substring(0, 8) : tx.id, 
-          total, 
-          customerEmail ?? 'Walk-in Customer'
-        );
+            tx.id.length >= 8 ? tx.id.substring(0, 8) : tx.id,
+            total,
+            customerEmail ?? 'Walk-in Customer');
       } catch (e) {
         debugPrint('Notification alert error: $e');
       }
@@ -434,8 +778,9 @@ class InventoryProvider extends BaseProvider {
       for (var item in cart) {
         try {
           final p = _products.firstWhere((p) => p.id == item.productId);
-          final int remainingStock = item.variantId != null 
-              ? p.variants.firstWhere((v) => v.id == item.variantId).stock - item.qty
+          final int remainingStock = item.variantId != null
+              ? p.variants.firstWhere((v) => v.id == item.variantId).stock -
+                  item.qty
               : p.stock - item.qty;
           if (remainingStock <= 5) {
             _notifySupplierLowStock(p);
@@ -450,12 +795,131 @@ class InventoryProvider extends BaseProvider {
     }
   }
 
+  List<CartItem> _applyLocalOptimisticStockDeductionAndBuildLineItems(
+      List<CartItem> cart) {
+    final List<CartItem> processedItems = [];
+
+    for (final item in cart) {
+      final index = _products.indexWhere((p) => p.id == item.productId);
+      if (index >= 0) {
+        final p = _products[index];
+
+        if (item.variantId != null) {
+          final updatedVariants = p.variants.map((v) {
+            if (v.id == item.variantId) {
+              return v.copyWith(stock: (v.stock - item.qty).clamp(0, 999999));
+            }
+            return v;
+          }).toList();
+
+          _products[index] = p.copyWith(
+            stock: (p.stock - item.qty).clamp(0, 999999),
+            variants: updatedVariants,
+          );
+
+          final double lineCogs = item.costPrice * item.qty;
+          processedItems.add(item.copyWith(
+            totalCogs: lineCogs,
+            costPrice: item.costPrice,
+            depletedBatches: [
+              BatchDepletionRecord(
+                  batchId: 'variant-${item.variantId}',
+                  quantity: item.qty,
+                  unitCost: item.costPrice)
+            ],
+          ));
+        } else {
+          int remainingToDeduct = item.qty;
+          final List<ProductBatch> currentBatches = List.from(p.batches);
+
+          currentBatches.sort((a, b) {
+            if (a.expiryDate != null && b.expiryDate != null) {
+              return a.expiryDate!.compareTo(b.expiryDate!);
+            }
+            return a.createdAt.compareTo(b.createdAt);
+          });
+
+          final List<ProductBatch> updatedBatches = [];
+          final List<BatchDepletionRecord> depletedBatches = [];
+          double lineItemTotalCogs = 0.0;
+
+          for (final b in currentBatches) {
+            if (remainingToDeduct <= 0) {
+              updatedBatches.add(b);
+              continue;
+            }
+
+            if (b.quantity > remainingToDeduct) {
+              final int deductedQty = remainingToDeduct;
+              lineItemTotalCogs += (deductedQty * b.unitCost);
+              depletedBatches.add(BatchDepletionRecord(
+                batchId: b.id,
+                quantity: deductedQty,
+                unitCost: b.unitCost,
+              ));
+
+              updatedBatches.add(ProductBatch(
+                id: b.id,
+                productId: b.productId,
+                quantity: b.quantity - deductedQty,
+                unitCost: b.unitCost,
+                expiryDate: b.expiryDate,
+                createdAt: b.createdAt,
+                invoiceNumber: b.invoiceNumber,
+              ));
+              remainingToDeduct = 0;
+            } else {
+              final int deductedQty = b.quantity;
+              lineItemTotalCogs += (deductedQty * b.unitCost);
+              depletedBatches.add(BatchDepletionRecord(
+                batchId: b.id,
+                quantity: deductedQty,
+                unitCost: b.unitCost,
+              ));
+              remainingToDeduct -= deductedQty;
+            }
+          }
+
+          if (remainingToDeduct > 0) {
+            final double fallbackCost = p.costPrice;
+            lineItemTotalCogs += (remainingToDeduct * fallbackCost);
+            depletedBatches.add(BatchDepletionRecord(
+              batchId: 'fallback-unbatched',
+              quantity: remainingToDeduct,
+              unitCost: fallbackCost,
+            ));
+          }
+
+          _products[index] = p.copyWith(
+            stock: (p.stock - item.qty).clamp(0, 999999),
+            batches: updatedBatches,
+          );
+
+          final double weightedCostPrice =
+              item.qty > 0 ? (lineItemTotalCogs / item.qty) : item.costPrice;
+
+          processedItems.add(item.copyWith(
+            costPrice: weightedCostPrice,
+            totalCogs: lineItemTotalCogs,
+            depletedBatches: depletedBatches,
+          ));
+        }
+      } else {
+        processedItems.add(item);
+      }
+    }
+    _cachedSortedProducts = null;
+    notifyListeners();
+    return processedItems;
+  }
+
   void _notifySupplierLowStock(Product p) {
     if (p.supplierId == null) return;
     try {
       final supplier = _suppliers.firstWhere((s) => s.id == p.supplierId);
       if (supplier.autoNotifyLowStock) {
-        NotificationService.showLowStockSupplierAlert(p.name, supplier.name, supplier.phone);
+        NotificationService.showLowStockSupplierAlert(
+            p.name, supplier.name, supplier.phone);
       }
     } catch (_) {}
   }
@@ -464,7 +928,8 @@ class InventoryProvider extends BaseProvider {
     await _fs.refundTransaction(tx);
   }
 
-  Future<void> approveRefundRequest(RefundRequest request, {required RefundCondition condition, String? notes}) async {
+  Future<void> approveRefundRequest(RefundRequest request,
+      {required RefundCondition condition, String? notes}) async {
     // 1. Process the refund in Firestore (updates status and logs Loss)
     final updatedReq = RefundRequest(
       id: request.id,
@@ -490,20 +955,25 @@ class InventoryProvider extends BaseProvider {
     await _fs.processApprovedRefund(updatedReq, _adminName);
 
     // 2. Find and update the original Order status if it exists
-    final orderSnap = await FirebaseFirestore.instance.collection('orders')
+    final orderSnap = await FirebaseFirestore.instance
+        .collection('orders')
         .where('orderId', isEqualTo: request.transactionId)
         .limit(1)
         .get();
 
     if (orderSnap.docs.isNotEmpty) {
-      await _fs.updateOrderStatus(orderSnap.docs.first.id, OrderStatus.refunded);
+      await _fs.updateOrderStatus(
+          orderSnap.docs.first.id, OrderStatus.refunded);
     }
 
     // 3. Send notification to customer with store response
-    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, true, storeResponse: notes);
+    await NotificationService.sendRefundUpdate(
+        request.transactionId, request.customerEmail, true,
+        storeResponse: notes);
   }
 
-  Future<void> rejectRefundRequest(RefundRequest request, String reason, {String? notes}) async {
+  Future<void> rejectRefundRequest(RefundRequest request, String reason,
+      {String? notes}) async {
     final index = _refundRequests.indexWhere((r) => r.id == request.id);
     if (index != -1) {
       _refundRequests[index] = RefundRequest(
@@ -524,22 +994,27 @@ class InventoryProvider extends BaseProvider {
       notifyListeners();
     }
 
-    await _fs.updateRefundStatus(request.id, RefundStatus.rejected, _adminName, reason: reason, notes: notes ?? reason);
+    await _fs.updateRefundStatus(request.id, RefundStatus.rejected, _adminName,
+        reason: reason, notes: notes ?? reason);
 
-    final orderSnap = await FirebaseFirestore.instance.collection('orders')
+    final orderSnap = await FirebaseFirestore.instance
+        .collection('orders')
         .where('orderId', isEqualTo: request.transactionId)
         .limit(1)
         .get();
 
     if (orderSnap.docs.isNotEmpty) {
-      await FirebaseFirestore.instance.collection('orders')
+      await FirebaseFirestore.instance
+          .collection('orders')
           .doc(orderSnap.docs.first.id)
           .update({
-            'status': OrderStatus.refundRejected.name,
-            'rejectionReason': reason,
-          });
+        'status': OrderStatus.refundRejected.name,
+        'rejectionReason': reason,
+      });
     }
 
-    await NotificationService.sendRefundUpdate(request.transactionId, request.customerEmail, false, storeResponse: reason);
+    await NotificationService.sendRefundUpdate(
+        request.transactionId, request.customerEmail, false,
+        storeResponse: reason);
   }
 }

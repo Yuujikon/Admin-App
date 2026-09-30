@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -12,12 +13,17 @@ import 'providers/printer_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/restock_provider.dart';
+import 'providers/shift_provider.dart';
 import 'screens/staff_login_screen.dart';
 import 'screens/admin_pin_screen.dart';
 import 'screens/admin_app.dart';
 
 import 'services/notification_service.dart';
 
+/// Top-level background message handler for FCM notifications.
+///
+/// Processes background push notifications and triggers local SMS pop-ups
+/// when appropriate recipients are targeted.
 @pragma('vm:entry-point')
 Future<void> _bgHandler(RemoteMessage message) async {
   final String recipient = message.data['recipient'] ?? '';
@@ -26,16 +32,23 @@ Future<void> _bgHandler(RemoteMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await NotificationService.initializeBackground();
-  
-  final String title = message.notification?.title ?? message.data['title'] ?? 'Alert';
-  final String body = message.notification?.body ?? message.data['body'] ?? 'New notification received.';
-  
+
+  final String title =
+      message.notification?.title ?? message.data['title'] ?? 'Alert';
+  final String body = message.notification?.body ??
+      message.data['body'] ??
+      'New notification received.';
+
   await NotificationService.showSmsNotificationPopUp(
     title: title,
     body: body,
   );
 }
 
+/// Application entry point.
+///
+/// Initializes Flutter bindings, configures global exception handling,
+/// configures Firebase and Firestore offline persistence settings, and launches [GdcAdminApp].
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -51,43 +64,54 @@ void main() async {
     return true; // Mark handled
   };
 
-  // Release mode graceful error builder
+  // Non-recursive, safe, non-scrollable error widget (prevents !_debugDoingThisLayout re-entrancy)
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.warning_amber_rounded, size: 48, color: Colors.orange),
-              SizedBox(height: 12),
-              Text('Something went wrong', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              SizedBox(height: 6),
-              Text('Please return to the previous screen or restart the app.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ],
-          ),
-        ),
+    FlutterError.dumpErrorToConsole(details);
+    return Container(
+      color: const Color(0xFFB71C1C),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        'RENDER ERROR:\n${details.exception}',
+        style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'monospace'),
+        textAlign: TextAlign.center,
+        maxLines: 8,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   };
-  
+
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+
+    // 1. Configure Firestore Unlimited Offline Persistence
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+
     // Initialize notification service safely without blocking the main UI rendering frame
     NotificationService.initialize().catchError((e) {
       debugPrint('Notification Service Initialization Error: $e');
     });
-    
+
     FirebaseMessaging.onBackgroundMessage(_bgHandler);
   } catch (e) {
     debugPrint('Firebase Initialization Error: $e');
   }
-  
+
   runApp(const GdcAdminApp());
 }
 
+/// Root widget for the GDC Admin application.
+///
+/// Sets up global state providers via [MultiProvider] and binds application theming
+/// and the primary authentication flow gate.
 class GdcAdminApp extends StatelessWidget {
   const GdcAdminApp({super.key});
 
@@ -102,21 +126,26 @@ class GdcAdminApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
         ChangeNotifierProvider(create: (_) => PrinterProvider()),
         ChangeNotifierProvider(create: (_) => RestockProvider()),
+        ChangeNotifierProvider(create: (_) => ShiftProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) => MaterialApp(
-          title:                    'GDC Admin',
+          title: 'GDC Admin',
           debugShowCheckedModeBanner: false,
-          theme:                    GdcTheme.light,
-          darkTheme:                GdcTheme.dark,
-          themeMode:                themeProvider.themeMode,
-          home:                     const _StaffAuthGate(),
+          theme: GdcTheme.light,
+          darkTheme: GdcTheme.dark,
+          themeMode: themeProvider.themeMode,
+          home: const _StaffAuthGate(),
         ),
       ),
     );
   }
 }
 
+/// Authentication and permissions gate widget.
+///
+/// Determines UI destination based on user auth state, role assignments,
+/// 2FA/TOTP verification status, and manages provider subscriptions.
 class _StaffAuthGate extends StatefulWidget {
   const _StaffAuthGate();
 
@@ -155,7 +184,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
         }
       });
     }
-    
+
     if (!auth.initialized) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -173,11 +202,15 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.shield_outlined, size: 64, color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.shield_outlined,
+                    size: 64, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
                 Text(
                   'Access Pending Approval',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -207,7 +240,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
     if (auth.role != UserRole.none && auth.totpEnabled && !auth.adminVerified) {
       return const AdminPinScreen();
     } else {
-      return const AdminApp(); 
+      return const AdminApp();
     }
   }
 }

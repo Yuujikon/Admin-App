@@ -7,6 +7,8 @@ import '../models/catalog_product.dart';
 import '../utils/format.dart';
 import '../config/theme.dart';
 import 'catalog_search_dialog.dart';
+import '../services/external_barcode_service.dart';
+import 'premium_components.dart';
 
 class FullProductScannerResult {
   final String? name;
@@ -28,10 +30,12 @@ class FullProductScannerDialog extends StatefulWidget {
   const FullProductScannerDialog({super.key});
 
   @override
-  State<FullProductScannerDialog> createState() => _FullProductScannerDialogState();
+  State<FullProductScannerDialog> createState() =>
+      _FullProductScannerDialogState();
 }
 
-class _FullProductScannerDialogState extends State<FullProductScannerDialog> with SingleTickerProviderStateMixin {
+class _FullProductScannerDialogState extends State<FullProductScannerDialog>
+    with SingleTickerProviderStateMixin {
   final MobileScannerController _scannerController = MobileScannerController();
   String? _detectedBarcode;
   bool _isTorchOn = false;
@@ -45,11 +49,17 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
   final _brandController = TextEditingController();
   String? _selectedCategory;
   String? _selectedCatalogId;
-  String _infoSource = 'Catalog'; 
+  String _infoSource = 'Catalog';
 
   final List<String> _categories = [
-    'Fresh', 'Grains', 'Snacks', 'Beverages',
-    'Canned Goods', 'Personal Care', 'Condiments', 'Others'
+    'Fresh',
+    'Grains',
+    'Snacks',
+    'Beverages',
+    'Canned Goods',
+    'Personal Care',
+    'Condiments',
+    'Others'
   ];
 
   @override
@@ -71,41 +81,74 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
     super.dispose();
   }
 
-  void _onBarcodeDetected(String barcode) {
+  void _onBarcodeDetected(String barcode) async {
     if (_showReview) return;
 
     final inventory = context.read<InventoryProvider>();
     final catalog = inventory.catalog;
+    final products = inventory.products;
 
-    // 1. Search Catalog by Barcode
-    final match = catalog.where((p) => p.barcode == barcode).toList();
-
-    if (match.isNotEmpty) {
-      final p = match.first;
+    // 1. Search Local Catalog & Local Inventory First
+    final catalogMatch = catalog.where((p) => p.barcode == barcode).toList();
+    if (catalogMatch.isNotEmpty) {
+      final p = catalogMatch.first;
       setState(() {
         _detectedBarcode = barcode;
         _nameController.text = p.name;
         _brandController.text = p.brand ?? '';
         _selectedCategory = p.category;
         _selectedCatalogId = p.id;
-        _infoSource = 'Catalog Match';
+        _infoSource = 'Local Catalog Match';
         _showReview = true;
       });
       HapticFeedback.mediumImpact();
       return;
     }
 
-    // 2. Not found in catalog
+    final productMatch = products.where((p) => p.barcode == barcode).toList();
+    if (productMatch.isNotEmpty) {
+      final p = productMatch.first;
+      setState(() {
+        _detectedBarcode = barcode;
+        _nameController.text = p.name;
+        _brandController.text = p.brand ?? '';
+        _selectedCategory = p.category;
+        _selectedCatalogId = null;
+        _infoSource = 'Local Inventory Match';
+        _showReview = true;
+      });
+      HapticFeedback.mediumImpact();
+      return;
+    }
+
+    // 2. Not found in local DB -> Fetch from External Barcode API (Open Food Facts / UPCitemdb)
     setState(() {
       _detectedBarcode = barcode;
       _nameController.clear();
       _brandController.clear();
       _selectedCategory = null;
       _selectedCatalogId = null;
-      _infoSource = 'New Barcode';
+      _infoSource = 'Searching Global DB...';
       _showReview = true;
     });
-    HapticFeedback.lightImpact();
+
+    final extInfo = await ExternalBarcodeService.fetchProductInfo(barcode);
+
+    if (mounted && _detectedBarcode == barcode) {
+      if (extInfo != null) {
+        setState(() {
+          _nameController.text = extInfo.name;
+          if (extInfo.brand != null) _brandController.text = extInfo.brand!;
+          _infoSource = 'Global DB (${extInfo.source})';
+        });
+        HapticFeedback.mediumImpact();
+      } else {
+        setState(() {
+          _infoSource = 'New Barcode (Not in DB)';
+        });
+        HapticFeedback.lightImpact();
+      }
+    }
   }
 
   Future<void> _searchCatalog() async {
@@ -218,7 +261,7 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
             ],
           ),
         ),
-        
+
         // Viewfinder lines and animation
         Center(
           child: SizedBox(
@@ -271,24 +314,35 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
       padding: const EdgeInsets.all(24),
       child: Center(
         child: SingleChildScrollView(
-          child: Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: MaxWidthContainer(
+            maxWidth: MaxWidthContainer.formMaxWidth,
+            alignment: Alignment.topCenter,
+            child: Card(
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Row(
                     children: [
                       Icon(
-                        _infoSource == 'Catalog Match' ? Icons.verified : Icons.help_outline,
-                        color: _infoSource == 'Catalog Match' ? Colors.green : Colors.orange,
+                        _infoSource == 'Catalog Match'
+                            ? Icons.verified
+                            : Icons.help_outline,
+                        color: _infoSource == 'Catalog Match'
+                            ? Colors.green
+                            : Colors.orange,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Catalog Identification',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -297,17 +351,21 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
                     'Source: $_infoSource',
                     style: TextStyle(
                       fontSize: 12,
-                      color: _infoSource == 'Catalog Match' ? Colors.green : Colors.orange,
+                      color: _infoSource == 'Catalog Match'
+                          ? Colors.green
+                          : Colors.orange,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const Divider(height: 32),
                   if (_detectedBarcode != null) ...[
-                    Text('Barcode', style: Theme.of(context).textTheme.labelSmall),
-                    Text(_detectedBarcode!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text('Barcode',
+                        style: Theme.of(context).textTheme.labelSmall),
+                    Text(_detectedBarcode!,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 16),
                   ],
-
                   if (_infoSource == 'New Barcode')
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
@@ -321,7 +379,6 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
                         ),
                       ),
                     ),
-
                   TextField(
                     controller: _nameController,
                     decoration: const InputDecoration(
@@ -341,12 +398,16 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    initialValue: _categories.contains(_selectedCategory) ? _selectedCategory : null,
+                    value: _categories.contains(_selectedCategory)
+                        ? _selectedCategory
+                        : (_categories.isNotEmpty ? _categories.first : null),
                     decoration: const InputDecoration(
                       labelText: 'Category',
                       border: OutlineInputBorder(),
                     ),
-                    items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    items: _categories
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
                     onChanged: (val) => setState(() => _selectedCategory = val),
                   ),
                   const SizedBox(height: 24),
@@ -377,8 +438,9 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class ViewfinderPainter extends CustomPainter {
@@ -436,7 +498,8 @@ class ViewfinderPainter extends CustomPainter {
       Path()
         ..moveTo(size.width - length, size.height)
         ..lineTo(size.width - radius, size.height)
-        ..quadraticBezierTo(size.width, size.height, size.width, size.height - radius)
+        ..quadraticBezierTo(
+            size.width, size.height, size.width, size.height - radius)
         ..lineTo(size.width, size.height - length),
       paint,
     );
@@ -449,7 +512,8 @@ class ViewfinderPainter extends CustomPainter {
           borderColor,
           borderColor.withValues(alpha: 0.0),
         ],
-      ).createShader(Rect.fromLTWH(0, size.height * animationValue, size.width, 2))
+      ).createShader(
+          Rect.fromLTWH(0, size.height * animationValue, size.width, 2))
       ..strokeWidth = 2;
 
     canvas.drawLine(
@@ -457,7 +521,7 @@ class ViewfinderPainter extends CustomPainter {
       Offset(size.width - 12, size.height * animationValue),
       scanPaint..color = borderColor.withValues(alpha: 0.8),
     );
-    
+
     // Add a glowing effect to the line
     canvas.drawLine(
       Offset(12, size.height * animationValue),

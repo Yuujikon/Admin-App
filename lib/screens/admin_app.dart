@@ -5,72 +5,80 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/order_provider.dart';
+import '../providers/inventory_provider.dart';
 import '../models/order.dart';
+import '../models/refund_request.dart';
+import '../models/admin_destination.dart';
 import '../config/theme.dart';
 import '../utils/responsive.dart';
 import 'dashboard_screen.dart';
 import 'pos_screen.dart';
 import 'inventory_screen.dart';
 import 'pre_orders_screen.dart';
-import 'expenses_screen.dart';
+import 'shift_screen.dart';
+import 'reports_screen.dart';
+import 'sales_history_screen.dart';
+import 'inventory_records_screen.dart';
+import 'supplier_management_screen.dart';
 import 'more_management_screen.dart';
 
-enum AppTab { dashboard, pos, preOrders, inventory, expenses, more }
+enum AppTab {
+  dashboard,
+  pos,
+  inventory,
+  preOrders,
+  shift,
+  reports,
+  salesHistory,
+  inventoryRecords,
+  suppliers,
+  expenses,
+  more
+}
 
+/// Primary application shell widget providing adaptive navigation rails and top bar controls.
 class AdminApp extends StatefulWidget {
   const AdminApp({super.key});
-  @override State<AdminApp> createState() => _AdminAppState();
+  @override
+  State<AdminApp> createState() => _AdminAppState();
 }
 
 class _AdminAppState extends State<AdminApp> {
-  int _tab = 0;
+  String _activeDestinationId = AdminDestination.dashboardId;
   String? _inventoryCategory;
   StreamSubscription<PreOrder>? _newOrderSub;
 
+  void _navigateToDestination(String destinationId, {String? category}) {
+    setState(() {
+      _activeDestinationId = destinationId;
+      if (category != null) {
+        _inventoryCategory = category;
+      }
+    });
+  }
+
   void _navigateToTab(AppTab targetTab, {String? category}) {
-    final role = context.read<AppAuthProvider>().role;
-    int targetIndex = -1;
-
-    if (role == UserRole.admin) {
-      targetIndex = switch (targetTab) {
-        AppTab.dashboard => 0,
-        AppTab.pos       => 1,
-        AppTab.preOrders => 2,
-        AppTab.inventory => 3,
-        AppTab.expenses  => 4,
-        AppTab.more      => 5,
-      };
-    } else if (role == UserRole.inventoryManager) {
-      targetIndex = switch (targetTab) {
-        AppTab.dashboard => 0,
-        AppTab.inventory => 1,
-        AppTab.more      => 2,
-        _                => -1,
-      };
-    } else if (role == UserRole.cashier) {
-      targetIndex = switch (targetTab) {
-        AppTab.pos       => 0,
-        AppTab.preOrders => 1,
-        AppTab.more      => 2,
-        _                => -1,
-      };
-    }
-
-    if (targetIndex != -1) {
-      setState(() {
-        _tab = targetIndex;
-        if (category != null) {
-          _inventoryCategory = category;
-        }
-      });
-    }
+    final String destId = switch (targetTab) {
+      AppTab.dashboard => AdminDestination.dashboardId,
+      AppTab.pos => AdminDestination.posId,
+      AppTab.inventory => AdminDestination.inventoryId,
+      AppTab.preOrders => AdminDestination.preOrdersId,
+      AppTab.shift => AdminDestination.shiftId,
+      AppTab.reports => AdminDestination.reportsId,
+      AppTab.salesHistory => AdminDestination.salesHistoryId,
+      AppTab.inventoryRecords => AdminDestination.inventoryRecordsId,
+      AppTab.suppliers => AdminDestination.suppliersId,
+      _ => AdminDestination.moreId,
+    };
+    _navigateToDestination(destId, category: category);
   }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _newOrderSub = context.read<OrderProvider>().onNewOrderReceived.listen((newOrder) {
+      _newOrderSub =
+          context.read<OrderProvider>().onNewOrderReceived.listen((newOrder) {
         if (!mounted) return;
         HapticFeedback.vibrate();
 
@@ -83,8 +91,9 @@ class _AdminAppState extends State<AdminApp> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '🛍️ New Pre-Order #${newOrder.orderId} from ${newOrder.customerName} (₱${newOrder.total.toStringAsFixed(2)})',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    '🛍️ New Pre-Order #${newOrder.orderId} from ${newOrder.customerName} (${formatPeso(newOrder.total)})',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
               ],
@@ -96,7 +105,7 @@ class _AdminAppState extends State<AdminApp> {
               label: 'VIEW',
               textColor: Colors.white,
               onPressed: () {
-                _navigateToTab(AppTab.preOrders);
+                _navigateToDestination(AdminDestination.preOrdersId);
               },
             ),
           ),
@@ -111,235 +120,439 @@ class _AdminAppState extends State<AdminApp> {
     super.dispose();
   }
 
+  String formatPeso(double amount) {
+    return '₱${amount.toStringAsFixed(2)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AppAuthProvider>();
-    final bool isAdmin = auth.role == UserRole.admin;
-    final bool isInv   = auth.role == UserRole.inventoryManager;
-    final bool isLandscape = Responsive.isLandscape(context);
-    final bool isLargeScreen = Responsive.isLargeScreen(context);
+    final role = auth.role;
 
     final orderProvider = context.watch<OrderProvider>();
-    // Pre-orders still needing process (excluding ready to pick up, collected, etc.)
-    final toProcessCount = orderProvider.orders.where((o) =>
-      o.status == OrderStatus.pending || o.status == OrderStatus.staging
-    ).length;
+    final inventoryProvider = context.watch<InventoryProvider>();
+    final pendingRefundsCount = inventoryProvider.refundRequests
+        .where((r) => r.status == RefundStatus.pending)
+        .length;
 
-    final Widget preOrdersIcon = Badge.count(
-      count: toProcessCount,
-      isLabelVisible: toProcessCount > 0,
-      backgroundColor: Theme.of(context).colorScheme.error,
-      child: const Icon(Icons.receipt_long_outlined),
-    );
+    final toProcessCount = orderProvider.orders
+            .where((o) =>
+                o.status == OrderStatus.pending || o.status == OrderStatus.staging)
+            .length +
+        pendingRefundsCount;
 
-    // Define tabs based on role
-    late final List<Widget> children;
-    late final List<NavigationDestination> destinations;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double availableWidth = constraints.maxWidth;
+        final bool isCompact = availableWidth < Responsive.compactBreakpoint;
+        final bool isExpanded = availableWidth >= Responsive.expandedBreakpoint;
 
-    if (isAdmin) {
-      children = [
-        DashboardScreen(onTabChange: (targetTab, {category}) {
-          _navigateToTab(targetTab, category: category);
-        }),
-        const PosScreen(),
-        const PreOrdersScreen(),
-        InventoryScreen(initialCategory: _inventoryCategory),
-        const ExpensesScreen(),
-        const MoreManagementScreen(),
-      ];
-      destinations = [
-        const NavigationDestination(icon: Icon(Icons.dashboard_outlined),     label: 'Dashboard'),
-        const NavigationDestination(icon: Icon(Icons.point_of_sale_outlined), label: 'POS'),
-        NavigationDestination(icon: preOrdersIcon,                            label: 'Pre-Orders'),
-        const NavigationDestination(icon: Icon(Icons.inventory_2_outlined),   label: 'Inventory'),
-        const NavigationDestination(icon: Icon(Icons.attach_money_outlined),  label: 'Expenses'),
-        const NavigationDestination(icon: Icon(Icons.more_horiz),             label: 'More'),
-      ];
-    } else if (isInv) {
-      children = [
-        DashboardScreen(onTabChange: (targetTab, {category}) {
-          _navigateToTab(targetTab, category: category);
-        }),
-        InventoryScreen(initialCategory: _inventoryCategory),
-        const MoreManagementScreen(), // They can access Suppliers/Loss here
-      ];
-      destinations = const [
-        NavigationDestination(icon: Icon(Icons.dashboard_outlined),     label: 'Dashboard'),
-        NavigationDestination(icon: Icon(Icons.inventory_2_outlined),   label: 'Inventory'),
-        NavigationDestination(icon: Icon(Icons.more_horiz),             label: 'More'),
-      ];
-    } else {
-      children = [
-        const PosScreen(),
-        const PreOrdersScreen(),
-        const MoreManagementScreen(),
-      ];
-      destinations = [
-        const NavigationDestination(icon: Icon(Icons.point_of_sale_outlined), label: 'POS'),
-        NavigationDestination(icon: preOrdersIcon,                            label: 'Pre-Orders'),
-        const NavigationDestination(icon: Icon(Icons.more_horiz),             label: 'More'),
-      ];
-    }
+        final destinations = AdminDestination.getPrimaryDestinations(
+          role: role,
+          isCompact: isCompact,
+        );
 
-    final int currentTab = _tab >= children.length ? 0 : _tab;
-    final double appBarHeight = isLandscape ? 52.0 : 65.0;
+        // Ensure active destination is fallback-safe for the role
+        if (role == UserRole.cashier &&
+            _activeDestinationId == AdminDestination.dashboardId) {
+          _activeDestinationId = AdminDestination.posId;
+        }
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
-        toolbarHeight: appBarHeight,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        title: Row(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+        // Build navigation items with badge for pre-orders
+        List<NavigationDestination> navDestinations = destinations.map((d) {
+          Widget iconWidget = Icon(d.icon);
+          Widget selectedIconWidget = Icon(d.selectedIcon ?? d.icon);
+
+          if (d.id == AdminDestination.preOrdersId && toProcessCount > 0) {
+            iconWidget = Badge.count(
+              count: toProcessCount,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              child: iconWidget,
+            );
+            selectedIconWidget = Badge.count(
+              count: toProcessCount,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              child: selectedIconWidget,
+            );
+          }
+
+          return NavigationDestination(
+            icon: iconWidget,
+            selectedIcon: selectedIconWidget,
+            label: d.label,
+          );
+        }).toList();
+
+        int selectedRailIndex =
+            destinations.indexWhere((d) => d.id == _activeDestinationId);
+        if (selectedRailIndex == -1) {
+          selectedRailIndex =
+              destinations.indexWhere((d) => d.id == AdminDestination.moreId);
+          if (selectedRailIndex == -1) selectedRailIndex = 0;
+        }
+
+        // Available page widgets
+        Widget activePage = switch (_activeDestinationId) {
+          AdminDestination.dashboardId => DashboardScreen(
+              onTabChange: (targetTab, {category}) {
+                _navigateToTab(targetTab, category: category);
+              },
+            ),
+          AdminDestination.posId => const PosScreen(),
+          AdminDestination.inventoryId =>
+            InventoryScreen(initialCategory: _inventoryCategory),
+          AdminDestination.preOrdersId => const PreOrdersScreen(),
+          AdminDestination.shiftId => const ShiftScreen(),
+          AdminDestination.reportsId => const ReportsScreen(),
+          AdminDestination.salesHistoryId => const SalesHistoryScreen(),
+          AdminDestination.inventoryRecordsId => const InventoryRecordsScreen(),
+          AdminDestination.suppliersId => const SupplierManagementScreen(),
+          _ => MoreManagementScreen(
+              onNavigateToTab: (tab) => _navigateToTab(tab),
+            ),
+        };
+
+        return Scaffold(
+          backgroundColor: Theme.of(context).brightness == Brightness.dark
+              ? Theme.of(context).scaffoldBackgroundColor
+              : const Color(0xFFF1F5F9),
+          body: SafeArea(
+            child: Column(
               children: [
-                Text(
-                  'GDC ADMIN',
-                  style: TextStyle(
-                    fontSize: isLandscape ? 16 : 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                // Global Top Utility Header
+                _AdminTopBar(
+                  auth: auth,
+                  isCompact: isCompact,
                 ),
-                const SizedBox(height: 1),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: _getRoleColor(auth.role, context).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    _getRoleLabel(auth.role).toUpperCase(), 
-                    style: TextStyle(
-                      fontSize: 8, 
-                      color: _getRoleColor(auth.role, context), 
-                      fontWeight: FontWeight.w900, 
-                      letterSpacing: 0.5,
-                    ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      // Persistent Side Navigation Bar for Tablet/Medium & Desktop/Expanded
+                      if (!isCompact)
+                        Container(
+                          width: isExpanded ? 200 : 88,
+                          margin: const EdgeInsets.only(
+                              left: 12, top: 10, bottom: 12, right: 8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: 0.35),
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: destinations.map((d) {
+                                final isSelected = d.id == _activeDestinationId;
+                                final badgeCount =
+                                    d.id == AdminDestination.preOrdersId
+                                        ? toProcessCount
+                                        : 0;
+
+                                return _SideNavItem(
+                                  destination: d,
+                                  isSelected: isSelected,
+                                  isExpanded: isExpanded,
+                                  badgeCount: badgeCount,
+                                  onTap: () {
+                                    setState(() {
+                                      _activeDestinationId = d.id;
+                                    });
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+
+                      // Main Content Area Panel
+                      Expanded(
+                        child: Container(
+                          margin: isCompact
+                              ? EdgeInsets.zero
+                              : const EdgeInsets.only(
+                                  top: 10, bottom: 12, right: 12, left: 4),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: isCompact
+                                ? BorderRadius.zero
+                                : BorderRadius.circular(24),
+                            border: isCompact
+                                ? null
+                                : Border.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant
+                                        .withValues(alpha: 0.3),
+                                  ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1280),
+                              child: activePage,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ],
+          ),
+
+          // Bottom Navigation Bar for Compact Screens (<600dp)
+          bottomNavigationBar: isCompact
+              ? SafeArea(
+                  child: NavigationBar(
+                    selectedIndex: selectedRailIndex,
+                    onDestinationSelected: (idx) {
+                      if (idx >= 0 && idx < destinations.length) {
+                        setState(() {
+                          _activeDestinationId = destinations[idx].id;
+                        });
+                      }
+                    },
+                    destinations: navDestinations,
+                  ),
+                )
+              : null,
+        );
+      },
+    );
+  }
+}
+
+class _SideNavItem extends StatelessWidget {
+  final AdminDestination destination;
+  final bool isSelected;
+  final bool isExpanded;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  const _SideNavItem({
+    required this.destination,
+    required this.isSelected,
+    required this.isExpanded,
+    this.badgeCount = 0,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final Color activeBg = isDark
+        ? GdcColors.darkEmerald.withValues(alpha: 0.25)
+        : const Color(0xFFE6F7F2);
+    final Color activeBorder = isDark
+        ? GdcColors.emeraldPrimary
+        : GdcColors.darkEmerald;
+    final Color activeFg = isDark
+        ? GdcColors.emeraldPrimary
+        : GdcColors.darkEmerald;
+
+    final Color inactiveFg = isDark
+        ? Colors.white.withValues(alpha: 0.6)
+        : const Color(0xFF64748B);
+
+    Widget iconWidget = Icon(
+      isSelected
+          ? (destination.selectedIcon ?? destination.icon)
+          : destination.icon,
+      size: 22,
+      color: isSelected ? activeFg : inactiveFg,
+    );
+
+    if (badgeCount > 0) {
+      iconWidget = Badge.count(
+        count: badgeCount,
+        backgroundColor: Theme.of(context).colorScheme.error,
+        child: iconWidget,
+      );
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        padding: isExpanded
+            ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
+            : const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? activeBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? activeBorder : Colors.transparent,
+            width: 1.5,
+          ),
         ),
-        automaticallyImplyLeading: false,
-        actions: [
+        child: isExpanded
+            ? Row(
+                children: [
+                  iconWidget,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      destination.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                        color: isSelected ? activeFg : inactiveFg,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  iconWidget,
+                  const SizedBox(height: 4),
+                  Text(
+                    destination.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? activeFg : inactiveFg,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _AdminTopBar extends StatelessWidget {
+  final AppAuthProvider auth;
+  final bool isCompact;
+
+  const _AdminTopBar({
+    required this.auth,
+    required this.isCompact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: isCompact ? 56 : 64,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context)
+                .colorScheme
+                .outlineVariant
+                .withValues(alpha: 0.4),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'GDC ADMIN',
+                style: TextStyle(
+                  fontSize: isCompact ? 16 : 18,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.3,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6F7F2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _getRoleLabel(auth.role).toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: GdcColors.darkEmerald,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
           IconButton(
-            icon: Icon(context.watch<ThemeProvider>().isDarkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded, size: isLandscape ? 20 : 24),
-            onPressed: () => context.read<ThemeProvider>().toggleTheme(!context.read<ThemeProvider>().isDarkMode),
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.5),
+                ),
+              ),
+              child: Icon(
+                context.watch<ThemeProvider>().isDarkMode
+                    ? Icons.light_mode_rounded
+                    : Icons.dark_mode_outlined,
+                size: isCompact ? 18 : 20,
+              ),
+            ),
+            onPressed: () => context
+                .read<ThemeProvider>()
+                .toggleTheme(!context.read<ThemeProvider>().isDarkMode),
             tooltip: 'Toggle Theme',
           ),
-          IconButton.filledTonal(
-            icon: Icon(Icons.logout_rounded, size: isLandscape ? 18 : 20),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE6F7F2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_forward_rounded,
+                size: 18,
+                color: GdcColors.darkEmerald,
+              ),
+            ),
             tooltip: 'Logout',
             onPressed: () async {
               await auth.logout();
             },
           ),
-          const SizedBox(width: 12),
         ],
-      ),
-      body: Row(
-        children: [
-          if (isLargeScreen && destinations.length > 1) ...[
-            SingleChildScrollView(
-              primary: false,
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: MediaQuery.of(context).size.height - appBarHeight - MediaQuery.of(context).padding.top,
-                ),
-                child: IntrinsicHeight(
-                  child: NavigationRail(
-                    selectedIndex: currentTab,
-                    onDestinationSelected: (i) => setState(() => _tab = i),
-                    labelType: NavigationRailLabelType.all,
-                    minWidth: 64,
-                    backgroundColor: Theme.of(context).colorScheme.surface,
-                    indicatorColor: GdcColors.secondaryGreen.withValues(alpha: 0.15),
-                    selectedIconTheme: IconThemeData(color: Theme.of(context).colorScheme.primary),
-                    selectedLabelTextStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                    ),
-                    unselectedLabelTextStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 10,
-                    ),
-                    destinations: destinations.map((d) => NavigationRailDestination(
-                      icon: d.icon,
-                      selectedIcon: d.selectedIcon ?? d.icon,
-                      label: Text(d.label),
-                    )).toList(),
-                  ),
-                ),
-              ),
-            ),
-            VerticalDivider(
-              thickness: 1,
-              width: 1,
-              color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-          ],
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: isLargeScreen 
-                    ? const BorderRadius.horizontal(left: Radius.circular(24))
-                    : const BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: IndexedStack(
-                index: currentTab,
-                children: children,
-              ),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: (isLargeScreen || destinations.length <= 1) ? null : Theme(
-        data: Theme.of(context).copyWith(
-          splashColor: Colors.transparent,
-          highlightColor: Colors.transparent,
-        ),
-        child: BottomNavigationBar(
-          currentIndex: currentTab,
-          onTap: (i) => setState(() => _tab = i),
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-          selectedItemColor: Theme.of(context).colorScheme.primary,
-          unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
-          selectedFontSize: 10,
-          unselectedFontSize: 9,
-          iconSize: 22,
-          elevation: 8,
-          items: destinations.map((d) => BottomNavigationBarItem(
-            icon: d.icon,
-            activeIcon: d.selectedIcon ?? d.icon,
-            label: d.label,
-          )).toList(),
-        ),
       ),
     );
   }
 
   String _getRoleLabel(UserRole role) => switch (role) {
-    UserRole.admin            => 'Administrator',
-    UserRole.inventoryManager => 'Inventory Manager',
-    UserRole.cashier          => 'Cashier Staff',
-    UserRole.none             => 'Access Denied',
-  };
-
-  Color _getRoleColor(UserRole role, BuildContext context) {
-    final semantic = Theme.of(context).semantic;
-    return switch (role) {
-      UserRole.admin            => semantic.success,
-      UserRole.inventoryManager => semantic.warning,
-      UserRole.cashier          => semantic.info,
-      UserRole.none             => Theme.of(context).colorScheme.error,
-    };
-  }
+        UserRole.admin => 'Administrator',
+        UserRole.inventoryManager => 'Inventory Manager',
+        UserRole.cashier => 'Cashier Staff',
+        UserRole.none => 'Access Denied',
+      };
 }
+

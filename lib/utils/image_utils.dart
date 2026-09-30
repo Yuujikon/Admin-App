@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
+/// Utility class for image background manipulation and base64 compression.
 class ImageUtils {
   /// Removes pixels that are "white enough" from the image.
   /// Converts the image to PNG to support transparency.
-  static Uint8List? removeWhiteBackground(Uint8List bytes, {int threshold = 240}) {
+  static Uint8List? removeWhiteBackground(Uint8List bytes,
+      {int threshold = 240}) {
     final image = img.decodeImage(bytes);
     if (image == null) return null;
 
@@ -27,5 +30,17 @@ class ImageUtils {
 
     // Encode as PNG to keep transparency
     return Uint8List.fromList(img.encodePng(rgba8));
+  }
+
+  /// Compresses the given image bytes and returns a base64 encoded string.
+  static String compressAndEncode(Uint8List bytes,
+      {int maxWidth = 800, int quality = 80}) {
+    final image = img.decodeImage(bytes);
+    if (image == null) return base64Encode(bytes);
+    final resized = (image.width > maxWidth)
+        ? img.copyResize(image, width: maxWidth)
+        : image;
+    final compressedBytes = img.encodeJpg(resized, quality: quality);
+    return base64Encode(compressedBytes);
   }
 }

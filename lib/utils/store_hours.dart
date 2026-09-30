@@ -1,5 +1,6 @@
 import '../models/store_settings.dart';
 
+/// Utility class for checking store open/closed status and pickup schedule slots.
 class StoreHours {
   /// Dynamically checks if the store is currently within active operating/pickup hours.
   static bool isOpen([StoreSettings? settings]) {

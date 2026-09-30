@@ -5,35 +5,55 @@ import 'package:flutter/material.dart';
 import '../utils/format.dart';
 import '../utils/totp.dart';
 
+/// User role authorization levels.
 enum UserRole { admin, inventoryManager, cashier, none }
 
+/// Authentication provider managing Firebase Auth state, user roles, phone numbers, and TOTP 2FA.
 class AppAuthProvider extends ChangeNotifier {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
 
+  /// Returns currently signed in Firebase user.
   User? get currentUser => _auth.currentUser;
+
   UserRole _role = UserRole.none;
+
+  /// Active user role.
   UserRole get role => _role;
+
   String? _phoneNumber;
+
+  /// User contact phone number.
   String? get phoneNumber => _phoneNumber;
 
   String? _totpSecret;
+
+  /// Active 2FA secret key.
   String get totpSecret => _totpSecret ?? 'JBSWY3DPEHPK3PXP';
 
   bool _isTotpLinked = false;
+
+  /// True if TOTP authenticator app link is confirmed.
   bool get isTotpLinked => _isTotpLinked;
 
   bool _totpEnabled = true;
+
+  /// True if 2FA verification is enforced for login.
   bool get totpEnabled => _totpEnabled;
 
   bool _initialized = false;
+
+  /// True when initial auth and role state fetching is complete.
   bool get initialized => _initialized;
 
   bool _adminVerified = false;
+
+  /// True if staff user has successfully completed TOTP/PIN verification for active session.
   bool get adminVerified => _adminVerified;
 
   StreamSubscription<DocumentSnapshot>? _userSub;
 
+  /// Initializes authentication state listeners.
   AppAuthProvider() {
     _auth.authStateChanges().listen((user) {
       _userSub?.cancel();
@@ -52,6 +72,7 @@ class AppAuthProvider extends ChangeNotifier {
     });
   }
 
+  /// Establishes real-time listener on user metadata document in Firestore (`users/{uid}`).
   void _listenToUserDoc(String uid) {
     _userSub = _db.collection('users').doc(uid).snapshots().listen((doc) async {
       if (doc.exists) {
@@ -83,7 +104,9 @@ class AppAuthProvider extends ChangeNotifier {
         if (currentUser?.email == 'markjeo.hinampas@gmail.com') {
           _role = UserRole.admin;
           if (roleStr != 'admin' || isDisabled) {
-            await _db.collection('users').doc(uid).set({'role': 'admin', 'isDisabled': false}, SetOptions(merge: true));
+            await _db.collection('users').doc(uid).set(
+                {'role': 'admin', 'isDisabled': false},
+                SetOptions(merge: true));
           }
         }
       } else {
@@ -119,6 +142,7 @@ class AppAuthProvider extends ChangeNotifier {
     });
   }
 
+  /// Triggers a manual refresh of the user document permissions.
   Future<void> refreshRole() async {
     final user = currentUser;
     if (user != null) {
@@ -127,9 +151,10 @@ class AppAuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Updates current user phone number in Firestore.
   Future<void> updatePhoneNumber(String phone) async {
     if (currentUser == null) return;
-    
+
     final sanitized = formatPhoneNumber(phone);
 
     await _db.collection('users').doc(currentUser!.uid).update({
@@ -139,6 +164,7 @@ class AppAuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Generates a new TOTP secret key for 2FA authenticator apps.
   Future<void> regenerateTotpSecret() async {
     if (currentUser == null) return;
     _totpSecret = TotpUtils.generateSecret();
@@ -150,6 +176,7 @@ class AppAuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates TOTP 2FA enforcement setting.
   Future<void> setTotpEnabled(bool enabled) async {
     _totpEnabled = enabled;
     notifyListeners();
@@ -160,6 +187,7 @@ class AppAuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Marks TOTP link setup as completed.
   Future<void> markTotpLinked() async {
     _isTotpLinked = true;
     notifyListeners();
@@ -170,11 +198,13 @@ class AppAuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Sets session 2FA/PIN verification status flag.
   void setAdminVerified(bool val) {
     _adminVerified = val;
     notifyListeners();
   }
 
+  /// Formats TOTP URI string for QR code generation in Google Authenticator.
   Uri get totpUri {
     final email = currentUser?.email ?? 'User';
     return Uri.parse(
@@ -187,10 +217,12 @@ class AppAuthProvider extends ChangeNotifier {
     return TotpUtils.verifyTotpCode(totpSecret, code);
   }
 
+  /// Authenticates user credentials with Firebase Auth.
   Future<void> login(String email, String password) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
+  /// Signs out current user and resets auth session flags.
   Future<void> logout() async {
     _userSub?.cancel();
     await _auth.signOut();

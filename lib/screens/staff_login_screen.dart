@@ -2,7 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/premium_components.dart';
 
+/// Login authentication screen for store staff and store admin accounts.
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
 
@@ -11,9 +13,9 @@ class StaffLoginScreen extends StatefulWidget {
 }
 
 class _StaffLoginScreenState extends State<StaffLoginScreen> {
-  final _email   = TextEditingController();
-  final _pass    = TextEditingController();
-  bool  _loading = false;
+  final _email = TextEditingController();
+  final _pass = TextEditingController();
+  bool _loading = false;
   String? _error;
 
   @override
@@ -23,59 +25,74 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
+          child: MaxWidthContainer(
+            maxWidth: MaxWidthContainer.authMaxWidth,
+            alignment: Alignment.center,
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(Icons.storefront, size: 64, color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.storefront,
+                    size: 64, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 24),
                 Text('GDC Staff Portal',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary)),
                 const SizedBox(height: 8),
                 Text('Sign in to access POS or Dashboard',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 32),
-                
-                TextField(
-                  controller: _email,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextField(
+                    controller: _email,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
                   ),
-                  keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _pass,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextField(
+                    controller: _pass,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(),
+                    ),
+                    obscureText: true,
                   ),
-                  obscureText: true,
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13)),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 13)),
                 ],
                 const SizedBox(height: 24),
-                ElevatedButton(
+                PrimaryButton(
                   onPressed: _loading ? null : _login,
-                  child: _loading 
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('SIGN IN', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  isLoading: _loading,
+                  minWidth: 200,
+                  maxWidth: 350,
+                  child: const Text('SIGN IN',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 16),
-                
                 TextButton(
                   onPressed: _resetPassword,
-                  child: Text('Forgot Password?', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                  child: Text('Forgot Password?',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 12)),
                 ),
               ],
             ),
@@ -87,12 +104,18 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
   Future<void> _login() async {
     if (_email.text.isEmpty || _pass.text.isEmpty) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final auth = context.read<AppAuthProvider>();
       await auth.login(_email.text.trim(), _pass.text.trim());
     } catch (e) {
-      setState(() { _error = 'Login failed. Check your email/password.'; _loading = false; });
+      setState(() {
+        _error = 'Login failed. Check your email/password.';
+        _loading = false;
+      });
     }
   }
 
@@ -102,11 +125,11 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       return;
     }
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: _email.text.trim());
+      await FirebaseAuth.instance
+          .sendPasswordResetEmail(email: _email.text.trim());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password reset email sent! Check your inbox.'))
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Password reset email sent! Check your inbox.')));
       }
     } catch (e) {
       setState(() => _error = 'Could not send reset email.');

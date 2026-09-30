@@ -1,15 +1,32 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Customer profile data model.
 class Customer {
+  /// Unique customer document ID.
   final String id;
+
+  /// Full customer name.
   final String name;
-  final String? email; // NEW
+
+  /// Customer email address.
+  final String? email;
+
+  /// Primary phone number.
   final String phone;
+
+  /// Cumulative lifetime purchase spend in Pesos.
   final double totalSpent;
+
+  /// Timestamp of customer's last recorded order/visit.
   final DateTime? lastVisit;
+
+  /// Administrative notes regarding customer preference or store credit.
   final String notes;
+
+  /// Timestamp when customer account was registered.
   final DateTime createdAt;
 
+  /// Creates a [Customer] instance.
   const Customer({
     required this.id,
     required this.name,
@@ -21,6 +38,7 @@ class Customer {
     required this.createdAt,
   });
 
+  /// Factory constructor for parsing Firestore document map.
   factory Customer.fromMap(String id, Map<String, dynamic> map) {
     return Customer(
       id: id,
@@ -34,6 +52,7 @@ class Customer {
     );
   }
 
+  /// Converts customer object to Map for Firestore persistence.
   Map<String, dynamic> toMap() {
     return {
       'name': name,
@@ -46,7 +65,14 @@ class Customer {
     };
   }
 
-  Customer copyWith({String? name, String? email, String? phone, double? totalSpent, DateTime? lastVisit, String? notes}) {
+  /// Returns a copy of [Customer] with modified properties.
+  Customer copyWith(
+      {String? name,
+      String? email,
+      String? phone,
+      double? totalSpent,
+      DateTime? lastVisit,
+      String? notes}) {
     return Customer(
       id: id,
       name: name ?? this.name,

@@ -18,8 +18,8 @@ class _CatalogSearchDialogState extends State<CatalogSearchDialog> {
     final catalog = context.watch<InventoryProvider>().catalog;
     final filtered = catalog.where((p) {
       final q = _query.toLowerCase();
-      return p.name.toLowerCase().contains(q) || 
-             (p.brand?.toLowerCase().contains(q) ?? false);
+      return p.name.toLowerCase().contains(q) ||
+          (p.brand?.toLowerCase().contains(q) ?? false);
     }).toList();
 
     return AlertDialog(
@@ -43,7 +43,8 @@ class _CatalogSearchDialogState extends State<CatalogSearchDialog> {
             if (filtered.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16.0),
-                child: Text('No matching products found in catalog.', style: TextStyle(color: Colors.grey)),
+                child: Text('No matching products found in catalog.',
+                    style: TextStyle(color: Colors.grey)),
               )
             else
               Expanded(
@@ -53,8 +54,10 @@ class _CatalogSearchDialogState extends State<CatalogSearchDialog> {
                   itemBuilder: (ctx, i) {
                     final p = filtered[i];
                     return ListTile(
-                      title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('${p.brand ?? 'No Brand'} • ${p.category}'),
+                      title: Text(p.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle:
+                          Text('${p.brand ?? 'No Brand'} • ${p.category}'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.pop(context, p),
                     );
@@ -65,7 +68,9 @@ class _CatalogSearchDialogState extends State<CatalogSearchDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
       ],
     );
   }

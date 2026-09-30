@@ -1,21 +1,41 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Categorization enum for inventory loss/spoilage reasons.
 enum LossType { expired, damaged, lost, personalUse, refundReturn }
 
+/// Data model representing an inventory loss or spoilage record.
 class LossRecord {
+  /// Unique loss record document ID.
   final String id;
-  final String productId;
-  final String productName;
-  final int    qty;
-  final double unitPrice;
-  final LossType type;
-  final String notes;
-  final DateTime createdAt;
-  
-  // NEW FIELDS
-  final String? processedBy;
-  final String? referenceId; // Order ID or Transaction ID
 
+  /// Associated product ID.
+  final String productId;
+
+  /// Product display name.
+  final String productName;
+
+  /// Quantity of items lost.
+  final int qty;
+
+  /// Unit cost/price of item at time of loss.
+  final double unitPrice;
+
+  /// Type of inventory loss.
+  final LossType type;
+
+  /// Notes explaining reason or incident details.
+  final String notes;
+
+  /// Timestamp when loss was logged.
+  final DateTime createdAt;
+
+  /// Staff member who logged or verified the loss.
+  final String? processedBy;
+
+  /// Associated order or transaction reference ID.
+  final String? referenceId;
+
+  /// Creates a [LossRecord] instance.
   const LossRecord({
     required this.id,
     required this.productId,
@@ -29,8 +49,10 @@ class LossRecord {
     this.referenceId,
   });
 
+  /// Total monetary valuation of the inventory loss.
   double get totalLoss => qty * unitPrice;
 
+  /// Factory constructor for parsing Firestore [DocumentSnapshot].
   factory LossRecord.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>? ?? {};
     return LossRecord(
@@ -50,15 +72,16 @@ class LossRecord {
     );
   }
 
+  /// Converts model to Map for Firestore persistence.
   Map<String, dynamic> toFirestore() => {
-    'productId': productId,
-    'productName': productName,
-    'qty': qty,
-    'unitPrice': unitPrice,
-    'type': type.name,
-    'notes': notes,
-    'createdAt': FieldValue.serverTimestamp(),
-    'processedBy': processedBy,
-    'referenceId': referenceId,
-  };
+        'productId': productId,
+        'productName': productName,
+        'qty': qty,
+        'unitPrice': unitPrice,
+        'type': type.name,
+        'notes': notes,
+        'createdAt': FieldValue.serverTimestamp(),
+        'processedBy': processedBy,
+        'referenceId': referenceId,
+      };
 }

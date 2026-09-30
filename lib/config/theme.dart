@@ -1,123 +1,187 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+/// Design system color constants for the GDC Sari-Sari Store brand.
 class GdcColors {
-  // Color Hunt Palette: EDF1D6, 9DC08B, 609966, 40513B
-  static const deepGreen         = Color(0xFF40513B); // Darkest - Headers/Text
-  static const primaryGreen      = Color(0xFF609966); // Main Action
-  static const secondaryGreen    = Color(0xFF9DC08B); // Secondary/Accent
-  static const backgroundCream   = Color(0xFFEDF1D6); // Background
-  
-  static const paper             = Color(0xFFF7F9E8); // Slightly lighter surface
-  
-  // Dark Mode Palette (Muted Forest)
-  static const midnight          = Color(0xFF1A1C1E); 
-  static const slate             = Color(0xFF2D3135); 
-  static const mutedGreen        = Color(0xFF609966); 
-  static const goldDim           = Color(0xFF9DC08B); 
-  
-  // Semantic (Universal)
-  static const errorLight       = Color(0xFFA04747);
-  static const errorDark        = Color(0xFFCF6679);
-  static const successLight     = Color(0xFF4E6C50);
-  static const successDark      = Color(0xFF81C784);
-  static const warningLight     = Color(0xFFD4A373);
-  static const warningDark      = Color(0xFFFFB74D);
-  static const infoLight        = Color(0xFF525E75);
-  static const infoDark         = Color(0xFF90CAF9);
+  // GDC Design System Core Brand Colors
+  static const appBackground = Color(0xFFEDF1D6);
+  static const whiteSurface = Color(0xFFFFFFFF);
+  static const mainText = Color(0xFF172237);
+  static const mutedText = Color(0xFF697386);
+  static const emeraldPrimary = Color(0xFF08B982);
+  static const darkEmerald = Color(0xFF009A69);
+  static const mintActiveBackground = Color(0xFFCCE9DF);
+  static const border = Color(0xFFD9DEE5);
+  static const strongBorder = Color(0xFF8F969F);
+  static const warningAmber = Color(0xFFE99A1A);
+  static const dangerCoral = Color(0xFFE55454);
+  static const violetAccent = Color(0xFF8754D2);
+
+  // Backwards Compatibility Palette Aliases
+  static const deepNavy = Color(0xFF12213F);
+  static const secondaryNavy = Color(0xFF1C2F55);
+  static const deepGreen = mainText;
+  static const primaryGreen = emeraldPrimary;
+  static const secondaryGreen = darkEmerald;
+  static const backgroundCream = appBackground;
+  static const paper = whiteSurface;
+
+  // Dark Mode Palette
+  static const midnight = deepNavy;
+  static const slate = secondaryNavy;
+  static const mutedGreen = emeraldPrimary;
+  static const goldDim = darkEmerald;
+
+  // Universal Semantic Tonal Colors
+  static const errorLight = dangerCoral;
+  static const errorDark = Color(0xFFF87171);
+  static const successLight = emeraldPrimary;
+  static const successDark = Color(0xFF34D399);
+  static const warningLight = warningAmber;
+  static const warningDark = Color(0xFFFBBF24);
+  static const infoLight = Color(0xFF3B82F6);
+  static const infoDark = Color(0xFF60A5FA);
 }
 
+/// ThemeData builder utility for Light and Dark Material 3 theme variants.
 class GdcTheme {
+  /// Returns the custom Material 3 Light theme.
   static ThemeData get light => _buildTheme(Brightness.light);
-  static ThemeData get dark  => _buildTheme(Brightness.dark);
+
+  /// Returns the custom Material 3 Dark theme.
+  static ThemeData get dark => _buildTheme(Brightness.dark);
 
   static ThemeData _buildTheme(Brightness brightness) {
     final bool isDark = brightness == Brightness.dark;
-    
-    final primaryColor   = isDark ? GdcColors.mutedGreen : GdcColors.primaryGreen;
-    final secondaryColor = isDark ? GdcColors.goldDim : GdcColors.secondaryGreen;
-    final backgroundColor = isDark ? GdcColors.midnight : GdcColors.backgroundCream;
-    final surfaceColor    = isDark ? GdcColors.slate : GdcColors.paper;
-    final textColor       = isDark ? Colors.white.withValues(alpha: 0.95) : GdcColors.deepGreen;
-    final subTextColor    = isDark ? Colors.white.withValues(alpha: 0.6)  : GdcColors.deepGreen.withValues(alpha: 0.6);
-    final borderColor     = isDark ? Colors.white.withValues(alpha: 0.1)  : Colors.black.withValues(alpha: 0.08);
 
-    final errorColor   = isDark ? GdcColors.errorDark   : GdcColors.errorLight;
-    final successColor = isDark ? GdcColors.successDark : GdcColors.successLight;
-    final warningColor = isDark ? GdcColors.warningDark : GdcColors.warningLight;
-    final infoColor    = isDark ? GdcColors.infoDark    : GdcColors.infoLight;
+    final primaryColor = isDark ? GdcColors.mutedGreen : GdcColors.emeraldPrimary;
+    final secondaryColor =
+        isDark ? GdcColors.goldDim : GdcColors.darkEmerald;
+    final backgroundColor =
+        isDark ? GdcColors.midnight : GdcColors.appBackground;
+    final surfaceColor = isDark ? GdcColors.slate : GdcColors.whiteSurface;
+    final textColor =
+        isDark ? Colors.white.withValues(alpha: 0.95) : GdcColors.mainText;
+    final subTextColor = isDark
+        ? Colors.white.withValues(alpha: 0.6)
+        : GdcColors.mutedText;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : GdcColors.border;
+
+    final errorColor = isDark ? GdcColors.errorDark : GdcColors.errorLight;
+    final successColor =
+        isDark ? GdcColors.successDark : GdcColors.successLight;
+    final warningColor =
+        isDark ? GdcColors.warningDark : GdcColors.warningLight;
+    final infoColor = isDark ? GdcColors.infoDark : GdcColors.infoLight;
+
+    final textTheme = GoogleFonts.plusJakartaSansTextTheme().copyWith(
+      headlineLarge: GoogleFonts.plusJakartaSans(
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          color: textColor),
+      headlineMedium: GoogleFonts.plusJakartaSans(
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          color: textColor),
+      headlineSmall: GoogleFonts.plusJakartaSans(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
+          color: textColor),
+      titleLarge: GoogleFonts.plusJakartaSans(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
+          color: textColor),
+      titleMedium: GoogleFonts.plusJakartaSans(
+          fontSize: 14, fontWeight: FontWeight.w600, color: primaryColor),
+      titleSmall: GoogleFonts.plusJakartaSans(
+          fontSize: 13, fontWeight: FontWeight.w600, color: textColor),
+      bodyLarge: TextStyle(fontSize: 14, color: textColor),
+      bodyMedium: TextStyle(fontSize: 13, color: subTextColor),
+      bodySmall: TextStyle(fontSize: 12, color: subTextColor),
+      labelMedium: TextStyle(
+          fontSize: 12, color: subTextColor, fontWeight: FontWeight.w600),
+      labelSmall: TextStyle(
+          fontSize: 11, color: subTextColor, fontWeight: FontWeight.w600),
+    );
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      scaffoldBackgroundColor: backgroundColor,
       colorScheme: ColorScheme.fromSeed(
-        seedColor:      primaryColor,
-        brightness:     brightness,
-        primary:        primaryColor,
-        secondary:      secondaryColor,
-        error:          errorColor,
-        surface:        backgroundColor,
-        onSurface:      textColor,
+        seedColor: primaryColor,
+        brightness: brightness,
+        primary: primaryColor,
+        secondary: secondaryColor,
+        error: errorColor,
+        surface: surfaceColor,
+        onSurface: textColor,
         onSurfaceVariant: subTextColor,
-        outline:        borderColor,
+        outline: borderColor,
+        outlineVariant: borderColor,
         surfaceContainerLowest: isDark ? GdcColors.midnight : Colors.white,
-        surfaceContainerLow:    surfaceColor,
-        surfaceContainer:       isDark ? GdcColors.slate.withValues(alpha: 0.5) : GdcColors.secondaryGreen.withValues(alpha: 0.3),
-        tertiary:       successColor,
-        onTertiary:     isDark ? GdcColors.midnight : Colors.white,
+        surfaceContainerLow: surfaceColor,
+        surfaceContainer: isDark
+            ? GdcColors.slate.withValues(alpha: 0.5)
+            : GdcColors.mintActiveBackground,
+        surfaceContainerHigh: isDark ? GdcColors.slate : GdcColors.whiteSurface,
+        surfaceContainerHighest:
+            isDark ? const Color(0xFF383C40) : const Color(0xFFE4E9CD),
+        tertiary: successColor,
+        onTertiary: isDark ? GdcColors.midnight : Colors.white,
       ),
       extensions: <ThemeExtension<dynamic>>[
         GdcSemanticColors(
           success: successColor,
           warning: warningColor,
-          info:    infoColor,
+          info: infoColor,
         ),
-        GdcLayoutTheme(
-          cardRadius: 24,
-          sheetRadius: 32,
-          inputRadius: 18,
-          buttonRadius: 20,
+        const GdcLayoutTheme(
+          cardRadius: 16,
+          sheetRadius: 24,
+          inputRadius: 12,
+          buttonRadius: 16,
         ),
       ],
-      textTheme: GoogleFonts.plusJakartaSansTextTheme().copyWith(
-        headlineLarge: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
-        headlineMedium: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
-        titleLarge:     GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: textColor),
-        titleMedium:    GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600, color: primaryColor),
-        titleSmall:     GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: textColor),
-        bodyLarge:      TextStyle(fontSize: 13, color: textColor),
-        bodyMedium:     TextStyle(fontSize: 12, color: subTextColor),
-        bodySmall:      TextStyle(fontSize: 11, color: subTextColor),
-        labelMedium:    TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.w600),
-        labelSmall:     TextStyle(fontSize: 10, color: subTextColor, fontWeight: FontWeight.w600),
-      ),
+      textTheme: textTheme,
       appBarTheme: AppBarTheme(
         backgroundColor: backgroundColor,
-        centerTitle:     false,
-        elevation:       0,
+        centerTitle: false,
+        elevation: 0,
         scrolledUnderElevation: 1,
-        iconTheme:       IconThemeData(color: textColor),
-        titleTextStyle:  GoogleFonts.plusJakartaSans(
-          color:         textColor,
-          fontSize:      20,
-          fontWeight:    FontWeight.w800,
+        iconTheme: IconThemeData(color: textColor),
+        titleTextStyle: GoogleFonts.plusJakartaSans(
+          color: textColor,
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
           letterSpacing: -0.5,
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color:     surfaceColor,
+        color: surfaceColor,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: borderColor, width: 1),
         ),
       ),
       chipTheme: ChipThemeData(
-        shape:           RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        side:            BorderSide.none,
-        backgroundColor: isDark ? GdcColors.slate : GdcColors.secondaryGreen.withValues(alpha: 0.4),
-        labelStyle:      TextStyle(color: isDark ? Colors.white : GdcColors.deepGreen, fontWeight: FontWeight.w700, fontSize: 11),
-        padding:         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        side: BorderSide(color: borderColor, width: 1),
+        backgroundColor: isDark ? GdcColors.slate : GdcColors.appBackground,
+        selectedColor: isDark ? GdcColors.emeraldPrimary : GdcColors.mintActiveBackground,
+        labelStyle: TextStyle(
+            color: isDark ? Colors.white : GdcColors.mainText,
+            fontWeight: FontWeight.w700,
+            fontSize: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       dividerTheme: DividerThemeData(
         color: borderColor,
@@ -126,55 +190,114 @@ class GdcTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide:   BorderSide(color: borderColor),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: borderColor),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide:   BorderSide(color: borderColor),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: borderColor),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide:   BorderSide(color: secondaryColor, width: 2),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: primaryColor, width: 2),
         ),
-        filled:          true,
-        fillColor:       isDark ? GdcColors.midnight : GdcColors.paper,
-        contentPadding:  const EdgeInsets.all(20),
-        hintStyle:       TextStyle(color: subTextColor.withValues(alpha: 0.4)),
-        labelStyle:      TextStyle(color: subTextColor),
+        filled: true,
+        fillColor: isDark ? GdcColors.midnight : GdcColors.whiteSurface,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        hintStyle:
+            TextStyle(color: subTextColor.withValues(alpha: 0.6), fontSize: 13),
+        labelStyle: TextStyle(color: subTextColor, fontSize: 13),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
-          foregroundColor: isDark ? GdcColors.midnight : GdcColors.backgroundCream,
-          minimumSize:     const Size.fromHeight(58),
-          shape:           RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          elevation:       0,
-          textStyle:       const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          foregroundColor: Colors.white,
+          minimumSize: const Size(120, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: primaryColor,
-          side: BorderSide(color: primaryColor),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          minimumSize: const Size.fromHeight(58),
+          side: BorderSide(color: primaryColor, width: 1.5),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          minimumSize: const Size(120, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(120, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: const Size(48, 48),
+        ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: surfaceColor,
+        indicatorColor: GdcColors.mintActiveBackground,
+        selectedIconTheme: IconThemeData(color: GdcColors.darkEmerald, size: 22),
+        unselectedIconTheme: IconThemeData(color: subTextColor, size: 20),
+        selectedLabelTextStyle: TextStyle(
+          color: GdcColors.darkEmerald,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+        ),
+        unselectedLabelTextStyle: TextStyle(
+          color: subTextColor,
+          fontSize: 10,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surfaceColor,
-        indicatorColor:  secondaryColor.withValues(alpha: 0.2),
+        indicatorColor: GdcColors.mintActiveBackground,
         iconTheme: WidgetStateProperty.resolveWith((states) {
-           if (states.contains(WidgetState.selected)) {
-            return IconThemeData(color: primaryColor);
+          if (states.contains(WidgetState.selected)) {
+            return const IconThemeData(color: GdcColors.darkEmerald);
           }
           return IconThemeData(color: subTextColor);
         }),
-        labelTextStyle:  WidgetStateProperty.resolveWith((states) {
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: primaryColor);
+            return const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w800, color: GdcColors.darkEmerald);
           }
-          return TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: subTextColor);
+          return TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w600, color: subTextColor);
+        }),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surfaceColor,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.white;
+          }
+          return subTextColor;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return primaryColor;
+          }
+          return borderColor;
         }),
       ),
     );
@@ -213,18 +336,22 @@ class GdcSemanticColors extends ThemeExtension<GdcSemanticColors> {
 }
 
 extension GdcSemanticColorsExtension on ThemeData {
-  GdcSemanticColors get semantic => extension<GdcSemanticColors>() ?? const GdcSemanticColors(
-    success: Colors.green,
-    warning: Colors.orange,
-    info: Colors.blue,
-  );
+  GdcSemanticColors get semantic =>
+      extension<GdcSemanticColors>() ??
+      const GdcSemanticColors(
+        success: Colors.green,
+        warning: Colors.orange,
+        info: Colors.blue,
+      );
 
-  GdcLayoutTheme get layout => extension<GdcLayoutTheme>() ?? const GdcLayoutTheme(
-    cardRadius: 24,
-    sheetRadius: 32,
-    inputRadius: 18,
-    buttonRadius: 20,
-  );
+  GdcLayoutTheme get layout =>
+      extension<GdcLayoutTheme>() ??
+      const GdcLayoutTheme(
+        cardRadius: 16,
+        sheetRadius: 24,
+        inputRadius: 12,
+        buttonRadius: 16,
+      );
 }
 
 class GdcLayoutTheme extends ThemeExtension<GdcLayoutTheme> {
@@ -241,7 +368,11 @@ class GdcLayoutTheme extends ThemeExtension<GdcLayoutTheme> {
   });
 
   @override
-  GdcLayoutTheme copyWith({double? cardRadius, double? sheetRadius, double? inputRadius, double? buttonRadius}) {
+  GdcLayoutTheme copyWith(
+      {double? cardRadius,
+      double? sheetRadius,
+      double? inputRadius,
+      double? buttonRadius}) {
     return GdcLayoutTheme(
       cardRadius: cardRadius ?? this.cardRadius,
       sheetRadius: sheetRadius ?? this.sheetRadius,
@@ -254,10 +385,10 @@ class GdcLayoutTheme extends ThemeExtension<GdcLayoutTheme> {
   GdcLayoutTheme lerp(ThemeExtension<GdcLayoutTheme>? other, double t) {
     if (other is! GdcLayoutTheme) return this;
     return GdcLayoutTheme(
-      cardRadius:   lerpDouble(cardRadius, other.cardRadius, t)!,
-      sheetRadius:  lerpDouble(sheetRadius, other.sheetRadius, t)!,
-      inputRadius:  lerpDouble(inputRadius, other.inputRadius, t)!,
-      buttonRadius: lerpDouble(buttonRadius, other.buttonRadius, t)!,
+      cardRadius: lerpDouble(cardRadius, other.cardRadius, t),
+      sheetRadius: lerpDouble(sheetRadius, other.sheetRadius, t),
+      inputRadius: lerpDouble(inputRadius, other.inputRadius, t),
+      buttonRadius: lerpDouble(buttonRadius, other.buttonRadius, t),
     );
   }
 
@@ -267,26 +398,49 @@ class GdcLayoutTheme extends ThemeExtension<GdcLayoutTheme> {
 class BrandStyling {
   static TextStyle getStyle(String? brand, {double fontSize = 14}) {
     if (brand == null || brand.isEmpty) {
-      return TextStyle(fontWeight: FontWeight.w900, color: GdcColors.deepGreen, fontSize: fontSize);
+      return TextStyle(
+          fontWeight: FontWeight.w900,
+          color: GdcColors.mainText,
+          fontSize: fontSize);
     }
-    
+
     final b = brand.toLowerCase();
     if (b.contains('coca-cola') || b.contains('coke')) {
-      return GoogleFonts.lobster(color: const Color(0xFFF40009), fontWeight: FontWeight.bold, fontSize: fontSize);
+      return GoogleFonts.lobster(
+          color: const Color(0xFFF40009),
+          fontWeight: FontWeight.bold,
+          fontSize: fontSize);
     } else if (b.contains('pepsi')) {
-      return GoogleFonts.bebasNeue(color: const Color(0xFF004B93), fontSize: fontSize);
+      return GoogleFonts.bebasNeue(
+          color: const Color(0xFF004B93), fontSize: fontSize);
     } else if (b.contains('nestle') || b.contains('nescafe')) {
-      return GoogleFonts.merriweather(color: const Color(0xFF6B4226), fontWeight: FontWeight.w900, fontSize: fontSize);
+      return GoogleFonts.merriweather(
+          color: const Color(0xFF6B4226),
+          fontWeight: FontWeight.w900,
+          fontSize: fontSize);
     } else if (b.contains('unilever')) {
-      return GoogleFonts.comfortaa(color: const Color(0xFF1F36C7), fontWeight: FontWeight.bold, fontSize: fontSize);
+      return GoogleFonts.comfortaa(
+          color: const Color(0xFF1F36C7),
+          fontWeight: FontWeight.bold,
+          fontSize: fontSize);
     } else if (b.contains('san miguel')) {
-      return GoogleFonts.playfairDisplay(color: const Color(0xFF8B4513), fontWeight: FontWeight.w900, fontSize: fontSize);
+      return GoogleFonts.playfairDisplay(
+          color: const Color(0xFF8B4513),
+          fontWeight: FontWeight.w900,
+          fontSize: fontSize);
     } else if (b.contains('lucky me')) {
-      return GoogleFonts.fredoka(color: const Color(0xFFFF8C00), fontWeight: FontWeight.bold, fontSize: fontSize);
+      return GoogleFonts.fredoka(
+          color: const Color(0xFFFF8C00),
+          fontWeight: FontWeight.bold,
+          fontSize: fontSize);
     } else if (b.contains('jack') && b.contains('jill')) {
-       return GoogleFonts.bubblegumSans(color: Colors.red.shade800, fontSize: fontSize);
+      return GoogleFonts.bubblegumSans(
+          color: Colors.red.shade800, fontSize: fontSize);
     }
-    
-    return TextStyle(fontWeight: FontWeight.w900, color: GdcColors.deepGreen, fontSize: fontSize);
+
+    return TextStyle(
+        fontWeight: FontWeight.w900,
+        color: GdcColors.mainText,
+        fontSize: fontSize);
   }
 }

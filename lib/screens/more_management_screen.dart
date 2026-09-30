@@ -1,8 +1,8 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/printer_provider.dart';
@@ -10,21 +10,36 @@ import '../config/theme.dart';
 import '../utils/totp.dart';
 import 'user_management_screen.dart';
 import 'supplier_management_screen.dart';
-import 'loss_management_screen.dart';
+import 'shift_screen.dart';
 import 'reports_screen.dart';
-import 'bundle_management_screen.dart';
-import 'category_management_screen.dart';
+import 'category_bundle_management_screen.dart';
 import 'sales_history_screen.dart';
-import 'refund_requests_screen.dart';
+import 'inventory_records_screen.dart';
+import 'admin_app.dart';
+import '../widgets/responsive_layout.dart';
 
 class MoreManagementScreen extends StatelessWidget {
-  const MoreManagementScreen({super.key});
+  final void Function(AppTab)? onNavigateToTab;
+
+  const MoreManagementScreen({
+    super.key,
+    this.onNavigateToTab,
+  });
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AppAuthProvider>();
+    final user = auth.currentUser;
+    final rawEmail = user?.email ?? 'Maria Reyes';
+    final name = (user?.displayName != null && user!.displayName!.isNotEmpty)
+        ? user.displayName!
+        : (rawEmail.contains('@') ? rawEmail.split('@').first : rawEmail);
+    final initials = name.length >= 2
+        ? name.substring(0, 2).toUpperCase()
+        : (name.isNotEmpty ? name[0].toUpperCase() : 'MR');
+
     final bool isAdmin = auth.role == UserRole.admin;
-    final bool isInv   = auth.role == UserRole.inventoryManager;
+    final bool isInv = auth.role == UserRole.inventoryManager;
     final bool isCashier = auth.role == UserRole.cashier;
 
     final semantic = Theme.of(context).semantic;
@@ -35,158 +50,744 @@ class MoreManagementScreen extends StatelessWidget {
         top: false,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Store Management',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              if (isAdmin) ...[
-                _menuItem(
-                  context,
-                  icon: Icons.manage_accounts_outlined,
-                  title: 'Staff & Roles',
-                  subtitle: 'Manage cashier permissions & history',
-                  color: semantic.info,
-                  target: const UserManagementScreen(),
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, MediaQuery.of(context).padding.bottom + 96),
+          child: MaxWidthWrapper(
+            maxWidth: 1000.0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Store Management Header Row
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'GDC SARI-SARI STORE',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withValues(alpha: 0.7),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Store Management',
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Top Right User Card Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: const Color(0xFFDBEAFE),
+                            child: Text(
+                              initials,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF1D4ED8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD1FAE5),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              _getRoleLabel(auth.role),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF059669),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-              ],
-              if (isAdmin || isInv) ...[
-                _menuItem(
+                const SizedBox(height: 28),
+
+                // 1. Operational Tools
+                _sectionHeader(
                   context,
-                  icon: Icons.local_shipping_outlined,
-                  title: 'Suppliers',
-                  subtitle: 'Manage delivery contacts and restocks',
-                  color: semantic.success,
-                  target: const SupplierManagementScreen(),
+                  title: 'Operational tools',
+                  subtitle: 'Daily store activity',
                 ),
-                const SizedBox(height: 12),
-                _menuItem(
+                _menuItemCard(
                   context,
-                  icon: Icons.category_outlined,
-                  title: 'Categories',
-                  subtitle: 'Manage master category list',
-                  color: Colors.blue.shade700,
-                  target: const CategoryManagementScreen(),
+                  icon: Icons.access_time_rounded,
+                  iconBg: const Color(0xFFE6F7F2),
+                  iconColor: GdcColors.darkEmerald,
+                  title: 'Shift & Cash Register',
+                  subtitle: 'X/Z readings, cash drops & opening float',
+                  onTap: () {
+                    if (onNavigateToTab != null) {
+                      onNavigateToTab!(AppTab.shift);
+                    } else {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ShiftScreen()));
+                    }
+                  },
                 ),
-                const SizedBox(height: 12),
-                _menuItem(
-                  context,
-                  icon: Icons.auto_awesome_motion_rounded,
-                  title: 'Cooking Bundles',
-                  subtitle: 'Group items into recipe sets',
-                  color: Colors.orange.shade700,
-                  target: const BundleManagementScreen(),
-                ),
-                const SizedBox(height: 12),
-                _menuItem(
-                  context,
-                  icon: Icons.delete_sweep_outlined,
-                  title: 'Loss & Waste',
-                  subtitle: 'View expired or damaged items',
-                  color: semantic.warning,
-                  target: const LossManagementScreen(),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (isAdmin) ...[
-                _menuItem(
-                  context,
-                  icon: Icons.analytics_outlined,
-                  title: 'Monthly Reports',
-                  subtitle: 'Sales, expenses, and net profit',
-                  color: Colors.purple.withValues(alpha: 0.7),
-                  target: const ReportsScreen(),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (isAdmin || isCashier) ...[
-                _menuItem(
-                  context,
-                  icon: Icons.history_rounded,
-                  title: 'Sales History',
-                  subtitle: 'View past store transactions',
-                  color: Colors.blueGrey,
-                  target: const SalesHistoryScreen(),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (isAdmin) ...[
-                _menuItem(
-                  context,
-                  icon: Icons.assignment_return_rounded,
-                  title: 'Refund Requests',
-                  subtitle: 'Manage online refund claims',
-                  color: Theme.of(context).colorScheme.error,
-                  target: const RefundRequestsScreen(),
-                ),
-                const SizedBox(height: 12),
-              ],
-              Card(
-                child: SwitchListTile(
-                  title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Soothing for nighttime use'),
-                  secondary: Icon(
-                    context.watch<ThemeProvider>().isDarkMode ? Icons.dark_mode : Icons.light_mode,
-                    color: GdcColors.secondaryGreen,
+                if (isAdmin || isCashier) ...[
+                  _menuItemCard(
+                    context,
+                    icon: Icons.access_time_rounded,
+                    iconBg: const Color(0xFFF1F5F9),
+                    iconColor: const Color(0xFF475569),
+                    title: 'Sales History',
+                    subtitle: 'View & search past transactions',
+                    onTap: () {
+                      if (onNavigateToTab != null) {
+                        onNavigateToTab!(AppTab.salesHistory);
+                      } else {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const SalesHistoryScreen()));
+                      }
+                    },
                   ),
-                  value: context.watch<ThemeProvider>().isDarkMode,
-                  onChanged: (v) => context.read<ThemeProvider>().toggleTheme(v),
+                ],
+                const SizedBox(height: 24),
+
+                // 2. Inventory & Supply Chain
+                if (isAdmin || isInv) ...[
+                  _sectionHeader(
+                    context,
+                    title: 'Inventory & supply chain',
+                    subtitle: 'Products, deliveries and partners',
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.article_outlined,
+                    iconBg: const Color(0xFFE6F7F2),
+                    iconColor: GdcColors.darkEmerald,
+                    title: 'Inventory Records & Logs',
+                    subtitle:
+                        'Delivery logs, batch expiry & stock adjustments',
+                    onTap: () {
+                      if (onNavigateToTab != null) {
+                        onNavigateToTab!(AppTab.inventoryRecords);
+                      } else {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const InventoryRecordsScreen()));
+                      }
+                    },
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.local_shipping_outlined,
+                    iconBg: const Color(0xFFF1F5F9),
+                    iconColor: const Color(0xFF475569),
+                    title: 'Suppliers',
+                    subtitle: 'Contact directory and restock histories',
+                    onTap: () {
+                      if (onNavigateToTab != null) {
+                        onNavigateToTab!(AppTab.suppliers);
+                      } else {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const SupplierManagementScreen()));
+                      }
+                    },
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.inventory_2_outlined,
+                    iconBg: const Color(0xFFFFEDD5),
+                    iconColor: const Color(0xFFEA580C),
+                    title: 'Categories & Cooking Bundles',
+                    subtitle: 'Master categories and meal bundle sets',
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                const CategoryBundleManagementScreen())),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+
+                // 3. Administration & Finance
+                if (isAdmin) ...[
+                  _sectionHeader(
+                    context,
+                    title: 'Administration & Finance',
+                    subtitle: 'Roles, permissions & reports',
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.manage_accounts_outlined,
+                    iconBg: const Color(0xFFF3E8FF),
+                    iconColor: GdcColors.violetAccent,
+                    title: 'Staff & Roles',
+                    subtitle: 'Manage staff accounts, PINs & permissions',
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const UserManagementScreen())),
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.analytics_outlined,
+                    iconBg: const Color(0xFFFCE7F3),
+                    iconColor: Colors.purple.shade700,
+                    title: 'Financial & Loss Reports',
+                    subtitle:
+                        'Sales, net profit, expenses & stock loss tracking',
+                    onTap: () {
+                      if (onNavigateToTab != null) {
+                        onNavigateToTab!(AppTab.reports);
+                      } else {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const ReportsScreen()));
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                ],
+
+                // 4. App Preferences & Tools
+                _sectionTitle(context, 'App Preferences & Tools'),
+                Card(
+                  child: SwitchListTile(
+                    title: const Text('Dark Mode',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text(
+                        'Soothing dark palette for nighttime use',
+                        style: TextStyle(fontSize: 12)),
+                    secondary: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: GdcColors.darkEmerald.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        context.watch<ThemeProvider>().isDarkMode
+                            ? Icons.dark_mode
+                            : Icons.light_mode,
+                        color: GdcColors.darkEmerald,
+                      ),
+                    ),
+                    value: context.watch<ThemeProvider>().isDarkMode,
+                    onChanged: (v) =>
+                        context.read<ThemeProvider>().toggleTheme(v),
+                  ),
                 ),
-              ),
-              const Divider(height: 32),
-              const _AccountSecuritySection(),
-              const SizedBox(height: 16),
-              const _AdminProfileSection(),
-              const SizedBox(height: 16),
-              const _PrinterToolsSection(),
-              const SizedBox(height: 32),
-            ],
+                const SizedBox(height: 16),
+                const _AccountSecuritySection(),
+                const SizedBox(height: 16),
+                const _MyStaffAccountSection(),
+                const SizedBox(height: 16),
+                const _PrinterToolsSection(),
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _menuItem(BuildContext context, {
-    required IconData icon, 
-    required String title, 
-    required String subtitle, 
-    required Color color,
-    required Widget target
+  Widget _sectionTitle(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
+                  .withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuItemCard(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.4),
+          width: 1,
+        ),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         leading: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
+            color: iconBg,
+            shape: BoxShape.circle,
           ),
-          child: Icon(icon, color: color, size: 24),
+          child: Icon(icon, color: iconColor, size: 22),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-        subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500)),
-        trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => target)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: Theme.of(context)
+              .colorScheme
+              .onSurfaceVariant
+              .withValues(alpha: 0.5),
+          size: 20,
+        ),
+        onTap: onTap,
       ),
+    );
+  }
+
+  String _getRoleLabel(UserRole role) => switch (role) {
+        UserRole.admin => 'Admin',
+        UserRole.inventoryManager => 'Inv Manager',
+        UserRole.cashier => 'Cashier',
+        UserRole.none => 'Guest',
+      };
+
+  Color _getRoleColor(UserRole role, BuildContext context) {
+    return switch (role) {
+      UserRole.admin => GdcColors.violetAccent,
+      UserRole.inventoryManager => Colors.blue.shade600,
+      UserRole.cashier => GdcColors.emeraldPrimary,
+      UserRole.none => Theme.of(context).disabledColor,
+    };
+  }
+}
+
+// ── Account Security (Google Authenticator 2FA) ─────────────────────────────
+
+class _AccountSecuritySection extends StatefulWidget {
+  const _AccountSecuritySection();
+
+  @override
+  State<_AccountSecuritySection> createState() =>
+      _AccountSecuritySectionState();
+}
+
+class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
+  bool _isKeyVisible = false;
+
+  Future<void> _launchAuthenticatorApp(
+      BuildContext context, AppAuthProvider auth) async {
+    if (!auth.isTotpLinked) {
+      final uri = auth.totpUri;
+      try {
+        final launched =
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (launched) {
+          auth.markTotpLinked();
+        } else if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text(
+                    'Could not open Authenticator app. Please copy secret key manually.')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text(
+                    'Authenticator app not found. Please copy secret key or install Google Authenticator.')),
+          );
+        }
+      }
+    } else {
+      final directUris = [
+        Uri.parse('android-app://com.google.android.apps.authenticator2'),
+        Uri.parse(
+            'intent://#Intent;package=com.google.android.apps.authenticator2;end'),
+      ];
+
+      bool launched = false;
+      for (final uri in directUris) {
+        try {
+          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (launched) break;
+        } catch (_) {}
+      }
+
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('Please open Google Authenticator on your device.')),
+        );
+      }
+    }
+  }
+
+  void _showSetupDialog(BuildContext context, AppAuthProvider auth) {
+    final readableSecret = TotpUtils.formatSecretReadable(auth.totpSecret);
+
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.security_rounded, color: Colors.blue),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Google Authenticator Setup',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'Zero-typing setup: Tap below to automatically link your key to Google Authenticator:',
+                  style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _launchAuthenticatorApp(context, auth),
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('OPEN AUTHENTICATOR APP',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('Manual Setup Option:',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey)),
+              const SizedBox(height: 4),
+              const Text('Account Name: GDC Admin',
+                  style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 4),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        readableSecret,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                            letterSpacing: 1),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded,
+                          size: 20, color: Colors.blue),
+                      tooltip: 'Copy Key',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: auth.totpSecret));
+                        auth.markTotpLinked();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Secret key copied to clipboard!')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AppAuthProvider>();
+    final readableSecret = TotpUtils.formatSecretReadable(auth.totpSecret);
+    const maskedSecret = "•••• •••• •••• ••••";
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'Account Security (Google Authenticator 2FA)',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  value: auth.totpEnabled,
+                  onChanged: (val) => auth.setTotpEnabled(val),
+                  title: const Text('Require 6-Digit Code on Login',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  subtitle: Text(
+                    auth.totpEnabled
+                        ? '6-digit Google Authenticator 2FA is currently active.'
+                        : '6-digit Google Authenticator 2FA is turned off.',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: auth.totpEnabled
+                            ? Colors.green.shade700
+                            : Colors.red.shade700),
+                  ),
+                  secondary: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (auth.totpEnabled ? Colors.blue : Colors.grey)
+                          .withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      auth.totpEnabled
+                          ? Icons.security_rounded
+                          : Icons.security_outlined,
+                      color: auth.totpEnabled ? Colors.blue : Colors.grey,
+                    ),
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                const Divider(),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Google Authenticator TOTP Key',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12)),
+                          const SizedBox(height: 2),
+                          Text(
+                            _isKeyVisible ? readableSecret : maskedSecret,
+                            style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                                letterSpacing: 0.8),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                          _isKeyVisible
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: Colors.blue,
+                          size: 20),
+                      tooltip: _isKeyVisible ? 'Mask Key' : 'Show Key',
+                      onPressed: () =>
+                          setState(() => _isKeyVisible = !_isKeyVisible),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.qr_code_2_rounded,
+                          color: Colors.blue, size: 20),
+                      tooltip: 'QR / Setup Instructions',
+                      onPressed: () => _showSetupDialog(context, auth),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _launchAuthenticatorApp(context, auth),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('OPEN AUTHENTICATOR APP',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 10, horizontal: 8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: OutlinedButton(
+                        onPressed: () => _showSetupDialog(context, auth),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 10, horizontal: 8),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('SETUP KEY',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _AccountSecuritySection extends StatelessWidget {
-  const _AccountSecuritySection();
+// ── My Staff Account Section ────────────────────────────────────────────────
+
+class _MyStaffAccountSection extends StatelessWidget {
+  const _MyStaffAccountSection();
 
   void _showChangePasswordDialog(BuildContext context) {
     showDialog(
@@ -198,14 +799,21 @@ class _AccountSecuritySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final auth = context.watch<AppAuthProvider>();
+    final user = auth.currentUser;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text('My Staff Account', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'My Staff Account',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
         ),
         Card(
           child: Column(
@@ -217,13 +825,16 @@ class _AccountSecuritySection extends StatelessWidget {
                     color: Colors.blue.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.account_circle_outlined, color: Colors.blue),
+                  child: const Icon(Icons.account_circle_outlined,
+                      color: Colors.blue),
                 ),
                 title: Text(
                   user?.email ?? 'Staff Account',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
                 ),
-                subtitle: const Text('Currently logged in staff account', style: TextStyle(fontSize: 12)),
+                subtitle: const Text('Currently logged in staff account',
+                    style: TextStyle(fontSize: 11)),
               ),
               const Divider(height: 1, indent: 16, endIndent: 16),
               ListTile(
@@ -233,14 +844,15 @@ class _AccountSecuritySection extends StatelessWidget {
                     color: Colors.orange.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.lock_reset_rounded, color: Colors.orange),
+                  child: const Icon(Icons.lock_reset_rounded,
+                      color: Colors.orange),
                 ),
-                title: const Text('Change Password', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Update your login password', style: TextStyle(fontSize: 12)),
-                trailing: IconButton.filledTonal(
-                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                  onPressed: () => _showChangePasswordDialog(context),
-                ),
+                title: const Text('Change Password',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: const Text('Update your login password',
+                    style: TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                 onTap: () => _showChangePasswordDialog(context),
               ),
             ],
@@ -260,11 +872,11 @@ class _ChangePasswordDialog extends StatefulWidget {
 
 class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
   final _currentPassCtrl = TextEditingController();
-  final _newPassCtrl     = TextEditingController();
+  final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
 
   bool _obscureCurrent = true;
-  bool _obscureNew     = true;
+  bool _obscureNew = true;
   bool _obscureConfirm = true;
 
   bool _loading = false;
@@ -280,7 +892,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
   Future<void> _submit() async {
     final currentPass = _currentPassCtrl.text.trim();
-    final newPass     = _newPassCtrl.text.trim();
+    final newPass = _newPassCtrl.text.trim();
     final confirmPass = _confirmPassCtrl.text.trim();
 
     if (currentPass.isEmpty) {
@@ -334,9 +946,12 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
         setState(() {
           _loading = false;
           _error = switch (e.code) {
-            'wrong-password' || 'invalid-credential' => 'Current password is incorrect.',
+            'wrong-password' ||
+            'invalid-credential' =>
+              'Current password is incorrect.',
             'weak-password' => 'New password is too weak.',
-            'requires-recent-login' => 'Please log out and log in again to change password.',
+            'requires-recent-login' =>
+              'Please log out and log in again to change password.',
             _ => e.message ?? 'Failed to update password.',
           };
         });
@@ -360,7 +975,8 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
         children: [
           Icon(Icons.lock_reset_rounded, color: Colors.blue),
           SizedBox(width: 8),
-          Text('Change Password', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          Text('Change Password',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ],
       ),
       content: SizedBox(
@@ -372,7 +988,10 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
             children: [
               Text(
                 'Logged in as: ${user?.email ?? 'Staff Account'}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -384,8 +1003,11 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                   prefixIcon: const Icon(Icons.lock_outline),
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscureCurrent ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
+                    icon: Icon(_obscureCurrent
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureCurrent = !_obscureCurrent),
                   ),
                 ),
               ),
@@ -399,7 +1021,8 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                   prefixIcon: const Icon(Icons.lock_clock_outlined),
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscureNew ? Icons.visibility_off : Icons.visibility),
+                    icon: Icon(
+                        _obscureNew ? Icons.visibility_off : Icons.visibility),
                     onPressed: () => setState(() => _obscureNew = !_obscureNew),
                   ),
                 ),
@@ -414,8 +1037,11 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                   prefixIcon: const Icon(Icons.check_circle_outline),
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                    icon: Icon(_obscureConfirm
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
               ),
@@ -423,7 +1049,10 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                 const SizedBox(height: 12),
                 Text(
                   _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold),
                 ),
               ],
             ],
@@ -437,19 +1066,34 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
         ),
         ElevatedButton(
           onPressed: _loading ? null : _submit,
-          child: _loading 
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : const Text('UPDATE PASSWORD'),
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('UPDATE PASSWORD'),
         ),
       ],
     );
   }
 }
 
-class _PrinterToolsSection extends StatelessWidget {
+// ── Bluetooth ESC/POS Printer Section ────────────────────────────────────────
+
+class _PrinterToolsSection extends StatefulWidget {
   const _PrinterToolsSection();
 
-  static void showPrinterDialog(BuildContext context, PrinterProvider printer) async {
+  @override
+  State<_PrinterToolsSection> createState() => _PrinterToolsSectionState();
+}
+
+class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
+  String _paperWidth = '58mm';
+  bool _autoPrint = true;
+
+  static void showPrinterDialog(
+      BuildContext context, PrinterProvider printer) async {
     final devices = await printer.getDevices();
 
     if (context.mounted) {
@@ -457,22 +1101,26 @@ class _PrinterToolsSection extends StatelessWidget {
         context: context,
         useRootNavigator: true,
         builder: (ctx) => AlertDialog(
-          title: const Text('Bluetooth Printer'),
+          title: const Text('Bluetooth Thermal Printer'),
           content: SizedBox(
             width: double.maxFinite,
             child: devices.isEmpty
-                ? const Text('No paired bluetooth devices found. Please pair your thermal printer in your device Bluetooth settings first.')
+                ? const Text(
+                    'No paired bluetooth devices found. Please pair your thermal printer in your device Bluetooth settings first.')
                 : ListView.builder(
                     shrinkWrap: true,
                     itemCount: devices.length,
                     itemBuilder: (context, i) {
                       final d = devices[i];
                       return ListTile(
-                        leading: const Icon(Icons.bluetooth_rounded, color: Colors.blue),
+                        leading: const Icon(Icons.bluetooth_rounded,
+                            color: Colors.blue),
                         title: Text(d.name.isEmpty ? 'Unknown Device' : d.name),
                         subtitle: Text(d.macAdress),
-                        trailing: printer.device?.macAdress == d.macAdress && printer.connected
-                            ? Icon(Icons.check_circle, color: Theme.of(context).semantic.success)
+                        trailing: printer.device?.macAdress == d.macAdress &&
+                                printer.connected
+                            ? Icon(Icons.check_circle,
+                                color: Theme.of(context).semantic.success)
                             : null,
                         onTap: () {
                           printer.connect(d);
@@ -493,7 +1141,9 @@ class _PrinterToolsSection extends StatelessWidget {
                   printer.disconnect();
                   Navigator.pop(ctx);
                 },
-                child: Text('Disconnect', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                child: Text('Disconnect',
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
           ],
         ),
@@ -509,9 +1159,15 @@ class _PrinterToolsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text('Printer Tools', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'Bluetooth ESC/POS Printer',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
         ),
         Card(
           child: Column(
@@ -520,47 +1176,111 @@ class _PrinterToolsSection extends StatelessWidget {
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: (printer.connected ? Colors.blue : Colors.grey).withValues(alpha: 0.1),
+                    color: (printer.connected ? Colors.blue : Colors.grey)
+                        .withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    printer.connected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_disabled_rounded,
+                    printer.connected
+                        ? Icons.bluetooth_connected_rounded
+                        : Icons.bluetooth_disabled_rounded,
                     color: printer.connected ? Colors.blue : Colors.grey,
                   ),
                 ),
                 title: Text(
                   printer.connected
-                      ? (printer.device?.name.isNotEmpty == true ? printer.device!.name : 'Bluetooth Printer')
-                      : 'Bluetooth Printer',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                      ? (printer.device?.name.isNotEmpty == true
+                          ? printer.device!.name
+                          : 'Thermal Printer')
+                      : 'Bluetooth Thermal Printer',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 subtitle: Text(
                   printer.connected
                       ? 'Connected (${printer.device?.macAdress ?? ''})'
-                      : 'Tap to connect paired bluetooth printer',
-                  style: const TextStyle(fontSize: 12),
+                      : 'Tap to connect paired thermal printer',
+                  style: const TextStyle(fontSize: 11),
                 ),
                 trailing: printer.isConnecting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : IconButton.filledTonal(
-                        icon: Icon(
-                          printer.connected ? Icons.settings_rounded : Icons.bluetooth_searching_rounded,
-                          size: 20,
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color:
+                              (printer.connected ? Colors.green : Colors.grey)
+                                  .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        tooltip: printer.connected ? 'Manage' : 'Connect',
-                        onPressed: () => showPrinterDialog(context, printer),
+                        child: Text(
+                          printer.connected ? 'PAIRED' : 'DISCONNECTED',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: printer.connected
+                                ? Colors.green.shade700
+                                : Colors.grey.shade700,
+                          ),
+                        ),
                       ),
                 onTap: () => showPrinterDialog(context, printer),
               ),
               const Divider(height: 1, indent: 16, endIndent: 16),
               ListTile(
-                leading: Icon(Icons.print_rounded, color: printer.connected ? color : Colors.grey),
-                title: const Text('Test Print', style: TextStyle(fontWeight: FontWeight.bold)),
+                leading: const Icon(Icons.aspect_ratio_rounded,
+                    color: Colors.blueGrey),
+                title: const Text('Paper Width Control',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: Text('Selected width: $_paperWidth',
+                    style: const TextStyle(fontSize: 11)),
+                trailing: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                        value: '58mm',
+                        label: Text('58mm',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold))),
+                    ButtonSegment(
+                        value: '80mm',
+                        label: Text('80mm',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold))),
+                  ],
+                  selected: {_paperWidth},
+                  onSelectionChanged: (val) =>
+                      setState(() => _paperWidth = val.first),
+                ),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              SwitchListTile(
+                title: const Text('Auto-Print After Sale',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: const Text(
+                    'Automatically print receipt upon checkout',
+                    style: TextStyle(fontSize: 11)),
+                secondary:
+                    const Icon(Icons.print_outlined, color: Colors.blueGrey),
+                value: _autoPrint,
+                onChanged: (val) => setState(() => _autoPrint = val),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: Icon(Icons.print_rounded,
+                    color: printer.connected ? color : Colors.grey),
+                title: const Text('Print Test Receipt',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 subtitle: Text(
                   printer.connected
-                      ? 'Send sample test ticket to printer'
+                      ? 'Send sample test receipt to thermal printer'
                       : 'Connect a printer above to test',
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: 11),
                 ),
                 trailing: IconButton.filledTonal(
                   icon: const Icon(Icons.play_arrow_rounded, size: 20),
@@ -571,7 +1291,9 @@ class _PrinterToolsSection extends StatelessWidget {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(success ? "Test print sent!" : "Test print failed."),
+                                content: Text(success
+                                    ? "Test print sent! 🖨️"
+                                    : "Test print failed."),
                               ),
                             );
                           }
@@ -584,7 +1306,9 @@ class _PrinterToolsSection extends StatelessWidget {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(success ? "Test print sent!" : "Test print failed."),
+                              content: Text(success
+                                  ? "Test print sent! 🖨️"
+                                  : "Test print failed."),
                             ),
                           );
                         }
@@ -592,246 +1316,6 @@ class _PrinterToolsSection extends StatelessWidget {
                     : () => showPrinterDialog(context, printer),
               ),
             ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AdminProfileSection extends StatelessWidget {
-  const _AdminProfileSection();
-
-  Future<void> _launchAuthenticatorApp(BuildContext context, AppAuthProvider auth) async {
-    if (!auth.isTotpLinked) {
-      // First time setup: prompt to add token via otpauth://
-      final uri = auth.totpUri;
-      try {
-        final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (launched) {
-          auth.markTotpLinked();
-        } else if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open Authenticator app. Please copy secret key manually.')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authenticator app not found. Please copy secret key or install Google Authenticator.')),
-          );
-        }
-      }
-    } else {
-      // Token already linked: open Google Authenticator app directly without adding token again
-      final directUris = [
-        Uri.parse('android-app://com.google.android.apps.authenticator2'),
-        Uri.parse('intent://#Intent;package=com.google.android.apps.authenticator2;end'),
-      ];
-
-      bool launched = false;
-      for (final uri in directUris) {
-        try {
-          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-          if (launched) break;
-        } catch (_) {}
-      }
-
-      if (!launched && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please open Google Authenticator on your device.')),
-        );
-      }
-    }
-  }
-
-  void _showSetupDialog(BuildContext context, AppAuthProvider auth) {
-    final readableSecret = TotpUtils.formatSecretReadable(auth.totpSecret);
-
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.security_rounded, color: Colors.blue),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Google Authenticator Setup', 
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Zero-typing setup: Tap below to automatically link your key to Google Authenticator:', style: TextStyle(fontSize: 12)),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _launchAuthenticatorApp(context, auth),
-                icon: const Icon(Icons.open_in_new_rounded),
-                label: const Text('OPEN AUTHENTICATOR APP', style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-            const Text('Manual Setup Option:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(height: 4),
-            const Text('Account Name: GDC Admin', style: TextStyle(fontSize: 12)),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      readableSecret,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'monospace', fontSize: 13, letterSpacing: 1),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy_rounded, size: 20, color: Colors.blue),
-                    tooltip: 'Copy Key',
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: auth.totpSecret));
-                      auth.markTotpLinked();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Secret key copied to clipboard!')),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AppAuthProvider>();
-    final readableSecret = TotpUtils.formatSecretReadable(auth.totpSecret);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text('Account Security (Google Authenticator 2FA)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-        ),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SwitchListTile(
-                  value: auth.totpEnabled,
-                  onChanged: (val) => auth.setTotpEnabled(val),
-                  title: const Text('Require 6-Digit Code on Login', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  subtitle: Text(
-                    auth.totpEnabled 
-                        ? '6-digit Google Authenticator 2FA is active.' 
-                        : '6-digit Google Authenticator 2FA is turned off.',
-                    style: TextStyle(fontSize: 11, color: auth.totpEnabled ? Colors.green.shade700 : Colors.red.shade700),
-                  ),
-                  secondary: Icon(
-                    auth.totpEnabled ? Icons.security_rounded : Icons.security_outlined,
-                    color: auth.totpEnabled ? Colors.blue : Colors.grey,
-                  ),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                const Divider(),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.verified_user_rounded, color: Colors.blue),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Google Authenticator TOTP Key', style: TextStyle(fontWeight: FontWeight.bold)),
-                          Text('Secret: $readableSecret', style: const TextStyle(color: Colors.grey, fontSize: 11, fontFamily: 'monospace')),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.qr_code_2_rounded, color: Colors.blue),
-                      tooltip: 'Setup Instructions',
-                      onPressed: () => _showSetupDialog(context, auth),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _launchAuthenticatorApp(context, auth),
-                        icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                        label: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('OPEN AUTHENTICATOR APP', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: OutlinedButton(
-                        onPressed: () => _showSetupDialog(context, auth),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                        ),
-                        child: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('SETUP KEY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
           ),
         ),
       ],

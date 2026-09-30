@@ -8,10 +8,13 @@ abstract class BaseProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isDisposed = false;
 
+  /// Returns true if an asynchronous operation is currently pending.
   bool get isLoading => _isLoading;
+
+  /// Returns true if this provider instance has been disposed.
   bool get isDisposed => _isDisposed;
 
-  /// Sets the loading state and notifies listeners.
+  /// Sets the loading state and notifies listeners if not disposed.
   @protected
   void setLoading(bool val) {
     if (_isDisposed) return;
@@ -19,13 +22,13 @@ abstract class BaseProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Registers a subscription to be cancelled when [dispose] is called.
+  /// Registers a subscription to be automatically cancelled when [dispose] is called.
   @protected
   void registerSubscription(StreamSubscription sub) {
     _subscriptions.add(sub);
   }
 
-  /// Cancels all registered subscriptions.
+  /// Cancels all registered stream subscriptions.
   void cancelSubscriptions() {
     for (var s in _subscriptions) {
       s.cancel();

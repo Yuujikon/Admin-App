@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/supplier.dart';
 import '../providers/inventory_provider.dart';
 import '../utils/format.dart';
+import 'premium_components.dart';
 
 class SupplierSheet extends StatefulWidget {
   final Supplier? supplier;
@@ -42,84 +43,132 @@ class _SupplierSheetState extends State<SupplierSheet> {
   @override
   Widget build(BuildContext context) {
     final inventory = context.read<InventoryProvider>();
-    final existingCategories = inventory.suppliers.map((s) => s.category).toSet().toList()..sort();
+    final existingCategories =
+        inventory.suppliers.map((s) => s.category).toSet().toList()..sort();
 
     return Padding(
       padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 16, right: 16, top: 24),
+          left: 16,
+          right: 16,
+          top: 24),
       child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Text(widget.supplier == null ? 'Add Supplier' : 'Edit Supplier',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                if (widget.supplier != null)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: _confirmDelete,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            TextField(controller: _name, decoration: const InputDecoration(labelText: 'Business Name', prefixIcon: Icon(Icons.business))),
-            const SizedBox(height: 12),
-            TextField(controller: _contact, decoration: const InputDecoration(labelText: 'Contact Person', prefixIcon: Icon(Icons.person_outline))),
-            const SizedBox(height: 12),
-            TextField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone Number', prefixIcon: Icon(Icons.phone_outlined)), keyboardType: TextInputType.phone),
-            const SizedBox(height: 12),
-            TextField(controller: _email, decoration: const InputDecoration(labelText: 'Email Address', prefixIcon: Icon(Icons.email_outlined)), keyboardType: TextInputType.emailAddress),
-            const SizedBox(height: 12),
-            
-            // Category Autocomplete
-            Autocomplete<String>(
-              optionsBuilder: (TextEditingValue value) {
-                if (value.text == '') return existingCategories;
-                return existingCategories.where((c) => c.toLowerCase().contains(value.text.toLowerCase()));
-              },
-              onSelected: (c) => _category.text = c,
-              fieldViewBuilder: (ctx, ctrl, focus, onFieldSubmitted) {
-                if (ctrl.text.isEmpty && _category.text.isNotEmpty) ctrl.text = _category.text;
-                return TextField(
-                  controller: ctrl,
-                  focusNode: focus,
-                  decoration: const InputDecoration(labelText: 'Category', prefixIcon: Icon(Icons.category_outlined)),
-                  onChanged: (v) => _category.text = v,
-                );
-              },
-            ),
-            
-            const SizedBox(height: 16),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
+        child: MaxWidthContainer(
+          maxWidth: MaxWidthContainer.formMaxWidth,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  Text(widget.supplier == null ? 'Add Supplier' : 'Edit Supplier',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  if (widget.supplier != null)
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: _confirmDelete,
+                    ),
+                ],
               ),
-              child: SwitchListTile(
-                title: const Text('Auto-Notify Low Stock', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                subtitle: const Text('Sends internal alert when items are low', style: TextStyle(fontSize: 12)),
-                value: _autoNotify,
-                onChanged: (v) => setState(() => _autoNotify = v),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: TextField(
+                    controller: _name,
+                    decoration: const InputDecoration(
+                        labelText: 'Business Name',
+                        prefixIcon: Icon(Icons.business))),
               ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextField(
+                    controller: _contact,
+                    decoration: const InputDecoration(
+                        labelText: 'Contact Person',
+                        prefixIcon: Icon(Icons.person_outline))),
               ),
-              child: _saving 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
-                : const Text('SAVE SUPPLIER', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 32),
-          ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextField(
+                    controller: _phone,
+                    decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                        prefixIcon: Icon(Icons.phone_outlined)),
+                    keyboardType: TextInputType.phone),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextField(
+                    controller: _email,
+                    decoration: const InputDecoration(
+                        labelText: 'Email Address',
+                        prefixIcon: Icon(Icons.email_outlined)),
+                    keyboardType: TextInputType.emailAddress),
+              ),
+              const SizedBox(height: 12),
+
+              // Category Autocomplete
+              SizedBox(
+                width: double.infinity,
+                child: Autocomplete<String>(
+                  optionsBuilder: (TextEditingValue value) {
+                    if (value.text == '') return existingCategories;
+                    return existingCategories.where(
+                        (c) => c.toLowerCase().contains(value.text.toLowerCase()));
+                  },
+                  onSelected: (c) => _category.text = c,
+                  fieldViewBuilder: (ctx, ctrl, focus, onFieldSubmitted) {
+                    if (ctrl.text.isEmpty && _category.text.isNotEmpty)
+                      ctrl.text = _category.text;
+                    return TextField(
+                      controller: ctrl,
+                      focusNode: focus,
+                      decoration: const InputDecoration(
+                          labelText: 'Category',
+                          prefixIcon: Icon(Icons.category_outlined)),
+                      onChanged: (v) => _category.text = v,
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: SwitchListTile(
+                  title: const Text('Auto-Notify Low Stock',
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Sends internal alert when items are low',
+                      style: TextStyle(fontSize: 12)),
+                  value: _autoNotify,
+                  onChanged: (v) => setState(() => _autoNotify = v),
+                ),
+              ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                onPressed: _saving ? null : _save,
+                isLoading: _saving,
+                minWidth: 200,
+                maxWidth: 350,
+                child: const Text('SAVE SUPPLIER',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );
@@ -131,22 +180,27 @@ class _SupplierSheetState extends State<SupplierSheet> {
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Supplier?'),
-        content: const Text('This will permanently remove this supplier and its contact info.'),
+        content: const Text(
+            'This will permanently remove this supplier and its contact info.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
               final scaffoldMessenger = ScaffoldMessenger.of(context);
               final navigator = Navigator.of(context);
-              
+
               try {
-                await context.read<InventoryProvider>().deleteSupplier(widget.supplier!.id);
+                await context
+                    .read<InventoryProvider>()
+                    .deleteSupplier(widget.supplier!.id);
                 if (ctx.mounted) Navigator.pop(ctx); // Close Dialog
                 navigator.pop(); // Close Sheet
                 navigator.pop(); // Close Detail Screen if open
               } catch (e) {
                 if (ctx.mounted) Navigator.pop(ctx);
-                scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+                scaffoldMessenger
+                    .showSnackBar(SnackBar(content: Text('Error: $e')));
               }
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),

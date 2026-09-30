@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -25,7 +24,8 @@ class _QtyControlState extends State<QtyControl> {
   late TextEditingController _ctrl;
   late FocusNode _focusNode;
 
-  int get _maxVal => (widget.max != null && widget.max! >= 1) ? widget.max! : 9999;
+  int get _maxVal =>
+      (widget.max != null && widget.max! >= 1) ? widget.max! : 9999;
 
   @override
   void initState() {
@@ -46,7 +46,8 @@ class _QtyControlState extends State<QtyControl> {
   @override
   void didUpdateWidget(QtyControl oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_focusNode.hasFocus && (oldWidget.qty != widget.qty || oldWidget.max != widget.max)) {
+    if (!_focusNode.hasFocus &&
+        (oldWidget.qty != widget.qty || oldWidget.max != widget.max)) {
       final parsed = int.tryParse(_ctrl.text);
       if (parsed != widget.qty) {
         _ctrl.text = '${widget.qty}';
@@ -98,8 +99,8 @@ class _QtyControlState extends State<QtyControl> {
   }
 
   Widget _buildStepButton(String label, int delta) {
-    final bool isDisabled = (delta > 0 && widget.qty >= _maxVal) ||
-                            (delta < 0 && widget.qty <= 1);
+    final bool isDisabled =
+        (delta > 0 && widget.qty >= _maxVal) || (delta < 0 && widget.qty <= 1);
 
     return Material(
       color: Colors.transparent,
@@ -121,7 +122,10 @@ class _QtyControlState extends State<QtyControl> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -158,14 +162,18 @@ class _QtyControlState extends State<QtyControl> {
             onSubmitted: (_) => _commit(),
             onEditingComplete: _commit,
             onTap: () {
-              _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
+              _ctrl.selection =
+                  TextSelection.collapsed(offset: _ctrl.text.length);
             },
             decoration: InputDecoration(
               contentPadding: EdgeInsets.zero,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(50),
                 borderSide: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.15),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outline
+                      .withValues(alpha: 0.15),
                 ),
               ),
               filled: true,

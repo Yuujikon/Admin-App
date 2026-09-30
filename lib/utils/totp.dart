@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
+/// Cryptographic Time-based One-Time Password (TOTP) utility class for 2FA verification.
 class TotpUtils {
   static const String _alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -27,7 +28,11 @@ class TotpUtils {
 
   /// Decodes a Base32 string into raw bytes.
   static List<int> base32Decode(String input) {
-    final clean = input.toUpperCase().replaceAll('=', '').replaceAll(' ', '').replaceAll('-', '');
+    final clean = input
+        .toUpperCase()
+        .replaceAll('=', '')
+        .replaceAll(' ', '')
+        .replaceAll('-', '');
     final List<int> bytes = [];
     int buffer = 0;
     int bitsLeft = 0;
@@ -56,8 +61,10 @@ class TotpUtils {
   }
 
   /// Calculates a 6-digit TOTP code for a secret at the specified 30-second time interval.
-  static String generateTotpCode(String base32Secret, {int? timeIntervalSeconds}) {
-    final time = timeIntervalSeconds ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000 ~/ 30);
+  static String generateTotpCode(String base32Secret,
+      {int? timeIntervalSeconds}) {
+    final time = timeIntervalSeconds ??
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 ~/ 30);
     final secretBytes = base32Decode(base32Secret);
 
     if (secretBytes.isEmpty) return '000000';
@@ -74,9 +81,9 @@ class TotpUtils {
 
     final offset = digest[digest.length - 1] & 0x0f;
     final binary = ((digest[offset] & 0x7f) << 24) |
-                   ((digest[offset + 1] & 0xff) << 16) |
-                   ((digest[offset + 2] & 0xff) << 8) |
-                   (digest[offset + 3] & 0xff);
+        ((digest[offset + 1] & 0xff) << 16) |
+        ((digest[offset + 2] & 0xff) << 8) |
+        (digest[offset + 3] & 0xff);
 
     final otp = binary % 1000000;
     return otp.toString().padLeft(6, '0');
@@ -90,7 +97,8 @@ class TotpUtils {
     final currentInterval = DateTime.now().millisecondsSinceEpoch ~/ 1000 ~/ 30;
 
     for (int delta in [-1, 0, 1]) {
-      final code = generateTotpCode(base32Secret, timeIntervalSeconds: currentInterval + delta);
+      final code = generateTotpCode(base32Secret,
+          timeIntervalSeconds: currentInterval + delta);
       if (code == cleanInput) {
         return true;
       }

@@ -1,14 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Supplier contact and vendor profile data model.
 class Supplier {
+  /// Unique supplier document ID.
   final String id;
+
+  /// Business/company name of supplier.
   final String name;
+
+  /// Primary contact person.
   final String contactName;
+
+  /// Telephone / Mobile contact number.
   final String phone;
+
+  /// Email address.
   final String email;
-  final String category; // e.g. Beverages, Snacks
+
+  /// Product category supplied (e.g. Beverages, Snacks).
+  final String category;
+
+  /// Auto-send low stock notification flag.
   final bool autoNotifyLowStock;
 
+  /// Creates a [Supplier] instance.
   const Supplier({
     required this.id,
     required this.name,
@@ -19,6 +34,7 @@ class Supplier {
     this.autoNotifyLowStock = true,
   });
 
+  /// Factory constructor for parsing Firestore [DocumentSnapshot].
   factory Supplier.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>? ?? {};
     return Supplier(
@@ -32,16 +48,18 @@ class Supplier {
     );
   }
 
+  /// Converts supplier model to Map for Firestore persistence.
   Map<String, dynamic> toFirestore() => {
-    'name': name,
-    'contactName': contactName,
-    'phone': phone,
-    'email': email,
-    'category': category,
-    'autoNotifyLowStock': autoNotifyLowStock,
-    'updatedAt': FieldValue.serverTimestamp(),
-  };
+        'name': name,
+        'contactName': contactName,
+        'phone': phone,
+        'email': email,
+        'category': category,
+        'autoNotifyLowStock': autoNotifyLowStock,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
 
+  /// Returns a copy of [Supplier] with updated fields.
   Supplier copyWith({
     String? id,
     String? name,

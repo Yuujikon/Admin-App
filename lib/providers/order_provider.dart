@@ -10,27 +10,37 @@ import '../utils/pricing_engine.dart';
 
 import 'base_provider.dart';
 
+/// Provider for managing online customer pre-orders, order fulfillment workflow, and notification dispatching.
 class OrderProvider extends BaseProvider {
   final _fs = FirestoreService();
 
-  List<PreOrder> _orders  = [];
+  List<PreOrder> _orders = [];
   final List<CartItem> _preCart = [];
   Timer? _expirationTimer;
   String _adminName = 'Admin';
   final Set<String> _processingOrders = {};
   final Set<String> _knownOrderIds = {};
 
-  final StreamController<PreOrder> _newOrderStreamController = StreamController<PreOrder>.broadcast();
+  final StreamController<PreOrder> _newOrderStreamController =
+      StreamController<PreOrder>.broadcast();
+
+  /// Event stream emitting newly received customer pre-orders.
   Stream<PreOrder> get onNewOrderReceived => _newOrderStreamController.stream;
 
   final Set<String> _newlyArrivedOrderIds = {};
 
-  List<PreOrder> get orders  => _orders;
+  /// Current pre-orders list.
+  List<PreOrder> get orders => _orders;
+
+  /// Temporary pre-cart items.
   List<CartItem> get preCart => _preCart;
+
+  /// Active processing admin display name.
   String get adminName => _adminName;
 
   bool isOrderProcessing(String orderId) => _processingOrders.contains(orderId);
-  bool isNewlyArrived(String orderId) => _newlyArrivedOrderIds.contains(orderId);
+  bool isNewlyArrived(String orderId) =>
+      _newlyArrivedOrderIds.contains(orderId);
 
   void clearNewlyArrived(String orderId) {
     if (_newlyArrivedOrderIds.remove(orderId)) {
@@ -61,13 +71,15 @@ class OrderProvider extends BaseProvider {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       if (_knownOrderIds.isNotEmpty) {
-        final newOrders = list.where((o) => !_knownOrderIds.contains(o.id) && o.status == OrderStatus.pending);
+        final newOrders = list.where((o) =>
+            !_knownOrderIds.contains(o.id) && o.status == OrderStatus.pending);
         for (final o in newOrders) {
           _newlyArrivedOrderIds.add(o.id);
           _newOrderStreamController.add(o);
           NotificationService.showSmsNotificationPopUp(
             title: '🛍️ New Pre-Order Received!',
-            body: 'Customer ${o.customerName} placed order #${o.orderId} (₱${o.total.toStringAsFixed(2)}).',
+            body:
+                'Customer ${o.customerName} placed order #${o.orderId} (P${o.total.toStringAsFixed(2)}).',
           );
         }
       }
@@ -87,7 +99,7 @@ class OrderProvider extends BaseProvider {
         }
       });
     }));
-    
+
     // Start a timer to check expirations every minute
     _expirationTimer?.cancel();
     _expirationTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -106,11 +118,10 @@ class OrderProvider extends BaseProvider {
     final now = DateTime.now();
     for (final order in list) {
       if (_processingOrders.contains(order.id)) continue;
-      
-      if (order.status == OrderStatus.pending || 
-          order.status == OrderStatus.staging || 
+
+      if (order.status == OrderStatus.pending ||
+          order.status == OrderStatus.staging ||
           order.status == OrderStatus.ready) {
-        
         if (order.expiresAt != null && order.expiresAt!.isBefore(now)) {
           // Auto cancel expired order
           cancelOrder(order.id, isAuto: true);
@@ -121,12 +132,26 @@ class OrderProvider extends BaseProvider {
 
   // ── Pre-order cart ─────────────────────────────────────────────────────────
 
-  void addToPreCart(Product p) {
+  void clearPreCart() {
+    _preCart.clear();
+    notifyListeners();
+  }
+
+  void addToPreCart(Product p, {int qty = 1}) {
     final idx = _preCart.indexWhere((i) => i.productId == p.id);
+    final maxStock = p.stock > 0 ? p.stock : 9999;
     if (idx >= 0) {
-      _preCart[idx] = _preCart[idx].copyWith(qty: (_preCart[idx].qty + 1).clamp(1, p.stock));
+      _preCart[idx] = _preCart[idx]
+          .copyWith(qty: (_preCart[idx].qty + qty).clamp(1, maxStock));
     } else {
-      _preCart.add(CartItem(productId: p.id, name: p.name, price: p.price, qty: 1));
+      _preCart.add(CartItem(
+        productId: p.id,
+        name: p.name,
+        price: p.price,
+        costPrice: p.costPrice,
+        qty: qty.clamp(1, maxStock),
+        isPerishable: p.category.toLowerCase().contains('perishable'),
+      ));
     }
     notifyListeners();
   }
@@ -139,7 +164,8 @@ class OrderProvider extends BaseProvider {
   void adjustPreCartQty(String productId, int delta) {
     final idx = _preCart.indexWhere((i) => i.productId == productId);
     if (idx < 0) return;
-    _preCart[idx] = _preCart[idx].copyWith(qty: (_preCart[idx].qty + delta).clamp(1, 9999));
+    _preCart[idx] =
+        _preCart[idx].copyWith(qty: (_preCart[idx].qty + delta).clamp(1, 9999));
     notifyListeners();
   }
 
@@ -162,11 +188,11 @@ class OrderProvider extends BaseProvider {
   }) async {
     final orderCount = _orders.length + 45;
     // Determine expiration based on items
-    final hasPerishables = _preCart.any((ci) => 
-        allProducts.any((p) => p.id == ci.productId && p.isPerishable));
-    final onlyPerishables = _preCart.every((ci) => 
-        allProducts.any((p) => p.id == ci.productId && p.isPerishable));
-    
+    final hasPerishables = _preCart.any(
+        (ci) => allProducts.any((p) => p.id == ci.productId && p.isPerishable));
+    final onlyPerishables = _preCart.every(
+        (ci) => allProducts.any((p) => p.id == ci.productId && p.isPerishable));
+
     DateTime expiresAt;
     if (onlyPerishables) {
       expiresAt = DateTime.now().add(const Duration(hours: 2));
@@ -178,25 +204,25 @@ class OrderProvider extends BaseProvider {
 
     // Calculate breakdown using PricingEngine
     final breakdown = PricingEngine.calculate(
-      items: _preCart, 
-      allProducts: allProducts, 
+      items: _preCart,
+      allProducts: allProducts,
     );
 
     final order = PreOrder(
-      id:            const Uuid().v4(),
-      orderId:       'GDC-${orderCount.toString().padLeft(4, '0')}',
-      customerName:  customerName,
+      id: const Uuid().v4(),
+      orderId: 'GDC-${orderCount.toString().padLeft(4, '0')}',
+      customerName: customerName,
       customerEmail: customerEmail,
-      items:         List.from(_preCart),
-      subtotal:      breakdown.subtotal,
-      tax:           breakdown.vAtAmount,
-      total:         breakdown.total,
-      status:        OrderStatus.pending,
-      notes:         notes,
-      location:      location,
-      pickupTime:    pickupSlot,
-      createdAt:     DateTime.now(),
-      expiresAt:     expiresAt,
+      items: List.from(_preCart),
+      subtotal: breakdown.subtotal,
+      tax: breakdown.vAtAmount,
+      total: breakdown.total,
+      status: OrderStatus.pending,
+      notes: notes,
+      location: location,
+      pickupTime: pickupSlot,
+      createdAt: DateTime.now(),
+      expiresAt: expiresAt,
       statusTimeline: {OrderStatus.pending.name: DateTime.now()},
     );
 
@@ -204,10 +230,11 @@ class OrderProvider extends BaseProvider {
 
     // Schedule perishable auto-cancel via Firebase Cloud Functions
     // (see Cloud Functions section below)
-    final hasPerishable = _preCart.any((ci) =>
-        allProducts.any((p) => p.id == ci.productId && p.isPerishable));
+    final hasPerishable = _preCart.any(
+        (ci) => allProducts.any((p) => p.id == ci.productId && p.isPerishable));
     if (hasPerishable) {
-      await NotificationService.schedulePerishableReminder(order.id, order.orderId);
+      await NotificationService.schedulePerishableReminder(
+          order.id, order.orderId);
     }
 
     _preCart.clear();
@@ -232,7 +259,8 @@ class OrderProvider extends BaseProvider {
 
   Future<void> _completePickupInternal(String orderId) async {
     final order = _orders.firstWhere((o) => o.id == orderId);
-    if (order.status == OrderStatus.collected || order.status == OrderStatus.cancelled) return;
+    if (order.status == OrderStatus.collected ||
+        order.status == OrderStatus.cancelled) return;
 
     // 1. Ensure stock is deducted if not already done (done at 'staging' phase)
     if (order.status == OrderStatus.pending) {
@@ -248,11 +276,11 @@ class OrderProvider extends BaseProvider {
 
     // 3. Record as transaction
     final tx = StoreTransaction(
-      id: const Uuid().v4(), 
+      id: const Uuid().v4(),
       items: order.items,
       total: order.total,
-      cash: order.total,
-      change: 0,
+      cashTendered: order.total,
+      changeGiven: 0,
       createdAt: DateTime.now(),
       customerEmail: order.customerEmail,
       type: TransactionType.pickup,
@@ -260,7 +288,58 @@ class OrderProvider extends BaseProvider {
     await _fs.addTransaction(tx);
 
     // 4. Notify customer
-    await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
+    await NotificationService.sendOrderCollected(
+        order.orderId, order.customerEmail);
+  }
+
+  /// Fast-checkout protocol for Click & Collect with strict cash tracking
+  Future<StoreTransaction> completePickupWithCash({
+    required String orderId,
+    required double cashTendered,
+    required double changeGiven,
+    List<CartItem> walkInItems = const [],
+  }) async {
+    final order = _orders.firstWhere((o) => o.id == orderId);
+
+    // 1. Ensure stock is deducted for pre-order items if pending
+    if (order.status == OrderStatus.pending) {
+      await _fs.decrementStockBatch(order.items);
+    }
+
+    // 2. Deduct stock for additional walk-in items
+    if (walkInItems.isNotEmpty) {
+      await _fs.decrementStockBatch(walkInItems);
+    }
+
+    final allItems = [...order.items, ...walkInItems];
+    final grandTotal =
+        allItems.fold<double>(0.0, (s, i) => s + (i.price * i.qty));
+
+    // 3. Update Order status to collected
+    final updatedOrder = order.copyWith(
+      status: OrderStatus.collected,
+      processedBy: _adminName,
+    );
+    await _fs.updateOrder(updatedOrder);
+
+    // 4. Record StoreTransaction with exact cashTendered and changeGiven
+    final tx = StoreTransaction(
+      id: const Uuid().v4(),
+      items: allItems,
+      total: grandTotal,
+      cashTendered: cashTendered,
+      changeGiven: changeGiven,
+      createdAt: DateTime.now(),
+      customerEmail: order.customerEmail,
+      paymentMethod: PaymentMethod.cash,
+      type: TransactionType.pickup,
+    );
+    await _fs.addTransaction(tx);
+
+    // 5. Notify customer
+    await NotificationService.sendOrderCollected(
+        order.orderId, order.customerEmail);
+    return tx;
   }
 
   Future<void> advanceStatus(String orderId) async {
@@ -280,9 +359,9 @@ class OrderProvider extends BaseProvider {
     final index = _orders.indexWhere((o) => o.id == orderId);
     if (index == -1) return false;
     final order = _orders[index];
-    final next  = switch (order.status) {
-      OrderStatus.pending  => OrderStatus.staging,
-      OrderStatus.staging  => OrderStatus.ready,
+    final next = switch (order.status) {
+      OrderStatus.pending => OrderStatus.staging,
+      OrderStatus.staging => OrderStatus.ready,
       _ => null,
     };
     if (next == null) return false;
@@ -301,16 +380,18 @@ class OrderProvider extends BaseProvider {
 
     // Notify customer when order is ready
     if (next == OrderStatus.ready) {
-      await NotificationService.sendOrderReady(order.orderId, order.customerEmail);
+      await NotificationService.sendOrderReady(
+          order.orderId, order.customerEmail);
     }
 
     return true;
   }
 
-  Future<void> cancelOrder(String orderId, {bool isAuto = false, String? reason}) async {
+  Future<void> cancelOrder(String orderId,
+      {bool isAuto = false, String? reason}) async {
     if (_processingOrders.contains(orderId)) return;
     _processingOrders.add(orderId);
-    
+
     try {
       await _cancelOrderInternal(orderId, isAuto: isAuto, reason: reason);
     } finally {
@@ -319,7 +400,8 @@ class OrderProvider extends BaseProvider {
     }
   }
 
-  Future<void> _cancelOrderInternal(String orderId, {bool isAuto = false, String? reason}) async {
+  Future<void> _cancelOrderInternal(String orderId,
+      {bool isAuto = false, String? reason}) async {
     final order = _orders.firstWhere((o) => o.id == orderId);
     if (order.status == OrderStatus.cancelled) return;
 
@@ -329,7 +411,8 @@ class OrderProvider extends BaseProvider {
         order.status == OrderStatus.ready ||
         order.status == OrderStatus.collected) {
       // Create inverted cart items to "increment" stock
-      final returnItems = order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
+      final returnItems =
+          order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
       await _fs.decrementStockBatch(returnItems);
     }
 
@@ -338,11 +421,12 @@ class OrderProvider extends BaseProvider {
       processedBy: isAuto ? 'System' : _adminName,
       rejectionReason: reason,
     );
-    
+
     await _fs.updateOrder(updatedOrder);
 
     if (isAuto) {
-      await NotificationService.sendOrderAutoCancelled(order.orderId, order.customerEmail);
+      await NotificationService.sendOrderAutoCancelled(
+          order.orderId, order.customerEmail);
     }
   }
 
