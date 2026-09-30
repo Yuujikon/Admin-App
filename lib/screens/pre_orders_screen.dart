@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +11,8 @@ import '../widgets/status_badge.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../utils/barcode_routing.dart';
+import '../widgets/pos_checkout_modal.dart';
+import '../widgets/order_qr_scanner.dart';
 
 class PreOrdersScreen extends StatefulWidget {
   const PreOrdersScreen({super.key});
@@ -632,84 +633,11 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
   }
 
   void _openQRScanner(BuildContext context) async {
-    final rawCode = await showDialog<String>(
-      context: context,
-      builder: (ctx) => const _PickupScannerDialog(),
-    );
-
-    if (rawCode != null && rawCode.isNotEmpty && context.mounted) {
-      await _processScannedCode(context, rawCode);
-    }
+    await OrderQrScannerSheet.scanAndCheckout(context);
   }
 
   Future<void> _processScannedCode(BuildContext context, String rawCode) async {
-    final cleanCode = rawCode.trim();
-    if (cleanCode.isEmpty) return;
-
-    final orderProvider = context.read<OrderProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    
-    final extractedKey = _extractOrderId(cleanCode).toLowerCase();
-    
-    try {
-      final order = orderProvider.orders.firstWhere(
-        (o) => o.orderId.toLowerCase() == extractedKey || o.id.toLowerCase() == extractedKey,
-      );
-      
-      // Automatically mark order as COLLECTED & record sale transaction
-      await orderProvider.completePickup(order.id);
-      
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Order #${order.orderId} (${order.customerName}) marked as COLLECTED ✅'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (ctx) => _OrderDetailsSheet(
-            order: orderProvider.orders.firstWhere((o) => o.id == order.id, orElse: () => order),
-            onCancel: (ctx, id) => _handleCancel(ctx, id),
-          ),
-        );
-      }
-    } catch (_) {
-      // If no direct pre-order match found, filter search bar with scanned code
-      setState(() => _search = cleanCode);
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Scanned "$cleanCode" — filtered order list.'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    }
-  }
-
-  String _extractOrderId(String rawCode) {
-    final clean = rawCode.trim();
-    if (clean.startsWith('{') && clean.endsWith('}')) {
-      try {
-        final map = jsonDecode(clean);
-        if (map is Map) {
-          if (map['orderId'] != null) return map['orderId'].toString().trim();
-          if (map['id'] != null) return map['id'].toString().trim();
-          if (map['order_id'] != null) return map['order_id'].toString().trim();
-        }
-      } catch (_) {}
-    }
-
-    final gdcMatch = RegExp(r'GDC-\d{4,6}', caseSensitive: false).firstMatch(clean);
-    if (gdcMatch != null) {
-      return gdcMatch.group(0)!.toUpperCase();
-    }
-
-    return clean;
+    await processScannedOrderCode(context, rawCode);
   }
 }
 
@@ -916,16 +844,7 @@ class _AdvanceButtonState extends State<_AdvanceButton> {
         try {
           final orderProvider = context.read<OrderProvider>();
           if (order.status == OrderStatus.ready) {
-            await orderProvider.completePickup(order.id);
-            if (mounted) {
-              messenger.showSnackBar(
-                SnackBar(
-                  content: Text('Order #${order.orderId} marked as COLLECTED ✅'),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            }
+            await PosCheckoutModal.show(context, order);
           } else {
             await orderProvider.advanceStatus(order.id);
             if (mounted) {
@@ -1378,11 +1297,12 @@ class _OrderDetailsSheet extends StatelessWidget {
 
                       if (confirm == true && context.mounted) {
                         if (order.status == OrderStatus.ready) {
-                          await context.read<OrderProvider>().completePickup(order.id);
+                          Navigator.pop(context);
+                          await PosCheckoutModal.show(context, order);
                         } else {
                           await context.read<OrderProvider>().advanceStatus(order.id);
+                          if (context.mounted) Navigator.pop(context);
                         }
-                        if (context.mounted) Navigator.pop(context);
                       }
                     },
                     style: ElevatedButton.styleFrom(

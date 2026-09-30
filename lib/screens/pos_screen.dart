@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +13,10 @@ import '../utils/barcode_routing.dart';
 import '../utils/format.dart';
 import '../models/customer.dart';
 import '../providers/printer_provider.dart';
+import '../providers/order_provider.dart';
 import '../utils/pricing_engine.dart';
+import '../widgets/quick_select_grid.dart';
+import '../widgets/order_qr_scanner.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -28,6 +32,7 @@ class _PosScreenState extends State<PosScreen> {
   Map<FocusNode, TextEditingController> _focusMap = {};
   bool   _done = false;
   bool   _saving = false;
+  int    _posViewIndex = 0; // 0 = Scan & Search, 1 = Quick Items (PLU)
   Customer? _selectedCustomer;
   
   double _lastTotal = 0, _lastChange = 0;
@@ -170,7 +175,19 @@ class _PosScreenState extends State<PosScreen> {
 
   void _onBarcodeSubmit(String code, List<Product> products) {
     if (code.isEmpty) return;
-    
+
+    // Check if scanned barcode is a Click & Collect Order QR Code
+    final orderProvider = context.read<OrderProvider>();
+    final cleanCode = code.trim().replaceAll('#', '');
+    if (cleanCode.startsWith('GDC-') ||
+        orderProvider.orders.any((o) =>
+            o.orderId.toLowerCase().replaceAll('#', '') == cleanCode.toLowerCase() ||
+            o.id.toLowerCase() == cleanCode.toLowerCase())) {
+      _barcodeCtrl.clear();
+      processScannedOrderCode(context, code);
+      return;
+    }
+
     // 1. Search for products where base barcode matches OR a variant barcode matches
     for (final p in products) {
       if (p.status != ProductStatus.published) continue;
@@ -354,6 +371,7 @@ class _PosScreenState extends State<PosScreen> {
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         body: Column(children: [
+          const _OfflineStatusBanner(),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: TextField(
@@ -377,9 +395,40 @@ class _PosScreenState extends State<PosScreen> {
             ),
           ),
   
+          // POS View Toggle Segmented Control (Scan & Search vs Quick Items PLU)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<int>(
+                style: SegmentedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: 0,
+                    label: Text('Scan & Search', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    icon: Icon(Icons.qr_code_scanner_rounded, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    label: Text('Quick Items (PLU)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    icon: Icon(Icons.touch_app_rounded, size: 16),
+                  ),
+                ],
+                selected: {_posViewIndex},
+                onSelectionChanged: (set) => setState(() => _posViewIndex = set.first),
+              ),
+            ),
+          ),
+
           Expanded(child: isTablet 
               ? Row(children: [
-                  Expanded(child: _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle, onBundleToggle: _toggleBundle)),
+                  Expanded(
+                    child: _posViewIndex == 0
+                        ? _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle, onBundleToggle: _toggleBundle)
+                        : QuickSelectGrid(onProductSelected: _toggle),
+                  ),
                   SizedBox(width: 340, child: _CartPanel(
                     cart: _cart, cashCtrl: _cashCtrl, breakdown: _breakdown, cashNum: _cashNum, change: _change, 
                     products: products, selectedCustomer: _selectedCustomer, 
@@ -394,7 +443,11 @@ class _PosScreenState extends State<PosScreen> {
                     }))),
                 ])
               : Stack(children: [
-                  Positioned.fill(child: _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle, onBundleToggle: _toggleBundle)),
+                  Positioned.fill(
+                    child: _posViewIndex == 0
+                        ? _ProductGrid(products: filtered, cart: _cart, onToggle: _toggle, onBundleToggle: _toggleBundle)
+                        : QuickSelectGrid(onProductSelected: _toggle),
+                  ),
                   if (_cart.isNotEmpty)
                     DraggableScrollableSheet(
                       initialChildSize: 0.5,
@@ -846,6 +899,43 @@ class _SuccessView extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _OfflineStatusBanner extends StatelessWidget {
+  const _OfflineStatusBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('store_settings')
+          .doc('master')
+          .snapshots(includeMetadataChanges: true),
+      builder: (context, snapshot) {
+        final bool isFromCache = snapshot.hasData && snapshot.data!.metadata.isFromCache;
+        if (!isFromCache) return const SizedBox.shrink();
+
+        return Container(
+          width: double.infinity,
+          color: Colors.amber.shade900,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '⚠️ Offline Mode: Sales are saving locally and will auto-sync when online.',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

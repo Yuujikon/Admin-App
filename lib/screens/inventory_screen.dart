@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../models/product.dart';
 import '../../widgets/scanner_dialog.dart';
 import '../../widgets/product_edit_sheet.dart';
+import '../../widgets/receive_delivery_sheet.dart';
+import '../../widgets/batch_audit_sheet.dart';
 import '../../providers/inventory_provider.dart';
 import '../../utils/barcode_routing.dart';
 import 'supplier_management_screen.dart';
@@ -102,9 +104,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
           label: const Text('New Product'),
         ),
         body: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-            child: Text('Inventory',
-                style: Theme.of(context).textTheme.headlineMedium)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Inventory', style: Theme.of(context).textTheme.headlineMedium),
+              ElevatedButton.icon(
+                onPressed: () => _showReceiveDeliverySheet(context, null),
+                icon: const Icon(Icons.move_to_inbox_rounded, size: 18),
+                label: const Text('Receive Delivery', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade800,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(140, 42),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+        ),
 
         // Search
         Padding(padding: const EdgeInsets.all(12),
@@ -227,6 +246,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => ProductEditSheet(product: product),
+    );
+  }
+
+  void _showReceiveDeliverySheet(BuildContext context, Product? product) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ReceiveDeliverySheet(initialProduct: product),
     );
   }
 }
@@ -395,8 +423,21 @@ class _ProductRow extends StatelessWidget {
               ]),
           const SizedBox(width: 8),
           IconButton(
-              icon: Icon(Icons.edit_note_rounded, color: Colors.grey.shade400),
-              onPressed: onEdit),
+            icon: Icon(Icons.history_toggle_off_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+            tooltip: 'Inspect Batches',
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => BatchAuditSheet(product: product),
+              );
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.edit_note_rounded, color: Colors.grey.shade400),
+            onPressed: onEdit,
+          ),
         ]),
       ),
     );

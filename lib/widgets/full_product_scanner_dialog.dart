@@ -7,6 +7,7 @@ import '../models/catalog_product.dart';
 import '../utils/format.dart';
 import '../config/theme.dart';
 import 'catalog_search_dialog.dart';
+import '../services/external_barcode_service.dart';
 
 class FullProductScannerResult {
   final String? name;
@@ -71,41 +72,74 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog> wit
     super.dispose();
   }
 
-  void _onBarcodeDetected(String barcode) {
+  void _onBarcodeDetected(String barcode) async {
     if (_showReview) return;
 
     final inventory = context.read<InventoryProvider>();
     final catalog = inventory.catalog;
+    final products = inventory.products;
 
-    // 1. Search Catalog by Barcode
-    final match = catalog.where((p) => p.barcode == barcode).toList();
-
-    if (match.isNotEmpty) {
-      final p = match.first;
+    // 1. Search Local Catalog & Local Inventory First
+    final catalogMatch = catalog.where((p) => p.barcode == barcode).toList();
+    if (catalogMatch.isNotEmpty) {
+      final p = catalogMatch.first;
       setState(() {
         _detectedBarcode = barcode;
         _nameController.text = p.name;
         _brandController.text = p.brand ?? '';
         _selectedCategory = p.category;
         _selectedCatalogId = p.id;
-        _infoSource = 'Catalog Match';
+        _infoSource = 'Local Catalog Match';
         _showReview = true;
       });
       HapticFeedback.mediumImpact();
       return;
     }
 
-    // 2. Not found in catalog
+    final productMatch = products.where((p) => p.barcode == barcode).toList();
+    if (productMatch.isNotEmpty) {
+      final p = productMatch.first;
+      setState(() {
+        _detectedBarcode = barcode;
+        _nameController.text = p.name;
+        _brandController.text = p.brand ?? '';
+        _selectedCategory = p.category;
+        _selectedCatalogId = null;
+        _infoSource = 'Local Inventory Match';
+        _showReview = true;
+      });
+      HapticFeedback.mediumImpact();
+      return;
+    }
+
+    // 2. Not found in local DB -> Fetch from External Barcode API (Open Food Facts / UPCitemdb)
     setState(() {
       _detectedBarcode = barcode;
       _nameController.clear();
       _brandController.clear();
       _selectedCategory = null;
       _selectedCatalogId = null;
-      _infoSource = 'New Barcode';
+      _infoSource = 'Searching Global DB...';
       _showReview = true;
     });
-    HapticFeedback.lightImpact();
+
+    final extInfo = await ExternalBarcodeService.fetchProductInfo(barcode);
+
+    if (mounted && _detectedBarcode == barcode) {
+      if (extInfo != null) {
+        setState(() {
+          _nameController.text = extInfo.name;
+          if (extInfo.brand != null) _brandController.text = extInfo.brand!;
+          _infoSource = 'Global DB (${extInfo.source})';
+        });
+        HapticFeedback.mediumImpact();
+      } else {
+        setState(() {
+          _infoSource = 'New Barcode (Not in DB)';
+        });
+        HapticFeedback.lightImpact();
+      }
+    }
   }
 
   Future<void> _searchCatalog() async {

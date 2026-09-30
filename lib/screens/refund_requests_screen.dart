@@ -253,9 +253,19 @@ class _RefundCard extends StatelessWidget {
                     children: [
                       const Text('1. Select Item Condition (Required):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 6),
-                      _conditionOption(setSt, 'Restockable / Return to Shelf', RefundCondition.restockable, condition, (v) => condition = v),
-                      _conditionOption(setSt, 'Damaged Item', RefundCondition.damaged, condition, (v) => condition = v),
-                      _conditionOption(setSt, 'Expired Item', RefundCondition.expired, condition, (v) => condition = v),
+                      RadioGroup<RefundCondition>(
+                        groupValue: condition,
+                        onChanged: (v) {
+                          if (v != null) setSt(() => condition = v);
+                        },
+                        child: Column(
+                          children: [
+                            _conditionOption('Restockable / Return to Shelf', RefundCondition.restockable),
+                            _conditionOption('Damaged Item', RefundCondition.damaged),
+                            _conditionOption('Expired Item', RefundCondition.expired),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       const Text('2. Store Response to Customer (Mandatory *):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 6),
@@ -416,18 +426,12 @@ class _RefundCard extends StatelessWidget {
     }
   }
 
-  Widget _conditionOption(StateSetter setSt, String label, RefundCondition value, RefundCondition? current, ValueChanged<RefundCondition> onSelected) {
+  Widget _conditionOption(String label, RefundCondition value) {
     return RadioListTile<RefundCondition>(
       title: Text(label, style: const TextStyle(fontSize: 14)),
       value: value,
-      groupValue: current,
       dense: true,
       contentPadding: EdgeInsets.zero,
-      onChanged: (v) {
-        if (v != null) {
-          setSt(() => onSelected(v));
-        }
-      },
     );
   }
 }

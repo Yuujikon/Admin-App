@@ -12,7 +12,6 @@ import '../providers/restock_provider.dart';
 import '../services/notification_service.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
-import '../widgets/status_badge.dart';
 import '../widgets/supplier_sheet.dart';
 import '../widgets/restock_inquiry_sheet.dart';
 
@@ -26,7 +25,6 @@ class SupplierDetailScreen extends StatefulWidget {
 
 class _SupplierDetailScreenState extends State<SupplierDetailScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final DateFormat _dateFormat = DateFormat('MMM dd, yyyy • hh:mm a');
 
   @override
   void initState() {
@@ -248,7 +246,7 @@ class _RestockTabState extends State<_RestockTab> {
     ).toList();
 
     // Combine and remove duplicates just in case
-    final allToRestock = [...lowStockItems, ...manualItems].toSet().toList();
+    final allToRestock = {...lowStockItems, ...manualItems}.toList();
 
     final activeInquiries = restockProvider.inquiries.where((ri) => 
       ri.supplierId == widget.supplier.id && 
@@ -354,11 +352,130 @@ class _RestockTabState extends State<_RestockTab> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
           ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              _showPurchaseOrderDialog(
+                context,
+                widget.supplier,
+                filteredToRestock,
+                inventory.adminName,
+              );
+            },
+            icon: const Icon(Icons.description_outlined),
+            label: const Text('GENERATE & SHARE PURCHASE ORDER (PO)'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
         ],
       ],
     ),
   );
 }
+
+  void _showPurchaseOrderDialog(
+    BuildContext context,
+    Supplier supplier,
+    List<Product> products,
+    String adminName,
+  ) {
+    final buffer = StringBuffer('[GDC SARI-SARI STORE] PURCHASE ORDER\n');
+    buffer.writeln('Supplier: ${supplier.name}');
+    if (supplier.contactName.isNotEmpty) {
+      buffer.writeln('Contact Person: ${supplier.contactName}');
+    }
+    buffer.writeln('Phone: ${supplier.phone}');
+    buffer.writeln('Date: ${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
+    buffer.writeln('----------------------------------------');
+
+    double totalEstimatedCost = 0;
+
+    for (final p in products) {
+      final int reorderUnits = p.calculateSuggestedRestock();
+      final int boxQty = (p.itemsPerCase != null && p.itemsPerCase! > 0)
+          ? (reorderUnits / p.itemsPerCase!).ceil()
+          : 1;
+      final int totalUnits = (p.itemsPerCase != null && p.itemsPerCase! > 0)
+          ? (boxQty * p.itemsPerCase!)
+          : reorderUnits;
+
+      final double itemCost = totalUnits * p.costPrice;
+      totalEstimatedCost += itemCost;
+
+      if (p.itemsPerCase != null && p.itemsPerCase! > 0) {
+        buffer.writeln('- ${p.name}: $boxQty Boxes ($totalUnits ${p.unit}) ~ ${formatPeso(itemCost)}');
+      } else {
+        buffer.writeln('- ${p.name}: $totalUnits ${p.unit} ~ ${formatPeso(itemCost)}');
+      }
+    }
+
+    buffer.writeln('----------------------------------------');
+    buffer.writeln('Estimated Total: ${formatPeso(totalEstimatedCost)}');
+    buffer.writeln('Authorized By: $adminName');
+
+    final poText = buffer.toString();
+
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Purchase Order Summary'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)),
+                ),
+                child: SelectableText(
+                  poText,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: poText));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Purchase Order copied to clipboard! 📋')),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy PO'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: poText));
+              final smsUrl = 'sms:${supplier.phone}?body=${Uri.encodeComponent(poText)}';
+              final uri = Uri.parse(smsUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri);
+              } else if (ctx.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('PO copied to clipboard! Paste directly into messaging app.')),
+                );
+              }
+            },
+            icon: const Icon(Icons.send_rounded, size: 16),
+            label: const Text('Share PO'),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showManualPicker(List<Product> products) {
     showModalBottomSheet(
@@ -402,8 +519,11 @@ class _RestockTabState extends State<_RestockTab> {
                         value: isSelected || isLowStock,
                         onChanged: isLowStock ? null : (v) {
                           setModalState(() {
-                            if (v == true) _manualIds.add(p.id);
-                            else _manualIds.remove(p.id);
+                            if (v == true) {
+                              _manualIds.add(p.id);
+                            } else {
+                              _manualIds.remove(p.id);
+                            }
                           });
                           setState(() {});
                         },

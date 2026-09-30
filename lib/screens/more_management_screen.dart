@@ -10,6 +10,7 @@ import '../config/theme.dart';
 import '../utils/totp.dart';
 import 'user_management_screen.dart';
 import 'supplier_management_screen.dart';
+import 'shift_screen.dart';
 import 'loss_management_screen.dart';
 import 'reports_screen.dart';
 import 'bundle_management_screen.dart';
@@ -44,6 +45,15 @@ class MoreManagementScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
+              _menuItem(
+                context,
+                icon: Icons.point_of_sale_rounded,
+                title: 'Shift & Cash Register',
+                subtitle: 'X/Z readings, cash drops & opening float',
+                color: Colors.green.shade800,
+                target: const ShiftScreen(),
+              ),
+              const SizedBox(height: 12),
               if (isAdmin) ...[
                 _menuItem(
                   context,

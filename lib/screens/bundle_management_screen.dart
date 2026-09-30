@@ -226,7 +226,7 @@ class _BundleEditDialogState extends State<_BundleEditDialog> {
               productIds: selectedIds,
               photoBase64: photoBase64,
             ));
-            if (!mounted) return;
+            if (!context.mounted) return;
             Navigator.pop(context);
           }, 
           child: saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save Bundle')

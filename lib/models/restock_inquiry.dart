@@ -19,6 +19,7 @@ class RestockInquiryItem {
   final String unit;
   final int suggestedQty;
   final int requestedQty;
+  final double costPrice;
   final String? notes;
 
   RestockInquiryItem({
@@ -30,6 +31,7 @@ class RestockInquiryItem {
     required this.unit,
     required this.suggestedQty,
     required this.requestedQty,
+    this.costPrice = 0.0,
     this.notes,
   });
 
@@ -43,6 +45,7 @@ class RestockInquiryItem {
       unit: map['unit'] ?? 'pcs',
       suggestedQty: (map['suggestedQty'] as num? ?? 0).toInt(),
       requestedQty: (map['requestedQty'] as num? ?? 0).toInt(),
+      costPrice: (map['costPrice'] as num? ?? 0.0).toDouble(),
       notes: map['notes'],
     );
   }
@@ -56,11 +59,13 @@ class RestockInquiryItem {
     'unit': unit,
     'suggestedQty': suggestedQty,
     'requestedQty': requestedQty,
+    'costPrice': costPrice,
     'notes': notes,
   };
 
   RestockInquiryItem copyWith({
     int? requestedQty,
+    double? costPrice,
     String? notes,
   }) {
     return RestockInquiryItem(
@@ -72,6 +77,7 @@ class RestockInquiryItem {
       unit: unit,
       suggestedQty: suggestedQty,
       requestedQty: requestedQty ?? this.requestedQty,
+      costPrice: costPrice ?? this.costPrice,
       notes: notes ?? this.notes,
     );
   }
@@ -140,7 +146,7 @@ class RestockInquiry {
     'updatedAt': FieldValue.serverTimestamp(),
   };
 
-  int get totalRequestedQty => items.fold(0, (sum, item) => sum + item.requestedQty);
+  int get totalRequestedQty => items.fold(0, (acc, item) => acc + item.requestedQty);
 
   RestockInquiry copyWith({
     RestockInquiryStatus? status,

@@ -66,22 +66,26 @@ class StoreSettings {
     );
   }
 
-  Map<String, dynamic> toFirestore() => {
-    'isClosed': isClosed,
-    'closureMessage': closureMessage,
-    'scheduledCloseAt': scheduledCloseAt != null ? Timestamp.fromDate(scheduledCloseAt!) : null,
-    'scheduledOpenAt': scheduledOpenAt != null ? Timestamp.fromDate(scheduledOpenAt!) : null,
-    'operatingHoursEnabled': operatingHoursEnabled,
-    'dailyOpenTime': dailyOpenTime,
-    'dailyCloseTime': dailyCloseTime,
-    'closedDaysOfWeek': closedDaysOfWeek,
-    'perishableWindowHours': perishableWindowHours,
-    'mixedWindowHours': mixedWindowHours,
-    'standardWindowHours': standardWindowHours,
-    'globalLowStockThreshold': globalLowStockThreshold,
-    'masterCategories': masterCategories,
-    'announcement': announcement,
-  };
+  Map<String, dynamic> toFirestore() {
+    final sClose = scheduledCloseAt;
+    final sOpen = scheduledOpenAt;
+    return {
+      'isClosed': isClosed,
+      'closureMessage': closureMessage,
+      'scheduledCloseAt': sClose != null ? Timestamp.fromDate(sClose) : null,
+      'scheduledOpenAt': sOpen != null ? Timestamp.fromDate(sOpen) : null,
+      'operatingHoursEnabled': operatingHoursEnabled,
+      'dailyOpenTime': dailyOpenTime,
+      'dailyCloseTime': dailyCloseTime,
+      'closedDaysOfWeek': closedDaysOfWeek,
+      'perishableWindowHours': perishableWindowHours,
+      'mixedWindowHours': mixedWindowHours,
+      'standardWindowHours': standardWindowHours,
+      'globalLowStockThreshold': globalLowStockThreshold,
+      'masterCategories': masterCategories,
+      'announcement': announcement,
+    };
+  }
 
   StoreSettings copyWith({
     bool? isClosed,
@@ -123,8 +127,10 @@ class StoreSettings {
     final now = DateTime.now();
 
     // 1. Check Scheduled Outage
-    if (scheduledCloseAt != null && scheduledOpenAt != null) {
-      if (now.isAfter(scheduledCloseAt!) && now.isBefore(scheduledOpenAt!)) {
+    final DateTime? sClose = scheduledCloseAt;
+    final DateTime? sOpen = scheduledOpenAt;
+    if (sClose != null && sOpen != null) {
+      if (now.isAfter(sClose) && now.isBefore(sOpen)) {
         return true;
       }
     }
@@ -134,9 +140,11 @@ class StoreSettings {
       if (closedDaysOfWeek.contains(now.weekday)) {
         return true;
       }
-      if (dailyOpenTime != null && dailyCloseTime != null) {
-        final openMins = _parseMinutes(dailyOpenTime!);
-        final closeMins = _parseMinutes(dailyCloseTime!);
+      final String? openStr = dailyOpenTime;
+      final String? closeStr = dailyCloseTime;
+      if (openStr != null && closeStr != null) {
+        final openMins = _parseMinutes(openStr);
+        final closeMins = _parseMinutes(closeStr);
         final curMins = now.hour * 60 + now.minute;
 
         if (openMins != null && closeMins != null) {
@@ -157,19 +165,24 @@ class StoreSettings {
   }
 
   String get closureReason {
+    final String? msg = closureMessage;
+    final String safeMsg = (msg != null && msg.trim().isNotEmpty)
+        ? msg
+        : 'Store is manually closed.';
+
     if (isClosed) {
-      return (closureMessage != null && closureMessage!.trim().isNotEmpty)
-          ? closureMessage!
-          : 'Store is manually closed.';
+      return safeMsg;
     }
 
     final now = DateTime.now();
 
-    if (scheduledCloseAt != null && scheduledOpenAt != null) {
-      if (now.isAfter(scheduledCloseAt!) && now.isBefore(scheduledOpenAt!)) {
-        final reopens = DateFormat('MMM d, h:mm a').format(scheduledOpenAt!);
-        return (closureMessage != null && closureMessage!.trim().isNotEmpty)
-            ? closureMessage!
+    final DateTime? sClose = scheduledCloseAt;
+    final DateTime? sOpen = scheduledOpenAt;
+    if (sClose != null && sOpen != null) {
+      if (now.isAfter(sClose) && now.isBefore(sOpen)) {
+        final reopens = DateFormat('MMM d, h:mm a').format(sOpen);
+        return (msg != null && msg.trim().isNotEmpty)
+            ? msg
             : 'Scheduled closure active until $reopens.';
       }
     }
@@ -178,9 +191,11 @@ class StoreSettings {
       if (closedDaysOfWeek.contains(now.weekday)) {
         return 'Store is closed today per operating schedule.';
       }
-      if (dailyOpenTime != null && dailyCloseTime != null) {
-        final openMins = _parseMinutes(dailyOpenTime!);
-        final closeMins = _parseMinutes(dailyCloseTime!);
+      final String? openStr = dailyOpenTime;
+      final String? closeStr = dailyCloseTime;
+      if (openStr != null && closeStr != null) {
+        final openMins = _parseMinutes(openStr);
+        final closeMins = _parseMinutes(closeStr);
         final curMins = now.hour * 60 + now.minute;
 
         if (openMins != null && closeMins != null) {
@@ -191,7 +206,7 @@ class StoreSettings {
             outside = curMins < openMins && curMins >= closeMins;
           }
           if (outside) {
-            return 'Outside daily operating hours (${_formatTimeStr(dailyOpenTime!)} – ${_formatTimeStr(dailyCloseTime!)}).';
+            return 'Outside daily operating hours (${_formatTimeStr(openStr)} – ${_formatTimeStr(closeStr)}).';
           }
         }
       }
@@ -203,8 +218,10 @@ class StoreSettings {
   String get statusLabel {
     if (isClosed) return 'CLOSED';
     final now = DateTime.now();
-    if (scheduledCloseAt != null && scheduledOpenAt != null) {
-      if (now.isAfter(scheduledCloseAt!) && now.isBefore(scheduledOpenAt!)) {
+    final DateTime? sClose = scheduledCloseAt;
+    final DateTime? sOpen = scheduledOpenAt;
+    if (sClose != null && sOpen != null) {
+      if (now.isAfter(sClose) && now.isBefore(sOpen)) {
         return 'SCHEDULED';
       }
     }
@@ -237,4 +254,3 @@ class StoreSettings {
     return '$h12:$mStr $period';
   }
 }
-

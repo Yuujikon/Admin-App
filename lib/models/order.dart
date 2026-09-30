@@ -3,6 +3,36 @@ import 'package:flutter/foundation.dart';
 
 enum OrderStatus { pending, staging, ready, collected, cancelled, refunded, refundRequested, refundRejected }
 
+/// Represents the audit record of a specific batch segment depleted during checkout
+class BatchDepletionRecord {
+  final String batchId;
+  final int quantity;
+  final double unitCost;
+
+  const BatchDepletionRecord({
+    required this.batchId,
+    required this.quantity,
+    required this.unitCost,
+  });
+
+  factory BatchDepletionRecord.fromMap(dynamic m) {
+    if (m is! Map) {
+      return const BatchDepletionRecord(batchId: '', quantity: 0, unitCost: 0.0);
+    }
+    return BatchDepletionRecord(
+      batchId: m['batchId']?.toString() ?? '',
+      quantity: (m['quantity'] as num? ?? 0).toInt(),
+      unitCost: (m['unitCost'] as num? ?? 0.0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'batchId': batchId,
+    'quantity': quantity,
+    'unitCost': unitCost,
+  };
+}
+
 class CartItem {
   final String productId;
   final String? variantId;
@@ -13,6 +43,8 @@ class CartItem {
   final int    qty;
   final bool   isPerishable;
   final String? notes;
+  final double totalCogs;
+  final List<BatchDepletionRecord> depletedBatches;
 
   const CartItem({
     required this.productId,
@@ -24,6 +56,8 @@ class CartItem {
     required this.qty,
     this.isPerishable = false,
     this.notes,
+    this.totalCogs = 0.0,
+    this.depletedBatches = const [],
   });
 
   factory CartItem.fromMap(dynamic m) {
@@ -32,32 +66,54 @@ class CartItem {
     }
     final int rawQty = (m['qty'] as num? ?? 1).toInt();
     final int safeQty = rawQty < 1 ? 1 : rawQty;
+    final double rawTotalCogs = (m['totalCogs'] as num? ?? 0.0).toDouble();
+    final double rawCostPrice = (m['costPrice'] as num? ?? 0.0).toDouble();
+    
+    final double effectiveCostPrice = rawTotalCogs > 0
+        ? (rawTotalCogs / safeQty)
+        : rawCostPrice;
+
+    final List<BatchDepletionRecord> batchesList = (m['depletedBatches'] is List)
+        ? (m['depletedBatches'] as List).map((e) => BatchDepletionRecord.fromMap(e)).toList()
+        : const [];
+
     return CartItem(
-      productId:    m['productId'] ?? '',
-      variantId:    m['variantId'],
-      name:         m['name'] ?? '',
-      variantName:  m['variantName'],
-      price:        (m['price'] as num? ?? 0).toDouble(),
-      costPrice:    (m['costPrice'] as num? ?? 0).toDouble(),
-      qty:          safeQty,
-      isPerishable: m['isPerishable'] ?? false,
-      notes:        m['notes']?.toString(),
+      productId:       m['productId'] ?? '',
+      variantId:       m['variantId'],
+      name:            m['name'] ?? '',
+      variantName:     m['variantName'],
+      price:           (m['price'] as num? ?? 0).toDouble(),
+      costPrice:       effectiveCostPrice,
+      qty:             safeQty,
+      isPerishable:    m['isPerishable'] ?? false,
+      notes:           m['notes']?.toString(),
+      totalCogs:       rawTotalCogs > 0 ? rawTotalCogs : (effectiveCostPrice * safeQty),
+      depletedBatches: batchesList,
     );
   }
 
   Map<String, dynamic> toMap() => {
-    'productId':    productId,
+    'productId':       productId,
     if (variantId != null) 'variantId': variantId,
-    'name':         name,
+    'name':            name,
     if (variantName != null) 'variantName': variantName,
-    'price':        price,
-    'costPrice':    costPrice,
-    'qty':          qty < 1 ? 1 : qty,
-    'isPerishable': isPerishable,
+    'price':           price,
+    'costPrice':       costPrice,
+    'qty':             qty < 1 ? 1 : qty,
+    'isPerishable':    isPerishable,
     if (notes != null) 'notes': notes,
+    'totalCogs':       totalCogs > 0 ? totalCogs : (costPrice * qty),
+    'depletedBatches': depletedBatches.map((b) => b.toMap()).toList(),
   };
 
-  CartItem copyWith({int? qty, double? price, double? costPrice, String? notes}) =>
+  CartItem copyWith({
+    int? qty,
+    double? price,
+    double? costPrice,
+    String? notes,
+    double? totalCogs,
+    List<BatchDepletionRecord>? depletedBatches,
+  }) =>
       CartItem(
         productId: productId, 
         variantId: variantId,
@@ -68,6 +124,8 @@ class CartItem {
         qty: qty != null ? (qty < 1 ? 1 : qty) : this.qty, 
         isPerishable: isPerishable,
         notes: notes ?? this.notes,
+        totalCogs: totalCogs ?? this.totalCogs,
+        depletedBatches: depletedBatches ?? this.depletedBatches,
       );
 }
 

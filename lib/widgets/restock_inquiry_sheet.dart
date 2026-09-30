@@ -4,7 +4,6 @@ import '../models/restock_inquiry.dart';
 import '../models/product.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/restock_provider.dart';
-import '../utils/format.dart';
 import 'qty_control.dart';
 
 class RestockInquirySheet extends StatefulWidget {
@@ -194,7 +193,7 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                 children: [
                   const Text('REQUESTED QUANTITY', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
                   const SizedBox(height: 4),
-                  Text('${item.unit.toUpperCase()}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                  Text(item.unit.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                 ],
               ),
               QtyControl(

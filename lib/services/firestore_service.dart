@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product.dart';
 import '../models/order.dart';
@@ -9,6 +10,7 @@ import '../models/store_settings.dart';
 import '../models/supplier.dart';
 import '../models/loss_record.dart';
 import '../models/customer.dart';
+import 'package:uuid/uuid.dart';
 import '../models/catalog_product.dart';
 import '../models/restock_inquiry.dart';
 
@@ -59,14 +61,32 @@ class FirestoreService {
   // ── Products ───────────────────────────────────────────────────────────────
 
   Stream<List<Product>> productsStream() =>
-      _products.orderBy('name').snapshots().map(
-              (s) => s.docs.map(Product.fromFirestore).toList());
+      _products.orderBy('name').snapshots().map((s) {
+        final List<Product> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(Product.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing Product ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   /// Use this for public/customer views to ensure internal draft products are hidden
   Stream<List<Product>> publishedProductsStream() =>
       _products.where('status', isEqualTo: 'published')
-          .orderBy('name').snapshots().map(
-              (s) => s.docs.map(Product.fromFirestore).toList());
+          .orderBy('name').snapshots().map((s) {
+        final List<Product> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(Product.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing published Product ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Future<void> addProduct(Product p) =>
       _products.add(p.toFirestore());
@@ -80,11 +100,38 @@ class FirestoreService {
   Future<void> updateStock(String productId, int newStock) =>
       _products.doc(productId).update({'stock': newStock});
 
+  Future<void> decrementStockBatch(List<CartItem> items) async {
+    final batch = _db.batch();
+    for (final item in items) {
+      final docRef = _products.doc(item.productId);
+      if (item.variantId != null && item.variantId!.isNotEmpty) {
+        batch.update(docRef, {
+          'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
+          'stock': FieldValue.increment(-item.qty),
+        });
+      } else {
+        batch.update(docRef, {
+          'stock': FieldValue.increment(-item.qty),
+        });
+      }
+    }
+    await batch.commit();
+  }
+
   // ── Catalog ────────────────────────────────────────────────────────────────
 
   Stream<List<CatalogProduct>> catalogStream() =>
-      _catalog.orderBy('name').snapshots().map(
-              (s) => s.docs.map(CatalogProduct.fromFirestore).toList());
+      _catalog.orderBy('name').snapshots().map((s) {
+        final List<CatalogProduct> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(CatalogProduct.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing CatalogProduct ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Future<void> addCatalogProduct(CatalogProduct p) =>
       _catalog.add(p.toFirestore());
@@ -98,73 +145,96 @@ class FirestoreService {
   Future<void> linkBarcodeToCatalog(String catalogId, String barcode) =>
       _catalog.doc(catalogId).update({'barcode': barcode});
 
-  Future<void> recordSale(StoreTransaction tx) async {
-    return _db.runTransaction((transaction) async {
-      // 1. Verify stock for all items within the transaction (Server-side check)
-      for (final item in tx.items) {
-        final productDoc = await transaction.get(_products.doc(item.productId));
-        if (!productDoc.exists) throw Exception('Product ${item.name} does not exist.');
-        
-        final data = (productDoc.data() as Map<String, dynamic>?) ?? {};
-        
-        if (item.variantId != null) {
-          final variants = data['variants'] as Map? ?? {};
-          final vData = variants[item.variantId] as Map? ?? {};
-          final int stock = (vData['stock'] as num? ?? 0).toInt();
-          if (stock < item.qty) throw Exception('Insufficient stock for ${item.name} (${vData['name']}). Only $stock left.');
-        } else {
-          final int stock = (data['stock'] as num? ?? 0).toInt();
-          if (stock < item.qty) throw Exception('Insufficient stock for ${item.name}. Only $stock left.');
+  /// Offline-First Checkout Pipeline using WriteBatch (Zero runTransaction dependency)
+  Future<void> recordSaleOfflineFirst({
+    required StoreTransaction tx,
+    required List<Product> cachedProducts,
+  }) async {
+    final batch = _db.batch();
+
+    // 1. Stage transaction document in 'transactions' collection
+    final txDocRef = _transactions.doc(tx.id);
+    batch.set(txDocRef, tx.toFirestore());
+
+    // 2. Perform in-memory FIFO/FEFO batch deduction and stock updates across products
+    for (final item in tx.items) {
+      final productIndex = cachedProducts.indexWhere((p) => p.id == item.productId);
+      if (productIndex < 0) continue;
+
+      final product = cachedProducts[productIndex];
+      final productDocRef = _products.doc(product.id);
+
+      if (item.variantId != null) {
+        // Variant stock update
+        batch.update(productDocRef, {
+          'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
+          'stock': FieldValue.increment(-item.qty),
+        });
+      } else {
+        // In-memory FIFO/FEFO Batch Deduction
+        int remainingToDeduct = item.qty;
+        final List<ProductBatch> currentBatches = List.from(product.batches);
+
+        // Sort by expiry date / created date ascending (FIFO / FEFO)
+        currentBatches.sort((a, b) {
+          if (a.expiryDate != null && b.expiryDate != null) {
+            return a.expiryDate!.compareTo(b.expiryDate!);
+          }
+          return a.createdAt.compareTo(b.createdAt);
+        });
+
+        final List<ProductBatch> updatedBatches = [];
+
+        for (final b in currentBatches) {
+          if (remainingToDeduct <= 0) {
+            updatedBatches.add(b);
+            continue;
+          }
+
+          if (b.quantity > remainingToDeduct) {
+            updatedBatches.add(ProductBatch(
+              id: b.id,
+              productId: b.productId,
+              quantity: b.quantity - remainingToDeduct,
+              unitCost: b.unitCost,
+              expiryDate: b.expiryDate,
+              createdAt: b.createdAt,
+              invoiceNumber: b.invoiceNumber,
+            ));
+            remainingToDeduct = 0;
+          } else {
+            remainingToDeduct -= b.quantity;
+          }
         }
 
-        if (data['status'] == 'draft') throw Exception('Product ${item.name} is no longer available.');
+        final int newStock = (product.stock - item.qty).clamp(0, 999999);
+
+        batch.update(productDocRef, {
+          'stock': newStock,
+          'batches': { for (var b in updatedBatches) b.id: b.toMap() },
+        });
       }
+    }
 
-      // 2. Perform updates
-      transaction.set(_transactions.doc(tx.id), tx.toFirestore());
+    if (tx.customerId != null) {
+      final customerDocRef = _customers.doc(tx.customerId);
+      batch.set(customerDocRef, {
+        'totalSpent': FieldValue.increment(tx.total),
+        'lastVisit': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
 
-      for (final item in tx.items) {
-        if (item.variantId != null) {
-          transaction.update(_products.doc(item.productId), {
-            'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
-          });
-        } else {
-          transaction.update(_products.doc(item.productId), {
-            'stock': FieldValue.increment(-item.qty),
-          });
-        }
+    // Commit batch atomically to local cache (completes instantly offline!)
+    try {
+      await batch.commit();
+    } catch (e) {
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('unavailable') || errStr.contains('deadline-exceeded')) {
+        debugPrint('Checkout WriteBatch committed to local cache while offline. Pending cloud sync.');
+      } else {
+        rethrow;
       }
-
-      if (tx.customerId != null) {
-        transaction.set(_customers.doc(tx.customerId), {
-          'totalSpent':    FieldValue.increment(tx.total),
-          'lastVisit':     FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    }).catchError((e) {
-      throw Exception('Failed to record sale: $e');
-    });
-  }
-
-  Future<void> decrementStockBatch(List<CartItem> items) async {
-    return _db.runTransaction((transaction) async {
-      for (final item in items) {
-        final productDoc = await transaction.get(_products.doc(item.productId));
-        if (!productDoc.exists) continue;
-
-        if (item.variantId != null) {
-          transaction.update(_products.doc(item.productId), {
-            'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
-          });
-        } else {
-          transaction.update(_products.doc(item.productId), {
-            'stock': FieldValue.increment(-item.qty),
-          });
-        }
-      }
-    }).catchError((e) {
-      throw Exception('Failed to update stock: $e');
-    });
+    }
   }
 
   Future<void> refundTransaction(StoreTransaction tx) async {
@@ -209,8 +279,17 @@ class FirestoreService {
   // ── Loss & Waste ───────────────────────────────────────────────────────────
 
   Stream<List<LossRecord>> lossRecordsStream() =>
-      _lossRecords.orderBy('createdAt', descending: true).snapshots().map(
-              (s) => s.docs.map(LossRecord.fromFirestore).toList());
+      _lossRecords.orderBy('createdAt', descending: true).snapshots().map((s) {
+        final List<LossRecord> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(LossRecord.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing LossRecord ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Future<void> recordLoss(LossRecord record) async {
     final batch = _db.batch();
@@ -224,8 +303,17 @@ class FirestoreService {
   // ── Orders ─────────────────────────────────────────────────────────────────
 
   Stream<List<PreOrder>> ordersStream() =>
-      _orders.snapshots().map(
-              (s) => s.docs.map(PreOrder.fromFirestore).toList());
+      _orders.snapshots().map((s) {
+        final List<PreOrder> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(PreOrder.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing PreOrder ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Stream<List<PreOrder>> ordersStreamForEmail(String email) =>
       _orders
@@ -257,8 +345,17 @@ class FirestoreService {
   // ── Transactions ───────────────────────────────────────────────────────────
 
   Stream<List<StoreTransaction>> transactionsStream() =>
-      _transactions.snapshots().map(
-              (s) => s.docs.map(StoreTransaction.fromFirestore).toList());
+      _transactions.snapshots().map((s) {
+        final List<StoreTransaction> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(StoreTransaction.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing StoreTransaction ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Future<void> addTransaction(StoreTransaction tx) =>
       _transactions.add(tx.toFirestore());
@@ -266,8 +363,17 @@ class FirestoreService {
   // ── Expenses ───────────────────────────────────────────────────────────────
 
   Stream<List<Expense>> expensesStream() =>
-      _expenses.snapshots().map(
-              (s) => s.docs.map(Expense.fromFirestore).toList());
+      _expenses.snapshots().map((s) {
+        final List<Expense> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(Expense.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing Expense ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Future<void> addExpense(Expense e) =>
       _expenses.add(e.toFirestore());
@@ -296,8 +402,17 @@ class FirestoreService {
   // ── Refund Requests ────────────────────────────────────────────────────────
 
   Stream<List<RefundRequest>> refundRequestsStream() =>
-      _refundRequests.snapshots().map(
-              (s) => s.docs.map(RefundRequest.fromFirestore).toList());
+      _refundRequests.snapshots().map((s) {
+        final List<RefundRequest> list = [];
+        for (final doc in s.docs) {
+          try {
+            list.add(RefundRequest.fromFirestore(doc));
+          } catch (e) {
+            debugPrint('Error parsing RefundRequest ${doc.id}: $e');
+          }
+        }
+        return list;
+      });
 
   Future<void> updateRefundStatus(String requestId, RefundStatus status, String adminEmail, {String? reason, String? notes}) =>
       _refundRequests.doc(requestId).update({
@@ -349,6 +464,77 @@ class FirestoreService {
     } catch (e) {
       throw Exception('Failed to process approved refund: $e');
     }
+  }
+
+  // ── Delivery & Stock Arrivals ──────────────────────────────────────────────
+
+  Future<void> logStockArrival({
+    required String productId,
+    required String productName,
+    required int qtyReceived,
+    required double unitCost,
+    DateTime? expiryDate,
+    String? invoiceNumber,
+    required String receivedBy,
+    String? notes,
+  }) async {
+    await _db.collection('delivery_logs').add({
+      'productId': productId,
+      'productName': productName,
+      'qtyReceived': qtyReceived,
+      'unitCost': unitCost,
+      'totalValue': qtyReceived * unitCost,
+      'expiryDate': expiryDate != null ? Timestamp.fromDate(expiryDate) : null,
+      'invoiceNumber': invoiceNumber,
+      'receivedBy': receivedBy,
+      'notes': notes,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> saveProductWithBatch({
+    required Product product,
+    required ProductBatch initialBatch,
+  }) async {
+    final batch = _db.batch();
+    
+    final docRef = product.id.isEmpty ? _products.doc() : _products.doc(product.id);
+    final String finalId = docRef.id;
+
+    final batchId = initialBatch.id.isEmpty ? const Uuid().v4() : initialBatch.id;
+    final createdBatch = ProductBatch(
+      id: batchId,
+      productId: finalId,
+      quantity: initialBatch.quantity,
+      unitCost: initialBatch.unitCost,
+      expiryDate: initialBatch.expiryDate,
+      createdAt: initialBatch.createdAt,
+      invoiceNumber: initialBatch.invoiceNumber,
+    );
+
+    final updatedProduct = product.copyWith(
+      batches: [...product.batches, createdBatch],
+    );
+
+    batch.set(docRef, {
+      ...updatedProduct.toFirestore(),
+      'id': finalId,
+    }, SetOptions(merge: true));
+
+    final deliveryLogRef = _db.collection('delivery_logs').doc();
+    batch.set(deliveryLogRef, {
+      'productId': finalId,
+      'productName': product.name,
+      'qtyReceived': initialBatch.quantity,
+      'unitCost': initialBatch.unitCost,
+      'totalValue': initialBatch.quantity * initialBatch.unitCost,
+      'expiryDate': initialBatch.expiryDate != null ? Timestamp.fromDate(initialBatch.expiryDate!) : null,
+      'receivedBy': 'Admin',
+      'notes': 'Initial Inventory / Product Creation',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
   }
 
   // ── Product Watches ────────────────────────────────────────────────────────

@@ -251,8 +251,8 @@ class OrderProvider extends BaseProvider {
       id: const Uuid().v4(), 
       items: order.items,
       total: order.total,
-      cash: order.total,
-      change: 0,
+      cashTendered: order.total,
+      changeGiven: 0,
       createdAt: DateTime.now(),
       customerEmail: order.customerEmail,
       type: TransactionType.pickup,
@@ -261,6 +261,54 @@ class OrderProvider extends BaseProvider {
 
     // 4. Notify customer
     await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
+  }
+
+  /// Fast-checkout protocol for Click & Collect with strict cash tracking
+  Future<StoreTransaction> completePickupWithCash({
+    required String orderId,
+    required double cashTendered,
+    required double changeGiven,
+    List<CartItem> walkInItems = const [],
+  }) async {
+    final order = _orders.firstWhere((o) => o.id == orderId);
+
+    // 1. Ensure stock is deducted for pre-order items if pending
+    if (order.status == OrderStatus.pending) {
+      await _fs.decrementStockBatch(order.items);
+    }
+
+    // 2. Deduct stock for additional walk-in items
+    if (walkInItems.isNotEmpty) {
+      await _fs.decrementStockBatch(walkInItems);
+    }
+
+    final allItems = [...order.items, ...walkInItems];
+    final grandTotal = allItems.fold<double>(0.0, (s, i) => s + (i.price * i.qty));
+
+    // 3. Update Order status to collected
+    final updatedOrder = order.copyWith(
+      status: OrderStatus.collected,
+      processedBy: _adminName,
+    );
+    await _fs.updateOrder(updatedOrder);
+
+    // 4. Record StoreTransaction with exact cashTendered and changeGiven
+    final tx = StoreTransaction(
+      id: const Uuid().v4(),
+      items: allItems,
+      total: grandTotal,
+      cashTendered: cashTendered,
+      changeGiven: changeGiven,
+      createdAt: DateTime.now(),
+      customerEmail: order.customerEmail,
+      paymentMethod: PaymentMethod.cash,
+      type: TransactionType.pickup,
+    );
+    await _fs.addTransaction(tx);
+
+    // 5. Notify customer
+    await NotificationService.sendOrderCollected(order.orderId, order.customerEmail);
+    return tx;
   }
 
   Future<void> advanceStatus(String orderId) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -12,6 +13,7 @@ import 'providers/printer_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/restock_provider.dart';
+import 'providers/shift_provider.dart';
 import 'screens/staff_login_screen.dart';
 import 'screens/admin_pin_screen.dart';
 import 'screens/admin_app.dart';
@@ -51,23 +53,19 @@ void main() async {
     return true; // Mark handled
   };
 
-  // Release mode graceful error builder
+  // Non-recursive, safe, non-scrollable error widget (prevents !_debugDoingThisLayout re-entrancy)
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.warning_amber_rounded, size: 48, color: Colors.orange),
-              SizedBox(height: 12),
-              Text('Something went wrong', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              SizedBox(height: 6),
-              Text('Please return to the previous screen or restart the app.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ],
-          ),
-        ),
+    FlutterError.dumpErrorToConsole(details);
+    return Container(
+      color: const Color(0xFFB71C1C),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        'RENDER ERROR:\n${details.exception}',
+        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+        textAlign: TextAlign.center,
+        maxLines: 8,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   };
@@ -75,6 +73,12 @@ void main() async {
   try {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     
+    // 1. Configure Firestore Unlimited Offline Persistence
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+
     // Initialize notification service safely without blocking the main UI rendering frame
     NotificationService.initialize().catchError((e) {
       debugPrint('Notification Service Initialization Error: $e');
@@ -102,6 +106,7 @@ class GdcAdminApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
         ChangeNotifierProvider(create: (_) => PrinterProvider()),
         ChangeNotifierProvider(create: (_) => RestockProvider()),
+        ChangeNotifierProvider(create: (_) => ShiftProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) => MaterialApp(

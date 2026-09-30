@@ -69,7 +69,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                   onPressed: _loading ? null : _login,
                   child: _loading 
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('SIGN IN', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    : const Text('SIGN IN', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 16),
                 

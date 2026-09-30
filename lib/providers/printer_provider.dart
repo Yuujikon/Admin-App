@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:intl/intl.dart';
 import '../models/order.dart';
+import '../models/shift_session.dart';
+import '../services/receipt_printer_service.dart';
 import '../utils/format.dart';
 import '../utils/pricing_engine.dart';
 
@@ -167,7 +168,7 @@ class PrinterProvider extends ChangeNotifier {
       for (var item in items) {
         // Line 1: Item Name
         String name = item.name;
-        if (name.length > 32) name = name.substring(0, 29) + "...";
+        if (name.length > 32) name = '${name.substring(0, 29)}...';
         bytes += generator.text(name);
         
         // Line 2: Details (Qty @ Price)   Total
@@ -223,6 +224,35 @@ class PrinterProvider extends ChangeNotifier {
       return await PrintBluetoothThermal.writeBytes(bytes);
     } catch (e) {
       debugPrint("Error in printTest: $e");
+      return false;
+    }
+  }
+
+  Future<bool> printZReading({
+    required ShiftSession shift,
+    int totalTransactions = 0,
+    int itemsSold = 0,
+    int spoilageUnits = 0,
+    bool isXReading = false,
+  }) async {
+    try {
+      final bool isBluetoothEnabled = await PrintBluetoothThermal.bluetoothEnabled;
+      if (!isBluetoothEnabled) return false;
+
+      final bool isConnected = await PrintBluetoothThermal.connectionStatus;
+      if (!isConnected) return false;
+
+      final bytes = await ReceiptPrinterService.generateZReadingBytes(
+        shift: shift,
+        totalTransactions: totalTransactions,
+        itemsSold: itemsSold,
+        spoilageUnits: spoilageUnits,
+        isXReading: isXReading,
+      );
+
+      return await PrintBluetoothThermal.writeBytes(bytes);
+    } catch (e) {
+      debugPrint('Error printing Z-Reading: $e');
       return false;
     }
   }

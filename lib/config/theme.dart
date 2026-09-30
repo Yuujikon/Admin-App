@@ -2,21 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class GdcColors {
-  // Color Hunt Palette: EDF1D6, 9DC08B, 609966, 40513B
+  // Palette: EDF1D6, 9DC08B, 609966, 40513B
   static const deepGreen         = Color(0xFF40513B); // Darkest - Headers/Text
   static const primaryGreen      = Color(0xFF609966); // Main Action
   static const secondaryGreen    = Color(0xFF9DC08B); // Secondary/Accent
-  static const backgroundCream   = Color(0xFFEDF1D6); // Background
+  static const backgroundCream   = Color(0xFFF6F8F0); // Background
   
-  static const paper             = Color(0xFFF7F9E8); // Slightly lighter surface
+  static const paper             = Color(0xFFFFFFFF); // Pure white card surface
   
   // Dark Mode Palette (Muted Forest)
-  static const midnight          = Color(0xFF1A1C1E); 
-  static const slate             = Color(0xFF2D3135); 
+  static const midnight          = Color(0xFF141618); 
+  static const slate             = Color(0xFF23272A); 
   static const mutedGreen        = Color(0xFF609966); 
   static const goldDim           = Color(0xFF9DC08B); 
   
-  // Semantic (Universal)
+  // Universal Semantic Tonal Colors
   static const errorLight       = Color(0xFFA04747);
   static const errorDark        = Color(0xFFCF6679);
   static const successLight     = Color(0xFF4E6C50);
@@ -34,13 +34,13 @@ class GdcTheme {
   static ThemeData _buildTheme(Brightness brightness) {
     final bool isDark = brightness == Brightness.dark;
     
-    final primaryColor   = isDark ? GdcColors.mutedGreen : GdcColors.primaryGreen;
-    final secondaryColor = isDark ? GdcColors.goldDim : GdcColors.secondaryGreen;
+    final primaryColor    = isDark ? GdcColors.mutedGreen : GdcColors.primaryGreen;
+    final secondaryColor  = isDark ? GdcColors.goldDim : GdcColors.secondaryGreen;
     final backgroundColor = isDark ? GdcColors.midnight : GdcColors.backgroundCream;
     final surfaceColor    = isDark ? GdcColors.slate : GdcColors.paper;
     final textColor       = isDark ? Colors.white.withValues(alpha: 0.95) : GdcColors.deepGreen;
-    final subTextColor    = isDark ? Colors.white.withValues(alpha: 0.6)  : GdcColors.deepGreen.withValues(alpha: 0.6);
-    final borderColor     = isDark ? Colors.white.withValues(alpha: 0.1)  : Colors.black.withValues(alpha: 0.08);
+    final subTextColor    = isDark ? Colors.white.withValues(alpha: 0.6)  : GdcColors.deepGreen.withValues(alpha: 0.65);
+    final borderColor     = isDark ? Colors.white.withValues(alpha: 0.1)  : Colors.black.withValues(alpha: 0.06);
 
     final errorColor   = isDark ? GdcColors.errorDark   : GdcColors.errorLight;
     final successColor = isDark ? GdcColors.successDark : GdcColors.successLight;
@@ -50,21 +50,25 @@ class GdcTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      scaffoldBackgroundColor: backgroundColor,
       colorScheme: ColorScheme.fromSeed(
-        seedColor:      primaryColor,
-        brightness:     brightness,
-        primary:        primaryColor,
-        secondary:      secondaryColor,
-        error:          errorColor,
-        surface:        backgroundColor,
-        onSurface:      textColor,
-        onSurfaceVariant: subTextColor,
-        outline:        borderColor,
+        seedColor:              primaryColor,
+        brightness:             brightness,
+        primary:                primaryColor,
+        secondary:              secondaryColor,
+        error:                  errorColor,
+        surface:                backgroundColor,
+        onSurface:              textColor,
+        onSurfaceVariant:        subTextColor,
+        outline:                borderColor,
+        outlineVariant:         borderColor,
         surfaceContainerLowest: isDark ? GdcColors.midnight : Colors.white,
         surfaceContainerLow:    surfaceColor,
-        surfaceContainer:       isDark ? GdcColors.slate.withValues(alpha: 0.5) : GdcColors.secondaryGreen.withValues(alpha: 0.3),
-        tertiary:       successColor,
-        onTertiary:     isDark ? GdcColors.midnight : Colors.white,
+        surfaceContainer:       isDark ? GdcColors.slate.withValues(alpha: 0.5) : GdcColors.secondaryGreen.withValues(alpha: 0.2),
+        surfaceContainerHigh:   isDark ? GdcColors.slate : GdcColors.paper,
+        surfaceContainerHighest: isDark ? const Color(0xFF383C40) : const Color(0xFFE4E9CD),
+        tertiary:               successColor,
+        onTertiary:             isDark ? GdcColors.midnight : Colors.white,
       ),
       extensions: <ThemeExtension<dynamic>>[
         GdcSemanticColors(
@@ -72,7 +76,7 @@ class GdcTheme {
           warning: warningColor,
           info:    infoColor,
         ),
-        GdcLayoutTheme(
+        const GdcLayoutTheme(
           cardRadius: 24,
           sheetRadius: 32,
           inputRadius: 18,
@@ -80,7 +84,7 @@ class GdcTheme {
         ),
       ],
       textTheme: GoogleFonts.plusJakartaSansTextTheme().copyWith(
-        headlineLarge: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
+        headlineLarge:  GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
         headlineMedium: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: textColor),
         titleLarge:     GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: textColor),
         titleMedium:    GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600, color: primaryColor),
@@ -99,7 +103,7 @@ class GdcTheme {
         iconTheme:       IconThemeData(color: textColor),
         titleTextStyle:  GoogleFonts.plusJakartaSans(
           color:         textColor,
-          fontSize:      20,
+          fontSize:      18,
           fontWeight:    FontWeight.w800,
           letterSpacing: -0.5,
         ),
@@ -115,7 +119,7 @@ class GdcTheme {
       chipTheme: ChipThemeData(
         shape:           RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         side:            BorderSide.none,
-        backgroundColor: isDark ? GdcColors.slate : GdcColors.secondaryGreen.withValues(alpha: 0.4),
+        backgroundColor: isDark ? GdcColors.slate : GdcColors.secondaryGreen.withValues(alpha: 0.35),
         labelStyle:      TextStyle(color: isDark ? Colors.white : GdcColors.deepGreen, fontWeight: FontWeight.w700, fontSize: 11),
         padding:         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       ),
@@ -135,22 +139,22 @@ class GdcTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide:   BorderSide(color: secondaryColor, width: 2),
+          borderSide:   BorderSide(color: primaryColor, width: 2),
         ),
         filled:          true,
         fillColor:       isDark ? GdcColors.midnight : GdcColors.paper,
-        contentPadding:  const EdgeInsets.all(20),
-        hintStyle:       TextStyle(color: subTextColor.withValues(alpha: 0.4)),
-        labelStyle:      TextStyle(color: subTextColor),
+        contentPadding:  const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        hintStyle:       TextStyle(color: subTextColor.withValues(alpha: 0.5), fontSize: 13),
+        labelStyle:      TextStyle(color: subTextColor, fontSize: 13),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
-          foregroundColor: isDark ? GdcColors.midnight : GdcColors.backgroundCream,
-          minimumSize:     const Size.fromHeight(58),
+          foregroundColor: isDark ? GdcColors.midnight : Colors.white,
+          minimumSize:     const Size(0, 48),
           shape:           RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           elevation:       0,
-          textStyle:       const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          textStyle:       const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -158,12 +162,22 @@ class GdcTheme {
           foregroundColor: primaryColor,
           side: BorderSide(color: primaryColor),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          minimumSize: const Size.fromHeight(58),
+          minimumSize: const Size(0, 48),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surfaceColor,
-        indicatorColor:  secondaryColor.withValues(alpha: 0.2),
+        indicatorColor:  secondaryColor.withValues(alpha: 0.25),
         iconTheme: WidgetStateProperty.resolveWith((states) {
            if (states.contains(WidgetState.selected)) {
             return IconThemeData(color: primaryColor);
@@ -254,10 +268,10 @@ class GdcLayoutTheme extends ThemeExtension<GdcLayoutTheme> {
   GdcLayoutTheme lerp(ThemeExtension<GdcLayoutTheme>? other, double t) {
     if (other is! GdcLayoutTheme) return this;
     return GdcLayoutTheme(
-      cardRadius:   lerpDouble(cardRadius, other.cardRadius, t)!,
-      sheetRadius:  lerpDouble(sheetRadius, other.sheetRadius, t)!,
-      inputRadius:  lerpDouble(inputRadius, other.inputRadius, t)!,
-      buttonRadius: lerpDouble(buttonRadius, other.buttonRadius, t)!,
+      cardRadius:   lerpDouble(cardRadius, other.cardRadius, t),
+      sheetRadius:  lerpDouble(sheetRadius, other.sheetRadius, t),
+      inputRadius:  lerpDouble(inputRadius, other.inputRadius, t),
+      buttonRadius: lerpDouble(buttonRadius, other.buttonRadius, t),
     );
   }
 

@@ -76,6 +76,62 @@ class ProductVariant {
   );
 }
 
+class ProductBatch {
+  final String id;
+  final String productId;
+  final int quantity;
+  final double unitCost;
+  final DateTime? expiryDate;
+  final DateTime createdAt;
+  final String? invoiceNumber;
+
+  const ProductBatch({
+    required this.id,
+    required this.productId,
+    required this.quantity,
+    required this.unitCost,
+    this.expiryDate,
+    required this.createdAt,
+    this.invoiceNumber,
+  });
+
+  factory ProductBatch.fromMap(dynamic m) {
+    if (m is! Map) {
+      return ProductBatch(
+        id: '',
+        productId: '',
+        quantity: 0,
+        unitCost: 0,
+        createdAt: DateTime.now(),
+      );
+    }
+    final data = Map<String, dynamic>.from(m);
+    return ProductBatch(
+      id:            data['id']?.toString() ?? '',
+      productId:     data['productId']?.toString() ?? '',
+      quantity:      (data['quantity'] as num? ?? 0).toInt(),
+      unitCost:      (data['unitCost'] as num? ?? 0).toDouble(),
+      expiryDate:    data['expiryDate'] is Timestamp 
+          ? (data['expiryDate'] as Timestamp).toDate() 
+          : (data['expiryDate'] != null ? DateTime.tryParse(data['expiryDate'].toString()) : null),
+      createdAt:     data['createdAt'] is Timestamp 
+          ? (data['createdAt'] as Timestamp).toDate() 
+          : DateTime.now(),
+      invoiceNumber: data['invoiceNumber']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id':            id,
+    'productId':     productId,
+    'quantity':      quantity,
+    'unitCost':      unitCost,
+    'expiryDate':    expiryDate != null ? Timestamp.fromDate(expiryDate!) : null,
+    'createdAt':     Timestamp.fromDate(createdAt),
+    'invoiceNumber': invoiceNumber,
+  };
+}
+
 class Product {
   final String id;
   final String name;
@@ -92,6 +148,7 @@ class Product {
   final String? photoBase64; 
   final double? wholesalePrice;
   final int?    wholesaleThreshold;
+  final int?    itemsPerCase; // Items per Box/Case (Ordering Unit)
   final String? supplierId;
   final DateTime? expiryDate;
 
@@ -100,6 +157,7 @@ class Product {
   final bool isTaxable;
 
   final List<ProductVariant> variants;
+  final List<ProductBatch> batches;
 
   const Product({
     required this.id,
@@ -117,12 +175,14 @@ class Product {
     this.photoBase64,
     this.wholesalePrice,
     this.wholesaleThreshold,
+    this.itemsPerCase,
     this.supplierId,
     this.expiryDate,
     this.status = ProductStatus.published, 
     this.lowStockThreshold = 5,
     this.isTaxable = true,
     this.variants = const [],
+    this.batches = const [],
   });
 
   bool get isPerishable => shelfDays != null;
@@ -143,7 +203,7 @@ class Product {
 
   int get maxPurchasableStock {
     if (hasVariants) {
-      return variants.fold(0, (sum, v) => sum + v.maxPurchasableStock);
+      return variants.fold(0, (acc, v) => acc + v.maxPurchasableStock);
     } else {
       if (stock <= 0) return 0;
       final buffer = (effectiveInitialStock * 0.15).ceil();
@@ -161,7 +221,7 @@ class Product {
 
   /// Returns the total stock (sum of variants if they exist, otherwise base stock)
   int get totalStock => hasVariants 
-      ? variants.fold(0, (sum, v) => sum + v.stock) 
+      ? variants.fold(0, (acc, v) => acc + v.stock) 
       : stock;
 
   factory Product.fromFirestore(DocumentSnapshot doc) {
@@ -186,6 +246,7 @@ class Product {
         photoBase64: d['photoBase64']?.toString(),
         wholesalePrice: double.tryParse(d['wholesalePrice']?.toString() ?? ''),
         wholesaleThreshold: int.tryParse(d['wholesaleThreshold']?.toString() ?? ''),
+        itemsPerCase: int.tryParse(d['itemsPerCase']?.toString() ?? d['boxQty']?.toString() ?? ''),
         supplierId: d['supplierId']?.toString(),
         expiryDate: d['expiryDate'] is Timestamp ? (d['expiryDate'] as Timestamp).toDate() : null,
         status: ProductStatus.values.firstWhere(
@@ -198,6 +259,11 @@ class Product {
             ? (d['variants'] as Map).values.map((e) => ProductVariant.fromMap(e)).toList()
             : (d['variants'] is List)
                 ? (d['variants'] as List).map((e) => ProductVariant.fromMap(e)).toList()
+                : [],
+        batches: (d['batches'] is Map)
+            ? (d['batches'] as Map).values.map((e) => ProductBatch.fromMap(e)).toList()
+            : (d['batches'] is List)
+                ? (d['batches'] as List).map((e) => ProductBatch.fromMap(e)).toList()
                 : [],
       );
     } catch (e, stack) {
@@ -222,12 +288,14 @@ class Product {
     'photoBase64': photoBase64,
     'wholesalePrice': wholesalePrice,
     'wholesaleThreshold': wholesaleThreshold,
+    'itemsPerCase': itemsPerCase,
     'supplierId': supplierId,
     'expiryDate': expiryDate != null ? Timestamp.fromDate(expiryDate!) : null,
     'status':    status.name,
     'lowStockThreshold': lowStockThreshold,
     'isTaxable': isTaxable,
     'variants':  { for (var v in variants) v.id: v.toMap() },
+    'batches':   { for (var b in batches) b.id: b.toMap() },
     'updatedAt': FieldValue.serverTimestamp(),
   };
 
@@ -246,6 +314,7 @@ class Product {
     int? lowStockThreshold,
     bool? isTaxable,
     List<ProductVariant>? variants,
+    List<ProductBatch>? batches,
   }) => Product(
     id: id, 
     name: name ?? this.name,
@@ -255,17 +324,20 @@ class Product {
     costPrice: costPrice ?? this.costPrice,
     stock: stock ?? this.stock,
     initialStock: initialStock ?? this.initialStock,
-    unit: unit, shelfDays: shelfDays,
+    unit: unit,
     barcode: barcode ?? this.barcode,
+    shelfDays: shelfDays,
     pickupWindowHours: pickupWindowHours ?? this.pickupWindowHours,
     photoBase64: photoBase64 ?? this.photoBase64,
     wholesalePrice: wholesalePrice,
     wholesaleThreshold: wholesaleThreshold,
+    itemsPerCase: itemsPerCase,
     supplierId: supplierId,
     expiryDate: expiryDate,
     status: status ?? this.status,
     lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
     isTaxable: isTaxable ?? this.isTaxable,
     variants: variants ?? this.variants,
+    batches: batches ?? this.batches,
   );
 }

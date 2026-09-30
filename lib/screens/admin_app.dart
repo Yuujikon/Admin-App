@@ -120,7 +120,6 @@ class _AdminAppState extends State<AdminApp> {
     final bool isLargeScreen = Responsive.isLargeScreen(context);
 
     final orderProvider = context.watch<OrderProvider>();
-    // Pre-orders still needing process (excluding ready to pick up, collected, etc.)
     final toProcessCount = orderProvider.orders.where((o) =>
       o.status == OrderStatus.pending || o.status == OrderStatus.staging
     ).length;
@@ -132,7 +131,6 @@ class _AdminAppState extends State<AdminApp> {
       child: const Icon(Icons.receipt_long_outlined),
     );
 
-    // Define tabs based on role
     late final List<Widget> children;
     late final List<NavigationDestination> destinations;
 
@@ -161,7 +159,7 @@ class _AdminAppState extends State<AdminApp> {
           _navigateToTab(targetTab, category: category);
         }),
         InventoryScreen(initialCategory: _inventoryCategory),
-        const MoreManagementScreen(), // They can access Suppliers/Loss here
+        const MoreManagementScreen(),
       ];
       destinations = const [
         NavigationDestination(icon: Icon(Icons.dashboard_outlined),     label: 'Dashboard'),
@@ -181,14 +179,15 @@ class _AdminAppState extends State<AdminApp> {
       ];
     }
 
-    final int currentTab = _tab >= children.length ? 0 : _tab;
+    final int currentTab = _tab.clamp(0, (children.length - 1).clamp(0, 99));
     final double appBarHeight = isLandscape ? 52.0 : 65.0;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         toolbarHeight: appBarHeight,
-        backgroundColor: Theme.of(context).colorScheme.surface,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Row(
           children: [
             Column(
@@ -206,8 +205,8 @@ class _AdminAppState extends State<AdminApp> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
-                    color: _getRoleColor(auth.role, context).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
+                    color: _getRoleColor(auth.role, context).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     _getRoleLabel(auth.role).toUpperCase(), 
@@ -241,60 +240,95 @@ class _AdminAppState extends State<AdminApp> {
         ],
       ),
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // FLOATING PILL SIDEBAR
           if (isLargeScreen && destinations.length > 1) ...[
-            SingleChildScrollView(
-              primary: false,
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: MediaQuery.of(context).size.height - appBarHeight - MediaQuery.of(context).padding.top,
-                ),
-                child: IntrinsicHeight(
-                  child: NavigationRail(
-                    selectedIndex: currentTab,
-                    onDestinationSelected: (i) => setState(() => _tab = i),
-                    labelType: NavigationRailLabelType.all,
-                    minWidth: 64,
-                    backgroundColor: Theme.of(context).colorScheme.surface,
-                    indicatorColor: GdcColors.secondaryGreen.withValues(alpha: 0.15),
-                    selectedIconTheme: IconThemeData(color: Theme.of(context).colorScheme.primary),
-                    selectedLabelTextStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                    ),
-                    unselectedLabelTextStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 10,
-                    ),
-                    destinations: destinations.map((d) => NavigationRailDestination(
-                      icon: d.icon,
-                      selectedIcon: d.selectedIcon ?? d.icon,
-                      label: Text(d.label),
-                    )).toList(),
+            Padding(
+              padding: const EdgeInsets.only(left: 16, top: 8, bottom: 16, right: 8),
+              child: Container(
+                width: 80,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).brightness == Brightness.light
+                          ? Colors.black.withValues(alpha: 0.04)
+                          : Colors.transparent,
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: NavigationRail(
+                  selectedIndex: currentTab,
+                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  labelType: NavigationRailLabelType.all,
+                  minWidth: 80,
+                  backgroundColor: Colors.transparent,
+                  indicatorColor: GdcColors.secondaryGreen.withValues(alpha: 0.25),
+                  selectedIconTheme: IconThemeData(color: Theme.of(context).colorScheme.primary, size: 22),
+                  unselectedIconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7), size: 20),
+                  selectedLabelTextStyle: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                  unselectedLabelTextStyle: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 9,
+                  ),
+                  destinations: destinations.map((d) => NavigationRailDestination(
+                    icon: d.icon,
+                    selectedIcon: d.selectedIcon ?? d.icon,
+                    label: Text(d.label),
+                  )).toList(),
                 ),
               ),
-            ),
-            VerticalDivider(
-              thickness: 1,
-              width: 1,
-              color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ],
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: isLargeScreen 
-                    ? const BorderRadius.horizontal(left: Radius.circular(24))
-                    : const BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: IndexedStack(
-                index: currentTab,
-                children: children,
+            child: Padding(
+              padding: isLargeScreen 
+                  ? const EdgeInsets.only(top: 8, bottom: 16, right: 16, left: 4)
+                  : EdgeInsets.zero,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: isLargeScreen 
+                      ? BorderRadius.circular(32)
+                      : const BorderRadius.vertical(top: Radius.circular(32)),
+                  border: isLargeScreen
+                      ? Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3))
+                      : null,
+                  boxShadow: isLargeScreen
+                      ? [
+                          BoxShadow(
+                            color: Theme.of(context).brightness == Brightness.light
+                                ? Colors.black.withValues(alpha: 0.03)
+                                : Colors.transparent,
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          )
+                        ]
+                      : null,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1020),
+                    child: IndexedStack(
+                      index: currentTab,
+                      children: children,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
