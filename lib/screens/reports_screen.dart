@@ -62,8 +62,47 @@ class _ReportsScreenState extends State<ReportsScreen>
         return _customRange ??
             DateTimeRange(
               start: DateTime(now.year, now.month, 1),
-              end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+              end: DateTime(now.year, now.month, now.day, 23, 59, 59),
             );
+    }
+  }
+
+  Future<void> _selectCustomDateRange() async {
+    final now = DateTime.now();
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    DateTimeRange initialRange;
+    if (_customRange != null) {
+      final start = _customRange!.start.isAfter(todayEnd) ? todayEnd : _customRange!.start;
+      final end = _customRange!.end.isAfter(todayEnd) ? todayEnd : _customRange!.end;
+      initialRange = DateTimeRange(
+        start: start.isAfter(end) ? end : start,
+        end: end,
+      );
+    } else {
+      final start = DateTime(now.year, now.month, 1);
+      final end = todayEnd;
+      initialRange = DateTimeRange(
+        start: start.isAfter(end) ? end : start,
+        end: end,
+      );
+    }
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: todayEnd,
+      initialDateRange: initialRange,
+      helpText: 'Select Custom Date Range',
+    );
+
+    if (picked != null) {
+      final normalizedStart = DateTime(picked.start.year, picked.start.month, picked.start.day);
+      final normalizedEnd = DateTime(picked.end.year, picked.end.month, picked.end.day, 23, 59, 59);
+      setState(() {
+        _customRange = DateTimeRange(start: normalizedStart, end: normalizedEnd);
+        _selectedPeriod = ReportPeriod.custom;
+      });
     }
   }
 
@@ -187,54 +226,83 @@ class _ReportsScreenState extends State<ReportsScreen>
           // Date Range Selector Segmented Button
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<ReportPeriod>(
-                style: SegmentedButton.styleFrom(
-                    visualDensity: VisualDensity.compact),
-                segments: const [
-                  ButtonSegment(
-                      value: ReportPeriod.today,
-                      label: Text('Today',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.bold))),
-                  ButtonSegment(
-                      value: ReportPeriod.thisWeek,
-                      label: Text('Week',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.bold))),
-                  ButtonSegment(
-                      value: ReportPeriod.thisMonth,
-                      label: Text('Month',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.bold))),
-                  ButtonSegment(
-                      value: ReportPeriod.custom,
-                      label: Text('Custom',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.bold))),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<ReportPeriod>(
+                    style: SegmentedButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    segments: const [
+                      ButtonSegment(
+                          value: ReportPeriod.today,
+                          label: Text('Today',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold))),
+                      ButtonSegment(
+                          value: ReportPeriod.thisWeek,
+                          label: Text('Week',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold))),
+                      ButtonSegment(
+                          value: ReportPeriod.thisMonth,
+                          label: Text('Month',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold))),
+                      ButtonSegment(
+                          value: ReportPeriod.custom,
+                          label: Text('Custom',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold))),
+                    ],
+                    selected: {_selectedPeriod},
+                    onSelectionChanged: (set) async {
+                      final period = set.first;
+                      if (period == ReportPeriod.custom) {
+                        await _selectCustomDateRange();
+                      } else {
+                        setState(() => _selectedPeriod = period);
+                      }
+                    },
+                  ),
+                ),
+                if (_selectedPeriod == ReportPeriod.custom && _customRange != null) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: _selectCustomDateRange,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withAlpha(128),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary.withAlpha(80),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.calendar_month_rounded,
+                              size: 16, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${DateFormat('MMM d, yyyy').format(_customRange!.start)} - ${DateFormat('MMM d, yyyy').format(_customRange!.end)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(Icons.edit_rounded,
+                              size: 14, color: Theme.of(context).colorScheme.primary),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
-                selected: {_selectedPeriod},
-                onSelectionChanged: (set) async {
-                  final period = set.first;
-                  if (period == ReportPeriod.custom) {
-                    final picked = await showDateRangePicker(
-                      context: context,
-                      firstDate: DateTime(2023),
-                      lastDate: DateTime.now(),
-                      initialDateRange: _customRange ?? _activeDateRange,
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _customRange = picked;
-                        _selectedPeriod = ReportPeriod.custom;
-                      });
-                    }
-                  } else {
-                    setState(() => _selectedPeriod = period);
-                  }
-                },
-              ),
+              ],
             ),
           ),
           Expanded(
@@ -703,15 +771,24 @@ class _ReportsScreenState extends State<ReportsScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
+        Expanded(
+          child: Text(
+            label,
             style: TextStyle(
                 fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-                fontSize: isBold ? 15 : 13)),
-        Text(value,
-            style: TextStyle(
-                fontWeight: FontWeight.w900,
-                color: color,
-                fontSize: isBold ? 18 : 14)),
+                fontSize: isBold ? 15 : 13),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          value,
+          textAlign: TextAlign.end,
+          style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: color,
+              fontSize: isBold ? 18 : 14),
+        ),
       ],
     );
   }

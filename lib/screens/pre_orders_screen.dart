@@ -53,7 +53,14 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
   void _selectAll(List<PreOrder> orders) {
     setState(() {
-      _selectedOrderIds.addAll(orders.map((o) => o.id));
+      _selectedOrderIds.addAll(
+        orders
+            .where((o) =>
+                o.status == OrderStatus.pending ||
+                o.status == OrderStatus.staging ||
+                o.status == OrderStatus.ready)
+            .map((o) => o.id),
+      );
     });
   }
 
@@ -488,9 +495,24 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       );
     }
 
+    if (_activeStage == PreOrderStage.completed) {
+      return const SizedBox.shrink();
+    }
+
+    final advanceableOrders = visibleOrders
+        .where((o) =>
+            o.status == OrderStatus.pending ||
+            o.status == OrderStatus.staging ||
+            o.status == OrderStatus.ready)
+        .toList();
+
+    if (advanceableOrders.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final selectedCount = _selectedOrderIds.length;
-    final allVisibleSelected = visibleOrders.isNotEmpty &&
-        _selectedOrderIds.length == visibleOrders.length;
+    final allAdvanceableSelected = advanceableOrders.isNotEmpty &&
+        advanceableOrders.every((o) => _selectedOrderIds.contains(o.id));
 
     final String bulkActionText = switch (_activeStage) {
       PreOrderStage.pending => 'Start packing ($selectedCount)',
@@ -552,14 +574,14 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
           const SizedBox(width: 8),
           TextButton(
             onPressed: () {
-              if (allVisibleSelected) {
+              if (allAdvanceableSelected) {
                 _deselectAll();
               } else {
-                _selectAll(visibleOrders);
+                _selectAll(advanceableOrders);
               }
             },
             child: Text(
-              allVisibleSelected ? 'Deselect all' : 'Select all',
+              allAdvanceableSelected ? 'Deselect all' : 'Select all',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
@@ -762,8 +784,9 @@ class _PendingRefundCard extends StatelessWidget {
 
             return AlertDialog(
               title: const Text('Approve Refund Request'),
-              content: SizedBox(
-                width: double.maxFinite,
+              content: Container(
+                width: 480,
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -857,8 +880,9 @@ class _PendingRefundCard extends StatelessWidget {
 
             return AlertDialog(
               title: const Text('Decline / Reject Refund'),
-              content: SizedBox(
-                width: double.maxFinite,
+              content: Container(
+                width: 480,
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -941,31 +965,37 @@ class _PendingRefundCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade800,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.assignment_return_rounded,
-                          size: 14, color: Colors.white),
-                      SizedBox(width: 6),
-                      Text(
-                        'PENDING REFUND REQUEST',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
+                Flexible(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade800,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.assignment_return_rounded,
+                            size: 14, color: Colors.white),
+                        SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'PENDING REFUND REQUEST',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   formatPeso(req.total),
                   style: TextStyle(
@@ -1024,20 +1054,27 @@ class _PendingRefundCard extends StatelessWidget {
             const SizedBox(height: 8),
 
             // Date & Reason tag
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
-                Icon(Icons.access_time_rounded,
-                    size: 13, color: Colors.amber.shade900),
-                const SizedBox(width: 4),
-                Text(
-                  dateStr,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.amber.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.access_time_rounded,
+                        size: 13, color: Colors.amber.shade900),
+                    const SizedBox(width: 4),
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.amber.shade900,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1247,18 +1284,20 @@ class _OrderCard extends StatelessWidget {
             // Row 1: Checkbox, Avatar, Customer Name, Order ID & Status Badge
             Row(
               children: [
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: Checkbox(
-                    value: isSelected,
-                    onChanged: (_) => onSelectToggle(),
-                    activeColor: GdcColors.emeraldPrimary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6)),
+                if (canAdvance) ...[
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => onSelectToggle(),
+                      activeColor: GdcColors.emeraldPrimary,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
+                  const SizedBox(width: 10),
+                ],
                 CircleAvatar(
                   radius: 18,
                   backgroundColor:

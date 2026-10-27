@@ -177,7 +177,7 @@ class ReceiptPrinterService {
     bytes.addAll(generator.text(storeName,
         styles: const PosStyles(align: PosAlign.center, bold: true)));
     bytes.addAll(generator.text(
-        isXReading ? "MID-DAY X-READING REPORT" : "OFFICIAL SHIFT Z-READING",
+        isXReading ? "MID-DAY SHIFT REPORT" : "END-OF-SHIFT REPORT",
         styles: const PosStyles(align: PosAlign.center, bold: true)));
     bytes.addAll(generator.text("================================",
         styles: const PosStyles(align: PosAlign.center)));

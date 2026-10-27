@@ -352,7 +352,7 @@ class _SideNavItem extends StatelessWidget {
 
     final Color activeBg = isDark
         ? GdcColors.darkEmerald.withValues(alpha: 0.25)
-        : const Color(0xFFE6F7F2);
+        : GdcColors.creamActiveBackground;
     final Color activeBorder = isDark
         ? GdcColors.emeraldPrimary
         : GdcColors.darkEmerald;
@@ -484,7 +484,7 @@ class _AdminTopBar extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE6F7F2),
+                  color: GdcColors.creamActiveBackground,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -529,18 +529,41 @@ class _AdminTopBar extends StatelessWidget {
             icon: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFE6F7F2),
+                color: GdcColors.creamActiveBackground,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.arrow_forward_rounded,
+                Icons.logout_rounded,
                 size: 18,
                 color: GdcColors.darkEmerald,
               ),
             ),
             tooltip: 'Logout',
             onPressed: () async {
-              await auth.logout();
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Confirm Logout'),
+                  content: const Text(
+                      'Are you sure you want to log out of your account?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: const Text('Log Out'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await auth.logout();
+              }
             },
           ),
         ],

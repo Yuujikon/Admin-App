@@ -516,10 +516,16 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: Colors.grey)),
-            const Spacer(),
-            Text(val,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                val,
+                textAlign: TextAlign.end,
                 style:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       );
@@ -636,14 +642,16 @@ class _RefundHistoryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 Text('Order #${req.transactionId}',
                     style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: Colors.grey)),
-                const SizedBox(width: 8),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

@@ -27,17 +27,67 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   String? _errorMessage;
   String? _lastAutoPastedCode;
 
+  Timer? _lockoutTimer;
+  bool _isLockedOut = false;
+  int _lockoutSeconds = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _captureInitialClipboard();
+    _checkInitialLockout();
   }
 
   @override
   void dispose() {
+    _lockoutTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  Future<void> _checkInitialLockout() async {
+    final rem = await _pinService.getRemainingLockoutSeconds();
+    if (rem > 0 && mounted) {
+      _startLockoutTimer(rem);
+    }
+  }
+
+  void _startLockoutTimer(int seconds) {
+    _lockoutTimer?.cancel();
+    setState(() {
+      _isLockedOut = true;
+      _lockoutSeconds = seconds;
+      _pin = '';
+      _error = true;
+      _errorMessage = 'Too many failed attempts. Locked out for ${seconds}s';
+    });
+
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      final rem = await _pinService.getRemainingLockoutSeconds();
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (rem > 0) {
+        setState(() {
+          _isLockedOut = true;
+          _lockoutSeconds = rem;
+          _errorMessage = 'Too many failed attempts. Locked out for ${rem}s';
+        });
+      } else {
+        timer.cancel();
+        await _pinService.resetFailedAttempts();
+        if (mounted) {
+          setState(() {
+            _isLockedOut = false;
+            _lockoutSeconds = 0;
+            _error = false;
+            _errorMessage = null;
+          });
+        }
+      }
+    });
   }
 
   Future<void> _captureInitialClipboard() async {
@@ -59,7 +109,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   }
 
   Future<void> _checkClipboardForTotp() async {
-    if (_isVerifying || _useStaticPin) return;
+    if (_isVerifying || _useStaticPin || _isLockedOut) return;
 
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -111,12 +161,13 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   }
 
   void _onKey(String key) {
-    if (_isVerifying) return;
+    if (_isVerifying || _isLockedOut) return;
     final limit = _useStaticPin ? 4 : 6;
 
     if (key == '⌫') {
-      if (_pin.isNotEmpty)
+      if (_pin.isNotEmpty) {
         setState(() => _pin = _pin.substring(0, _pin.length - 1));
+      }
       return;
     }
     if (_pin.length >= limit) return;
@@ -130,29 +181,54 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   }
 
   Future<void> _verify(String code) async {
+    if (_isLockedOut) return;
+
     final auth = context.read<AppAuthProvider>();
     setState(() => _isVerifying = true);
 
-    bool ok = (code == '1234' || code == '123456') || auth.verifyTotp(code);
-
-    if (!ok) {
+    bool ok = false;
+    if (_useStaticPin) {
       ok = await _pinService.verifyPin(code);
+    } else {
+      ok = auth.verifyTotp(code);
+      if (!ok) {
+        ok = await _pinService.verifyPin(code);
+      }
     }
 
     if (!mounted) return;
 
-    setState(() => _isVerifying = false);
-
     if (ok) {
+      await _pinService.resetFailedAttempts();
+      setState(() {
+        _isVerifying = false;
+        _error = false;
+        _errorMessage = null;
+      });
       _onSuccess();
     } else {
+      final res = await _pinService.recordFailedAttempt();
+      final bool nowLocked = res['isLockedOut'] as bool;
+      final int remSec = res['remainingSeconds'] as int;
+      final int remAtt = res['remainingAttempts'] as int;
+
+      if (!mounted) return;
+
       setState(() {
         _pin = '';
+        _isVerifying = false;
         _error = true;
-        _errorMessage = _useStaticPin
-            ? 'Incorrect Admin PIN'
-            : 'Invalid Google Authenticator code';
       });
+
+      if (nowLocked) {
+        _startLockoutTimer(remSec);
+      } else {
+        setState(() {
+          _errorMessage = _useStaticPin
+              ? 'Incorrect Admin PIN. $remAtt ${remAtt == 1 ? "attempt" : "attempts"} remaining.'
+              : 'Invalid code. $remAtt ${remAtt == 1 ? "attempt" : "attempts"} remaining.';
+        });
+      }
     }
   }
 
@@ -236,8 +312,9 @@ class _AdminPinScreenState extends State<AdminPinScreen>
             ),
           ],
         ),
-        content: SizedBox(
-          width: double.maxFinite,
+        content: Container(
+          width: 440,
+          constraints: const BoxConstraints(maxWidth: 440),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,7 +515,9 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      email,
+                      auth.userFullName != null && auth.userFullName!.isNotEmpty
+                          ? '${auth.userFullName} ($email)'
+                          : email,
                       style: TextStyle(
                           color: Theme.of(context).semantic.success,
                           fontSize: 11,
@@ -492,14 +571,54 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                             decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
+                                    color: _isLockedOut
+                                        ? Theme.of(context).colorScheme.error
+                                        : Theme.of(context).colorScheme.primary,
                                     width: 1.5),
-                                color: i < _pin.length
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Colors.transparent))),
+                                color: _isLockedOut
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .error
+                                        .withValues(alpha: 0.3)
+                                    : (i < _pin.length
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.transparent)))),
                   ),
-                  if (_error || _errorMessage != null) ...[
+                  if (_isLockedOut) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .errorContainer
+                            .withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .error
+                                .withValues(alpha: 0.5)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock_clock_rounded,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.error),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Locked out! Try again in ${_lockoutSeconds}s',
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (_error || _errorMessage != null) ...[
                     const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -521,38 +640,44 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                           color: Theme.of(context).colorScheme.primary),
                     )
                   else
-                    GridView.count(
-                      crossAxisCount: 3,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      children: keys.map((k) {
-                        final isSetup = k == 'SETUP';
-                        return GestureDetector(
-                          onTap: isSetup
-                              ? () => _showSetupDialog(context)
-                              : () => _onKey(k),
-                          child: Container(
-                            decoration: BoxDecoration(
+                    Opacity(
+                      opacity: _isLockedOut ? 0.4 : 1.0,
+                      child: GridView.count(
+                        crossAxisCount: 3,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        children: keys.map((k) {
+                          final isSetup = k == 'SETUP';
+                          return GestureDetector(
+                            onTap: isSetup
+                                ? () => _showSetupDialog(context)
+                                : () => _onKey(k),
+                            child: Container(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: isSetup
                                     ? Colors.blue.withValues(alpha: 0.1)
                                     : Theme.of(context)
                                         .colorScheme
-                                        .surfaceContainerHigh),
-                            alignment: Alignment.center,
-                            child: isSetup
-                                ? const Icon(Icons.fingerprint_rounded,
-                                    color: Colors.blue, size: 24)
-                                : Text(k,
-                                    style: const TextStyle(
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold)),
-                          ),
-                        );
-                      }).toList(),
+                                        .surfaceContainerHigh,
+                              ),
+                              alignment: Alignment.center,
+                              child: isSetup
+                                  ? const Icon(Icons.fingerprint_rounded,
+                                      color: Colors.blue, size: 24)
+                                  : Text(
+                                      k,
+                                      style: const TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
                   const SizedBox(height: 16),
                   TextButton(

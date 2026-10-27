@@ -283,13 +283,9 @@ class _OverviewTab extends StatelessWidget {
                   tooltip: 'Call Supplier',
                 ),
                 IconButton(
-                  onPressed: () async {
+                  onPressed: () {
                     final msg =
-                        'Hello ${supplier.name}, this is GDC Store regarding inventory restocking.';
-                    await NotificationService.showSmsNotificationPopUp(
-                      title: '💬 SMS to ${supplier.name}',
-                      body: msg,
-                    );
+                        'Hello ${supplier.name}, this is GDC Store regarding inventory supply restocking.';
                     _launchAction(
                         'sms:${supplier.phone}?body=${Uri.encodeComponent(msg)}');
                   },
@@ -1130,7 +1126,7 @@ class _RestockTabState extends State<_RestockTab> {
               ],
             ),
             const SizedBox(height: 12),
-            ...activeInquiries.map((ri) => _InquiryCard(inquiry: ri)),
+            ...activeInquiries.map((ri) => _InquiryCard(inquiry: ri, supplierPhone: widget.supplier.phone)),
             const SizedBox(height: 24),
           ],
           Row(
@@ -1276,7 +1272,7 @@ class _RestockTabState extends State<_RestockTab> {
                 );
               },
               icon: const Icon(Icons.description_outlined),
-              label: const Text('GENERATE & SHARE PURCHASE ORDER (PO)'),
+              label: const Text('GENERATE & SHARE SUPPLIER RESTOCK ORDER'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
@@ -1295,7 +1291,7 @@ class _RestockTabState extends State<_RestockTab> {
     List<Product> products,
     String adminName,
   ) {
-    final buffer = StringBuffer('[GDC SARI-SARI STORE] PURCHASE ORDER\n');
+    final buffer = StringBuffer('[GDC SARI-SARI STORE] SUPPLIER RESTOCK ORDER\n');
     buffer.writeln('Supplier: ${supplier.name}');
     if (supplier.contactName.isNotEmpty) {
       buffer.writeln('Contact Person: ${supplier.contactName}');
@@ -1303,6 +1299,7 @@ class _RestockTabState extends State<_RestockTab> {
     buffer.writeln('Phone: ${supplier.phone}');
     buffer.writeln('Date: ${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
     buffer.writeln('----------------------------------------');
+    buffer.writeln('Requested Supply Items:');
 
     double totalEstimatedCost = 0;
 
@@ -1328,7 +1325,7 @@ class _RestockTabState extends State<_RestockTab> {
     }
 
     buffer.writeln('----------------------------------------');
-    buffer.writeln('Estimated Total: ${formatPeso(totalEstimatedCost)}');
+    buffer.writeln('Estimated Supply Total: ${formatPeso(totalEstimatedCost)}');
     buffer.writeln('Authorized By: $adminName');
 
     final poText = buffer.toString();
@@ -1337,29 +1334,33 @@ class _RestockTabState extends State<_RestockTab> {
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('Purchase Order Summary'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withValues(alpha: 0.3)),
+        title: const Text('Supplier Restock Order Summary'),
+        content: Container(
+          width: 480,
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .outline
+                            .withValues(alpha: 0.3)),
+                  ),
+                  child: SelectableText(
+                    poText,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                  ),
                 ),
-                child: SelectableText(
-                  poText,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [
@@ -1371,12 +1372,12 @@ class _RestockTabState extends State<_RestockTab> {
               if (ctx.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                      content: Text('Purchase Order copied to clipboard! 📋')),
+                      content: Text('Supplier Restock Order copied to clipboard! 📋')),
                 );
               }
             },
             icon: const Icon(Icons.copy_rounded, size: 16),
-            label: const Text('Copy PO'),
+            label: const Text('Copy Restock Order'),
           ),
           ElevatedButton.icon(
             onPressed: () async {
@@ -1390,12 +1391,12 @@ class _RestockTabState extends State<_RestockTab> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text(
-                          'PO copied to clipboard! Paste directly into messaging app.')),
+                          'Restock Order copied to clipboard! Paste directly into messaging app.')),
                 );
               }
             },
             icon: const Icon(Icons.send_rounded, size: 16),
-            label: const Text('Share PO'),
+            label: const Text('Share via SMS'),
           ),
         ],
       ),
@@ -1596,8 +1597,9 @@ class _HistoryTab extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Restock Order #${ri.inquiryNumber}'),
-        content: SizedBox(
-          width: double.maxFinite,
+        content: Container(
+          width: 480,
+          constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1699,7 +1701,8 @@ class _HistoryTab extends StatelessWidget {
 
 class _InquiryCard extends StatefulWidget {
   final RestockInquiry inquiry;
-  const _InquiryCard({required this.inquiry});
+  final String supplierPhone;
+  const _InquiryCard({required this.inquiry, required this.supplierPhone});
 
   @override
   State<_InquiryCard> createState() => _InquiryCardState();
@@ -1819,12 +1822,18 @@ class _InquiryCardState extends State<_InquiryCard> {
                   IconButton(
                     onPressed: () => _showEditSheet(context),
                     icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                    tooltip: 'Edit Inquiry',
+                  ),
+                  IconButton(
+                    onPressed: () => sendRestockSms(context, inquiry, widget.supplierPhone),
+                    icon: const Icon(Icons.message_outlined, color: Colors.blue),
+                    tooltip: 'Send via SMS',
                   ),
                   const SizedBox(width: 8),
                 ],
                 if (inquiry.status == RestockInquiryStatus.sent ||
                     inquiry.status == RestockInquiryStatus.acknowledged ||
-                    inquiry.status == RestockInquiryStatus.partiallyFulfilled)
+                    inquiry.status == RestockInquiryStatus.partiallyFulfilled) ...[
                   IconButton(
                     onPressed: () {
                       sendRestockEmail(context, inquiry);
@@ -1833,6 +1842,12 @@ class _InquiryCardState extends State<_InquiryCard> {
                     icon: const Icon(Icons.email_outlined, color: Colors.blue),
                     tooltip: 'Resend Email',
                   ),
+                  IconButton(
+                    onPressed: () => sendRestockSms(context, inquiry, widget.supplierPhone),
+                    icon: const Icon(Icons.message_outlined, color: Colors.blue),
+                    tooltip: 'Resend via SMS',
+                  ),
+                ],
                 IconButton(
                   onPressed: () => _confirmDelete(context, inquiry),
                   icon: const Icon(Icons.delete_outline_rounded,
@@ -1965,6 +1980,56 @@ void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error opening email app.')));
+    }
+  }
+}
+
+void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
+    {bool updateStatus = true}) async {
+  if (phone.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Supplier phone number is missing.')),
+      );
+    }
+    return;
+  }
+
+  final buffer = StringBuffer('Hello ${inquiry.supplierName},\n\n');
+  buffer.writeln(
+      'This is GDC Store regarding Restock Supply Inquiry #${inquiry.inquiryNumber}.\n');
+  buffer.writeln('Requested supply items:');
+  for (final item in inquiry.items) {
+    buffer.writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
+  }
+  buffer.writeln('\nPlease confirm supply availability and pricing. Thank you!');
+
+  final msg = buffer.toString();
+  final smsUrl = 'sms:$phone?body=${Uri.encodeComponent(msg)}';
+  final uri = Uri.parse(smsUrl);
+
+  try {
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+      if (updateStatus && context.mounted) {
+        context.read<RestockProvider>().sendInquiry(inquiry);
+      }
+    } else {
+      await Clipboard.setData(ClipboardData(text: msg));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'Could not open SMS app. Details copied to clipboard!')),
+        );
+      }
+    }
+  } catch (e) {
+    debugPrint('SMS Launch Error: $e');
+    await Clipboard.setData(ClipboardData(text: msg));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error launching SMS app.')));
     }
   }
 }

@@ -85,13 +85,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       controllers: _focusMap,
       barcodeFocus: _searchFocus,
       onBarcodeDetected: (code) {
-        String searchText = code;
-        try {
-          final p = products.firstWhere((p) => p.barcode == code);
-          searchText = p.name;
-        } catch (_) {}
-        _searchCtrl.text = searchText;
-        setState(() => _search = searchText);
+        _searchCtrl.text = code;
+        setState(() => _search = code);
         _searchFocus.requestFocus();
       },
       onTextDetected: (text) {
@@ -214,16 +209,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       context: context,
                                       useRootNavigator: true,
                                       builder: (_) => const ScannerDialog());
-                                  if (res != null) {
-                                    String searchText = res;
-                                    try {
-                                      final p = products.firstWhere(
-                                          (p) => p.barcode == res);
-                                      searchText = p.name;
-                                    } catch (_) {}
-
-                                    _searchCtrl.text = searchText;
-                                    setState(() => _search = searchText);
+                                  if (res != null && res.isNotEmpty) {
+                                    _searchCtrl.text = res;
+                                    setState(() => _search = res);
+                                    _searchFocus.requestFocus();
                                   }
                                 },
                               ),

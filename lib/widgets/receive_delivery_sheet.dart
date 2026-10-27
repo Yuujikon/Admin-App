@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -171,42 +172,60 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
 
     final double totalReceivedValue = calcTotalReceived();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        left: 20,
-        right: 20,
-        top: 20,
-      ),
-      child: SingleChildScrollView(
-        child: MaxWidthContainer(
-          maxWidth: MaxWidthContainer.formMaxWidth,
-          alignment: Alignment.topCenter,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainer
+                .withValues(alpha: 0.90),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withValues(alpha: 0.4),
+              width: 1.2,
+            ),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: MaxWidthContainer(
+              maxWidth: MaxWidthContainer.formMaxWidth,
+              alignment: Alignment.topCenter,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -618,10 +637,13 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
         ),
       ),
     ),
-  );
-}
+        ),
+      ),
+    );
+  }
 
   Widget _buildSingleProductReceivingForm(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final inventory = context.watch<InventoryProvider>();
     final products = inventory.products;
 
@@ -643,39 +665,66 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
     final int currentStock = _selectedProduct?.totalStock ?? 0;
     final int newCalculatedStock = currentStock + addedBaseUnits;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 20,
-        right: 20,
-        top: 24,
-      ),
-      child: SingleChildScrollView(
-        child: MaxWidthContainer(
-          maxWidth: MaxWidthContainer.formMaxWidth,
-          alignment: Alignment.topCenter,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Receive Stock Delivery',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainer
+                .withValues(alpha: 0.90),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withValues(alpha: 0.4),
+              width: 1.2,
+            ),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: MaxWidthContainer(
+              maxWidth: MaxWidthContainer.formMaxWidth,
+              alignment: Alignment.topCenter,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Receive Stock Delivery',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
                   IconButton.filledTonal(
                     icon: const Icon(Icons.qr_code_scanner),
                     tooltip: 'Scan Barcode',
@@ -1082,9 +1131,14 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                   padding: const EdgeInsets.all(14),
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50.withValues(alpha: 0.6),
+                    color: isDark
+                        ? Colors.green.shade900.withValues(alpha: 0.25)
+                        : Colors.green.shade50.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.green.shade300),
+                    border: Border.all(
+                        color: isDark
+                            ? Colors.green.shade800
+                            : Colors.green.shade300),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1092,14 +1146,19 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                       Row(
                         children: [
                           Icon(Icons.inventory_2_rounded,
-                              size: 18, color: Colors.green.shade900),
+                              size: 18,
+                              color: isDark
+                                  ? Colors.green.shade300
+                                  : Colors.green.shade900),
                           const SizedBox(width: 8),
                           Text(
                             'UoM Package & Cost Breakdown',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: Colors.green.shade900,
+                              color: isDark
+                                  ? Colors.green.shade300
+                                  : Colors.green.shade900,
                             ),
                           ),
                         ],
@@ -1122,7 +1181,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     'Bulk Qty (${_selectedProduct!.bulkUnit.toUpperCase()}) *',
                                 hintText: 'e.g. 2',
                                 isDense: true,
-                                fillColor: Colors.white,
+                                fillColor:
+                                    Theme.of(context).colorScheme.surface,
                                 filled: true,
                               ),
                               validator: (v) {
@@ -1151,7 +1211,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                 prefixText: 'P ',
                                 hintText: 'e.g. 720.00',
                                 isDense: true,
-                                fillColor: Colors.white,
+                                fillColor:
+                                    Theme.of(context).colorScheme.surface,
                                 filled: true,
                               ),
                               validator: (v) {
@@ -1178,7 +1239,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                 labelText:
                                     'Items per ${_selectedProduct!.bulkUnit}',
                                 isDense: true,
-                                fillColor: Colors.grey.shade100,
+                                fillColor: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
                                 filled: true,
                               ),
                             ),
@@ -1192,11 +1255,12 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                 FilteringTextInputFormatter.digitsOnly
                               ],
                               onChanged: (_) => setState(() {}),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Extra Loose Items',
                                 hintText: 'e.g. 2',
                                 isDense: true,
-                                fillColor: Colors.white,
+                                fillColor:
+                                    Theme.of(context).colorScheme.surface,
                                 filled: true,
                               ),
                             ),
@@ -1212,14 +1276,22 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.green.shade100,
+                            color: isDark
+                                ? Colors.green.shade900.withValues(alpha: 0.4)
+                                : Colors.green.shade100,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.green.shade400),
+                            border: Border.all(
+                                color: isDark
+                                    ? Colors.green.shade800
+                                    : Colors.green.shade400),
                           ),
                           child: Row(
                             children: [
                               Icon(Icons.auto_awesome,
-                                  size: 16, color: Colors.green.shade900),
+                                  size: 16,
+                                  color: isDark
+                                      ? Colors.green.shade200
+                                      : Colors.green.shade900),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -1227,7 +1299,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.green.shade900,
+                                    color: isDark
+                                        ? Colors.green.shade200
+                                        : Colors.green.shade900,
                                   ),
                                 ),
                               ),
@@ -1250,7 +1324,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                 labelText:
                                     'Initial Quantity (${_selectedProduct!.unit}) *',
                                 isDense: true,
-                                fillColor: Colors.white,
+                                fillColor:
+                                    Theme.of(context).colorScheme.surface,
                                 filled: true,
                                 suffixIcon: const Tooltip(
                                   message:
@@ -1269,11 +1344,12 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                   ? unitCostPerPiece.toStringAsFixed(2)
                                   : '0.00',
                               readOnly: true,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Unit Cost *',
                                 prefixText: 'P ',
                                 isDense: true,
-                                fillColor: Colors.white,
+                                fillColor:
+                                    Theme.of(context).colorScheme.surface,
                                 filled: true,
                               ),
                             ),
@@ -1377,12 +1453,14 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: _batchExpiry == null
-                      ? Colors.red.shade50
+                      ? (isDark
+                          ? Colors.red.shade900.withValues(alpha: 0.25)
+                          : Colors.red.shade50)
                       : Theme.of(context).colorScheme.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: _batchExpiry == null
-                        ? Colors.red.shade400
+                        ? (isDark ? Colors.red.shade700 : Colors.red.shade400)
                         : Theme.of(context)
                             .colorScheme
                             .outline
@@ -1402,16 +1480,28 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                               Icons.event_available_rounded,
                               size: 18,
                               color: _batchExpiry == null
-                                  ? Colors.red
-                                  : Colors.green.shade800,
+                                  ? (isDark ? Colors.red.shade300 : Colors.red)
+                                  : (isDark
+                                      ? Colors.green.shade300
+                                      : Colors.green.shade800),
                             ),
                             const SizedBox(width: 8),
-                            const Text('Batch Expiry Date ',
+                            Text('Batch Expiry Date ',
                                 style: TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 13)),
-                            const Text('*',
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: _batchExpiry == null
+                                        ? (isDark
+                                            ? Colors.red.shade200
+                                            : Colors.red.shade900)
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurface)),
+                            Text('*',
                                 style: TextStyle(
-                                    color: Colors.red,
+                                    color: isDark
+                                        ? Colors.red.shade300
+                                        : Colors.red,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 14)),
                           ],
@@ -1419,18 +1509,23 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                         if (_batchExpiry != null)
                           InkWell(
                             onTap: () => setState(() => _batchExpiry = null),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
                                   horizontal: 4, vertical: 2),
                               child: Row(
                                 children: [
                                   Icon(Icons.clear,
-                                      size: 14, color: Colors.red),
-                                  SizedBox(width: 2),
+                                      size: 14,
+                                      color: isDark
+                                          ? Colors.red.shade300
+                                          : Colors.red),
+                                  const SizedBox(width: 2),
                                   Text('Clear',
                                       style: TextStyle(
                                           fontSize: 11,
-                                          color: Colors.red,
+                                          color: isDark
+                                              ? Colors.red.shade300
+                                              : Colors.red,
                                           fontWeight: FontWeight.bold)),
                                 ],
                               ),
@@ -1450,7 +1545,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: _batchExpiry == null
-                                ? Colors.red.shade300
+                                ? (isDark
+                                    ? Colors.red.shade700
+                                    : Colors.red.shade300)
                                 : Theme.of(context).colorScheme.outline,
                           ),
                         ),
@@ -1459,7 +1556,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                             Icon(
                               Icons.calendar_month_rounded,
                               color: _batchExpiry == null
-                                  ? Colors.red
+                                  ? (isDark ? Colors.red.shade300 : Colors.red)
                                   : Theme.of(context).colorScheme.primary,
                               size: 20,
                             ),
@@ -1474,12 +1571,19 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
                                   color: _batchExpiry == null
-                                      ? Colors.red.shade900
-                                      : Theme.of(context).colorScheme.onSurface,
+                                      ? (isDark
+                                          ? Colors.red.shade300
+                                          : Colors.red.shade900)
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
                                 ),
                               ),
                             ),
-                            const Icon(Icons.arrow_drop_down_rounded),
+                            Icon(
+                              Icons.arrow_drop_down_rounded,
+                              color: isDark ? Colors.white70 : Colors.black54,
+                            ),
                           ],
                         ),
                       ),
@@ -1521,11 +1625,13 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                     ),
                     if (_batchExpiry == null) ...[
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         '⚠️ Mandatory: Every received batch requires an expiration date for FEFO compliance.',
                         style: TextStyle(
                             fontSize: 11,
-                            color: Colors.red,
+                            color: isDark
+                                ? Colors.red.shade300
+                                : Colors.red.shade900,
                             fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -1554,8 +1660,10 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
         ),
       ),
     ),
-  );
-}
+        ),
+      ),
+    );
+  }
 
   Future<void> _scanBarcode() async {
     final result = await showDialog<String>(
@@ -1609,11 +1717,14 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
         context: context,
         useRootNavigator: true,
         builder: (ctx) => AlertDialog(
-          title: Row(
-            children: const [
+          title: const Row(
+            children: [
               Icon(Icons.warning_amber_rounded, color: Colors.red),
               SizedBox(width: 8),
-              Text('Expiration Date Required'),
+              Expanded(
+                child: Text('Expiration Date Required',
+                    overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
           content: const Text(
@@ -1714,11 +1825,14 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
         context: context,
         useRootNavigator: true,
         builder: (ctx) => AlertDialog(
-          title: Row(
-            children: const [
+          title: const Row(
+            children: [
               Icon(Icons.warning_amber_rounded, color: Colors.red),
               SizedBox(width: 8),
-              Text('Expiration Date Required'),
+              Expanded(
+                child: Text('Expiration Date Required',
+                    overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
           content: Text(

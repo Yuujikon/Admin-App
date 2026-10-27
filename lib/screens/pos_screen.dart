@@ -37,6 +37,7 @@ class _PosScreenState extends State<PosScreen> {
   Customer? _selectedCustomer;
 
   double _lastTotal = 0, _lastChange = 0;
+  bool _showCart = false;
 
   @override
   void initState() {
@@ -138,8 +139,9 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Select Variant: ${p.name}'),
-        content: SizedBox(
-          width: double.maxFinite,
+        content: Container(
+          width: 440,
+          constraints: const BoxConstraints(maxWidth: 440),
           child: ListView.builder(
             shrinkWrap: true,
             itemCount: p.variants.length,
@@ -179,9 +181,6 @@ class _PosScreenState extends State<PosScreen> {
                       qty: 1,
                       isPerishable: p.isPerishable));
             } else {
-              // If already in cart, maybe just increment? Or leave as is.
-              // Requirements usually suggest adding the missing parts of the bundle.
-              // Let's increment qty by 1 for items already in cart.
               if (_cart[idx].qty < p.stock) {
                 _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty + 1);
               }
@@ -360,6 +359,7 @@ class _PosScreenState extends State<PosScreen> {
           _selectedCustomer = null;
           _done = true;
           _saving = false;
+          _showCart = false;
         });
       }
     } catch (e) {
@@ -382,9 +382,6 @@ class _PosScreenState extends State<PosScreen> {
 
     final inventory = context.watch<InventoryProvider>();
     final products = inventory.sortedProducts;
-    final mediaQuery = MediaQuery.of(context);
-    final isLandscape = mediaQuery.orientation == Orientation.landscape;
-    final isTablet = mediaQuery.size.width >= 600 || isLandscape;
 
     final query = _barcodeCtrl.text.toLowerCase();
     final filtered = products
@@ -397,7 +394,12 @@ class _PosScreenState extends State<PosScreen> {
     return BarcodeInterceptor(
       controllers: _focusMap,
       barcodeFocus: _barcodeFocus,
-      onBarcodeDetected: (code) => _onBarcodeSubmit(code, products),
+      onBarcodeDetected: (code) {
+        _barcodeCtrl.text = code;
+        setState(() {});
+        _barcodeFocus.requestFocus();
+        _onBarcodeSubmit(code, products);
+      },
       onTextDetected: (text) {
         _barcodeCtrl.text = text;
         setState(() {});
@@ -405,67 +407,122 @@ class _PosScreenState extends State<PosScreen> {
       },
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
-        body: Column(children: [
-          const _OfflineStatusBanner(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: TextField(
-              controller: _barcodeCtrl,
-              focusNode: _barcodeFocus,
-              onSubmitted: (v) => _onBarcodeSubmit(v, products),
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'Scan or search products...',
-                prefixIcon: const Icon(Icons.qr_code_scanner),
-                isDense: true,
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.camera_alt_outlined),
-                  onPressed: () async {
-                    final code = await showDialog<String>(
-                        context: context,
-                        useRootNavigator: true,
-                        builder: (_) => const ScannerDialog());
-                    if (code != null) _onBarcodeSubmit(code, products);
-                  },
-                ),
+        body: Column(
+          children: [
+            const _OfflineStatusBanner(),
+            // Top Bar with Search Field + Products/Basket View Switcher
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _barcodeCtrl,
+                      focusNode: _barcodeFocus,
+                      onSubmitted: (v) => _onBarcodeSubmit(v, products),
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Scan or search products...',
+                        prefixIcon: const Icon(Icons.qr_code_scanner),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.camera_alt_outlined),
+                          onPressed: () async {
+                            final code = await showDialog<String>(
+                              context: context,
+                              useRootNavigator: true,
+                              builder: (_) => const ScannerDialog(),
+                            );
+                            if (code != null && code.isNotEmpty) {
+                              _barcodeCtrl.text = code;
+                              setState(() {});
+                              _barcodeFocus.requestFocus();
+                              _onBarcodeSubmit(code, products);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _PosViewSwitcher(
+                    showCart: _showCart,
+                    totalCartItems:
+                        _cart.fold<int>(0, (sum, item) => sum + item.qty),
+                    onViewChanged: (showCart) =>
+                        setState(() => _showCart = showCart),
+                  ),
+                ],
               ),
             ),
-          ),
-          Expanded(
-              child: Row(children: [
             Expanded(
-              child: _ProductGrid(
-                  products: filtered,
-                  cart: _cart,
-                  onToggle: _toggle,
-                  onBundleToggle: _toggleBundle),
+              child: _showCart
+                  ? Align(
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 800),
+                        child: _CartPanel(
+                          cart: _cart,
+                          cashCtrl: _cashCtrl,
+                          breakdown: _breakdown,
+                          cashNum: _cashNum,
+                          change: _change,
+                          products: products,
+                          selectedCustomer: _selectedCustomer,
+                          saving: _saving,
+                          cashFocus: _cashFocus,
+                          onAdjust: _adjustQty,
+                          onSetQty: _setCartQty,
+                          onRemove: (id, vid) => setState(() {
+                            _cart.removeWhere(
+                                (c) => c.productId == id && c.variantId == vid);
+                            if (_cart.isEmpty) {
+                              _showCart = false;
+                            }
+                          }),
+                          onComplete: _completeSale,
+                          onSelectCustomer: (c) =>
+                              setState(() => _selectedCustomer = c),
+                          onClear: () => setState(() {
+                            _cart.clear();
+                            _showCart = false;
+                          }),
+                          onBackToProducts: () =>
+                              setState(() => _showCart = false),
+                        ),
+                      ),
+                    )
+                  : Stack(
+                      children: [
+                        _ProductGrid(
+                          products: filtered,
+                          cart: _cart,
+                          onToggle: _toggle,
+                          onBundleToggle: _toggleBundle,
+                        ),
+                        if (_cart.isNotEmpty)
+                          Positioned(
+                            left: 16,
+                            right: 16,
+                            bottom: 16,
+                            child: SafeArea(
+                              child: _FloatingCartButton(
+                                totalQty: _cart.fold<int>(
+                                    0, (sum, item) => sum + item.qty),
+                                totalPrice: _total,
+                                onPressed: () =>
+                                    setState(() => _showCart = true),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
             ),
-            SizedBox(
-                width: isTablet ? 360 : 310,
-                child: _CartPanel(
-                    cart: _cart,
-                    cashCtrl: _cashCtrl,
-                    breakdown: _breakdown,
-                    cashNum: _cashNum,
-                    change: _change,
-                    products: products,
-                    selectedCustomer: _selectedCustomer,
-                    saving: _saving,
-                    cashFocus: _cashFocus,
-                    onAdjust: _adjustQty,
-                    onSetQty: _setCartQty,
-                    onRemove: (id, vid) => setState(() => _cart.removeWhere(
-                        (c) => c.productId == id && c.variantId == vid)),
-                    onComplete: _completeSale,
-                    onSelectCustomer: (c) =>
-                        setState(() => _selectedCustomer = c),
-                    onClear: () => setState(() {
-                          _cart.clear();
-                        }))),
-          ])),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -767,6 +824,7 @@ class _CartPanel extends StatelessWidget {
   final ScrollController? scrollController;
   final bool saving;
   final FocusNode cashFocus;
+  final VoidCallback? onBackToProducts;
 
   const _CartPanel({
     required this.cart,
@@ -785,6 +843,7 @@ class _CartPanel extends StatelessWidget {
     required this.saving,
     required this.cashFocus,
     this.scrollController,
+    this.onBackToProducts,
   });
 
   @override
@@ -794,20 +853,12 @@ class _CartPanel extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          left: BorderSide(
-            color: Theme.of(context)
-                .colorScheme
-                .outlineVariant
-                .withValues(alpha: 0.4),
-          ),
-        ),
       ),
       child: Column(
         children: [
           // 1. Header Section
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,
               border: Border(
@@ -822,25 +873,37 @@ class _CartPanel extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
                   children: [
-                    Text(
-                      'Your Cart',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    Text(
-                      '${cart.length} item${cart.length != 1 ? 's' : ''}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant
-                            .withValues(alpha: 0.7),
+                    if (onBackToProducts != null) ...[
+                      IconButton.filledTonal(
+                        onPressed: onBackToProducts,
+                        icon: const Icon(Icons.arrow_back),
+                        tooltip: 'Back to Products',
                       ),
+                      const SizedBox(width: 12),
+                    ],
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Your Cart',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          '${cart.length} item${cart.length != 1 ? 's' : ''}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1061,31 +1124,33 @@ class _CartPanel extends StatelessWidget {
                                       color: Colors.white))
                               : const Text('PAY'))),
                 ]),
-                const SizedBox(height: 8),
-                if (cashNum >= breakdown.total)
-                  Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Change Due:',
-                            style: TextStyle(fontSize: 11)),
-                        Text(formatPeso(change),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Colors.green))
-                      ])
-                else if (cart.isNotEmpty)
-                  Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Short:',
-                            style: TextStyle(fontSize: 11)),
-                        Text(formatPeso(breakdown.total - cashNum),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                color: Colors.red))
-                      ]),
+                if (cart.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  if (cashNum >= breakdown.total)
+                    Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Change Due:',
+                              style: TextStyle(fontSize: 11)),
+                          Text(formatPeso(change),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.green))
+                        ])
+                  else
+                    Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Short:',
+                              style: TextStyle(fontSize: 11)),
+                          Text(formatPeso(breakdown.total - cashNum),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Colors.red))
+                        ]),
+                ],
               ],
             ),
           ),
@@ -1114,8 +1179,9 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
 
     return AlertDialog(
         title: const Text('Select Customer'),
-        content: SizedBox(
-            width: double.maxFinite,
+        content: Container(
+            width: 440,
+            constraints: const BoxConstraints(maxWidth: 440),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1268,3 +1334,247 @@ class _OfflineStatusBanner extends StatelessWidget {
     );
   }
 }
+
+class _FloatingCartButton extends StatelessWidget {
+  final int totalQty;
+  final double totalPrice;
+  final VoidCallback onPressed;
+
+  const _FloatingCartButton({
+    required this.totalQty,
+    required this.totalPrice,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final onPrimaryColor = theme.colorScheme.onPrimary;
+
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: primaryColor,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Row(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(Icons.shopping_bag_outlined,
+                        color: onPrimaryColor, size: 24),
+                    Positioned(
+                      right: -8,
+                      top: -8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          '$totalQty',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'View Your Cart',
+                        style: TextStyle(
+                          color: onPrimaryColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        '$totalQty item${totalQty != 1 ? 's' : ''} added',
+                        style: TextStyle(
+                          color: onPrimaryColor.withValues(alpha: 0.8),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  formatPeso(totalPrice),
+                  style: TextStyle(
+                    color: onPrimaryColor,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  color: onPrimaryColor,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PosViewSwitcher extends StatelessWidget {
+  final bool showCart;
+  final int totalCartItems;
+  final ValueChanged<bool> onViewChanged;
+
+  const _PosViewSwitcher({
+    required this.showCart,
+    required this.totalCartItems,
+    required this.onViewChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Products Tab
+          _buildTab(
+            context,
+            isSelected: !showCart,
+            icon: Icons.grid_view_rounded,
+            label: 'Products',
+            badgeCount: null,
+            onTap: () => onViewChanged(false),
+          ),
+          const SizedBox(width: 4),
+          // Basket Tab
+          _buildTab(
+            context,
+            isSelected: showCart,
+            icon: Icons.shopping_cart_outlined,
+            label: 'Basket',
+            badgeCount: totalCartItems > 0 ? totalCartItems : null,
+            onTap: () => onViewChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTab(
+    BuildContext context, {
+    required bool isSelected,
+    required IconData icon,
+    required String label,
+    required int? badgeCount,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final activeBg = theme.colorScheme.primaryContainer.withValues(alpha: 0.6);
+    final activeBorder = theme.colorScheme.primary;
+    final activeTextColor = theme.colorScheme.primary;
+    final inactiveTextColor = theme.colorScheme.onSurfaceVariant;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? activeBg : Colors.transparent,
+            borderRadius: BorderRadius.circular(22),
+            border: isSelected
+                ? Border.all(color: activeBorder, width: 1.5)
+                : Border.all(color: Colors.transparent, width: 1.5),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected ? activeTextColor : inactiveTextColor,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                  color: isSelected ? activeTextColor : inactiveTextColor,
+                ),
+              ),
+              if (badgeCount != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$badgeCount',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? activeTextColor : inactiveTextColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

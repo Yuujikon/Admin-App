@@ -80,17 +80,6 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return false;
 
-    final primaryFocus = FocusManager.instance.primaryFocus;
-    final bool isOtherFieldFocused = primaryFocus != null &&
-        primaryFocus != widget.barcodeFocus &&
-        primaryFocus.context != null;
-
-    // If another field (like quantity input or text box) is currently focused by the user,
-    // and we are NOT in high-speed hardware scanner mode, do not siphon key events!
-    if (isOtherFieldFocused && !_isScanMode) {
-      return false;
-    }
-
     final now = DateTime.now();
     final elapsed = now.difference(_lastEventTime);
     _lastEventTime = now;
@@ -118,8 +107,8 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
       _buffer.clear();
 
       if (content.isNotEmpty && _isScanMode) {
-        _dispatchScanResult(content);
         _isScanMode = false;
+        _dispatchScanResult(content);
         return true; // Siphoned scan result
       }
 
@@ -144,15 +133,15 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
     if (isData) {
       _scanTimeoutTimer?.cancel();
 
-      // Check if this character arrived at scanner speed (< 65ms)
       if (elapsed < _scannerSpeedLimit) {
+        // High-speed character arrival (< 65ms per burst char)
         _buffer.write(char);
         if (_buffer.length >= 2 && !_isScanMode) {
           _isScanMode = true;
           _handleScanStarted();
         }
       } else {
-        // Slow typing: reset buffer unless scan mode was already locked
+        // Normal typing speed (> 65ms gap)
         if (!_isScanMode) {
           _buffer.clear();
           _buffer.write(char);
@@ -162,8 +151,8 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
       }
 
       if (_isScanMode) {
-        // High-speed scan mode: siphon key and set timeout for scan completion
-        _scanTimeoutTimer = Timer(const Duration(milliseconds: 600), () {
+        // Siphon key event in scan mode so it doesn't spill into active TextFields
+        _scanTimeoutTimer = Timer(const Duration(milliseconds: 300), () {
           if (mounted) {
             final content = _buffer.toString().trim();
             _buffer.clear();
@@ -176,7 +165,7 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
         return true; // SIPHONED SCANNER KEY
       }
 
-      // Normal manual typing: DO NOT SIPHON! Let Flutter's native TextField handle it.
+      // Normal manual typing: DO NOT SIPHON! Let Flutter's native TextField handle it naturally.
       return false;
     }
 
@@ -188,18 +177,35 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
   }
 
   void _handleScanStarted() {
-    // Capture focus
-    widget.controllers?.forEach((node, _) {
-      if (node.hasFocus) _originalFocus = node;
+    // Capture focus & clean leaked first character if focused on another field
+    widget.controllers?.forEach((node, ctrl) {
+      if (node.hasFocus) {
+        _originalFocus = node;
+        if (node != widget.barcodeFocus) {
+          final bufStr = _buffer.toString();
+          if (bufStr.isNotEmpty) {
+            final firstChar = bufStr[0];
+            final text = ctrl.text;
+            if (text.endsWith(firstChar)) {
+              ctrl.text = text.substring(0, text.length - 1);
+            }
+          }
+        }
+      }
     });
 
-    // Jump to safe target
+    // Jump to barcode focus node target
     if (widget.barcodeFocus != null && _originalFocus != widget.barcodeFocus) {
       widget.barcodeFocus!.requestFocus();
     }
   }
 
   void _dispatchScanResult(String content) {
+    // Always ensure target barcode focus node requests focus
+    if (widget.barcodeFocus != null && widget.barcodeFocus!.canRequestFocus) {
+      widget.barcodeFocus!.requestFocus();
+    }
+
     if (BarcodeRouting.isLikelyBarcode(content)) {
       widget.onBarcodeDetected(content);
     } else if (widget.onTextDetected != null) {
@@ -208,8 +214,10 @@ class _BarcodeInterceptorState extends State<BarcodeInterceptor> {
       widget.onBarcodeDetected(content);
     }
 
-    // Restore focus
-    if (_originalFocus != null && _originalFocus!.canRequestFocus) {
+    // Restore focus if needed
+    if (_originalFocus != null &&
+        _originalFocus != widget.barcodeFocus &&
+        _originalFocus!.canRequestFocus) {
       _originalFocus!.requestFocus();
       _originalFocus = null;
     }

@@ -3,11 +3,22 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/responsive_layout.dart';
 
 class UserManagementScreen extends StatelessWidget {
   const UserManagementScreen({super.key});
+
+  Future<int> _getActiveAdminCount() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('users')
+        .where('role', isEqualTo: 'admin')
+        .where('isDisabled', isEqualTo: false)
+        .get();
+    return snap.docs.length;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +42,6 @@ class UserManagementScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
-            .where('isCustomer', isNotEqualTo: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -42,25 +52,48 @@ class UserManagementScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final allDocs = snapshot.data?.docs ?? [];
+          final docs = allDocs.where((d) {
+            final data = d.data() as Map<String, dynamic>;
+            return data['isCustomer'] != true;
+          }).toList();
+
+          final pendingRequests = docs.where((d) {
+            final data = d.data() as Map<String, dynamic>;
+            final role = data['role'] ?? 'none';
+            final status = data['status'] as String?;
+            final isDisabled = data['isDisabled'] == true;
+            return (status == 'pending' || role == 'none') &&
+                !isDisabled &&
+                status != 'denied';
+          }).toList();
 
           final activeStaff = docs.where((d) {
             final data = d.data() as Map<String, dynamic>;
             final role = data['role'] ?? 'none';
+            final status = data['status'] as String?;
             final isDisabled = data['isDisabled'] == true;
-            return role != 'none' && role != 'disabled' && !isDisabled;
+            return (status == 'approved' ||
+                    (role != 'none' &&
+                        role != 'disabled' &&
+                        status != 'pending')) &&
+                !isDisabled &&
+                status != 'denied';
           }).toList();
 
           final inactiveStaff = docs.where((d) {
             final data = d.data() as Map<String, dynamic>;
             final role = data['role'] ?? 'none';
+            final status = data['status'] as String?;
             final isDisabled = data['isDisabled'] == true;
-            return role == 'disabled' || isDisabled;
+            return isDisabled || role == 'disabled' || status == 'denied';
           }).toList();
 
-          if (activeStaff.isEmpty && inactiveStaff.isEmpty) {
+          if (pendingRequests.isEmpty &&
+              activeStaff.isEmpty &&
+              inactiveStaff.isEmpty) {
             return const Center(
-                child: Text('No staff found. Click "Add New Staff" below.'));
+                child: Text('No staff records found. Click "Add New Staff" below.'));
           }
 
           final semantic = Theme.of(context).semantic;
@@ -69,6 +102,24 @@ class UserManagementScreen extends StatelessWidget {
             padding:
                 const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 88),
             children: [
+              // PENDING APPROVAL REQUESTS
+              _sectionHeader('Pending Approval Requests (${pendingRequests.length})',
+                  Colors.amber.shade800),
+              if (pendingRequests.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No pending registration requests.',
+                      style: TextStyle(color: Colors.grey)),
+                )
+              else
+                ResponsiveCardGrid(
+                  children: pendingRequests
+                      .map((d) => _pendingUserCard(context, d))
+                      .toList(),
+                ),
+              const SizedBox(height: 16),
+
+              // ACTIVE STAFF
               _sectionHeader(
                   'Active Staff (${activeStaff.length})', semantic.info),
               if (activeStaff.isEmpty)
@@ -83,19 +134,22 @@ class UserManagementScreen extends StatelessWidget {
                       activeStaff.map((d) => _activeUserCard(context, d)).toList(),
                 ),
               const SizedBox(height: 16),
+
+              // INACTIVE / DENIED STAFF
               _sectionHeader(
-                  'Staff History / Inactive (${inactiveStaff.length})',
+                  'Staff History / Inactive & Denied (${inactiveStaff.length})',
                   Colors.grey),
               if (inactiveStaff.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('No inactive staff records.',
+                  child: Text('No inactive or denied staff records.',
                       style: TextStyle(color: Colors.grey)),
                 )
               else
                 ResponsiveCardGrid(
-                  children:
-                      inactiveStaff.map((d) => _inactiveUserCard(context, d)).toList(),
+                  children: inactiveStaff
+                      .map((d) => _inactiveUserCard(context, d))
+                      .toList(),
                 ),
             ],
           );
@@ -125,6 +179,144 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
+  Widget _pendingUserCard(BuildContext context, DocumentSnapshot d) {
+    final data = d.data() as Map<String, dynamic>;
+    final email = data['email'] ?? 'No email';
+    final name = data['name'] as String? ?? email.split('@').first;
+    final requestedRole = data['requestedRole'] as String? ?? 'cashier';
+    final authMethod = data['authMethod'] as String? ?? 'email';
+    final createdAt = data['createdAt'] != null
+        ? (data['createdAt'] as Timestamp).toDate()
+        : null;
+
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : 'P';
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+            color: Colors.amber.shade300.withValues(alpha: 0.8), width: 1.5),
+      ),
+      color: Colors.amber.shade50.withValues(alpha: 0.3),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: Colors.amber.shade100,
+                child: Text(
+                  initials,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber.shade900,
+                      fontSize: 16),
+                ),
+              ),
+              title: Text(
+                name,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(email,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Req: ${_getRoleLabel(requestedRole)}',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber.shade900),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          authMethod == 'google' ? 'Google Auth' : 'Email/Pass',
+                          style: const TextStyle(
+                              fontSize: 9, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (createdAt != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Requested: ${DateFormat('MMM dd, yyyy').format(createdAt)}',
+                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _confirmDeny(context, d.id, name, email),
+                  icon: const Icon(Icons.cancel_outlined,
+                      size: 14, color: Colors.red),
+                  label: const Text('DENY',
+                      style:
+                          TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () =>
+                      _showApproveDialog(context, d.id, name, email, requestedRole),
+                  icon: const Icon(Icons.check_circle_outline_rounded,
+                      size: 14, color: Colors.white),
+                  label: const Text('APPROVE & ASSIGN ROLE',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _activeUserCard(BuildContext context, DocumentSnapshot d) {
     final data = d.data() as Map<String, dynamic>;
     final email = data['email'] ?? 'No email';
@@ -133,9 +325,12 @@ class UserManagementScreen extends StatelessWidget {
     final createdAt = data['createdAt'] != null
         ? (data['createdAt'] as Timestamp).toDate()
         : null;
-    final isMainAdmin = email == 'markjeo.hinampas@gmail.com';
-    final initials = name.isNotEmpty ? name[0].toUpperCase() : 'S';
 
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isCurrentUser = currentUser != null &&
+        (d.id == currentUser.uid || email == currentUser.email);
+
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : 'S';
     final roleColor = _getRoleBadgeColor(role);
 
     return Card(
@@ -167,6 +362,25 @@ class UserManagementScreen extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (isCurrentUser) ...[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'YOU',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -197,68 +411,65 @@ class UserManagementScreen extends StatelessWidget {
                   style: const TextStyle(fontSize: 10, color: Colors.grey)),
           ],
         ),
-        trailing: isMainAdmin
-            ? const Chip(
-                label: Text('OWNER',
-                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Switch(
-                    value: true,
-                    onChanged: (_) =>
-                        _confirmDisable(context, d.id, email, role),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              value: true,
+              onChanged: (_) =>
+                  _confirmDisable(context, d.id, name, email, role),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded, size: 20),
+              onSelected: (val) {
+                if (val == 'role') {
+                  _showEditRoleDialog(context, d.id, name, email, role);
+                } else if (val == 'reset_pin') {
+                  _showResetPinDialog(context, d.id, name, email);
+                } else if (val == 'revoke') {
+                  _confirmDisable(context, d.id, name, email, role);
+                }
+              },
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: 'role',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('Edit Role', style: TextStyle(fontSize: 13)),
+                    ],
                   ),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert_rounded, size: 20),
-                    onSelected: (val) {
-                      if (val == 'role') {
-                        _showEditRoleDialog(context, d.id, email, role);
-                      } else if (val == 'reset_pin') {
-                        _showResetPinDialog(context, email);
-                      } else if (val == 'revoke') {
-                        _confirmDisable(context, d.id, email, role);
-                      }
-                    },
-                    itemBuilder: (ctx) => [
-                      const PopupMenuItem(
-                        value: 'role',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit_outlined, size: 18),
-                            SizedBox(width: 8),
-                            Text('Edit Role', style: TextStyle(fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'reset_pin',
-                        child: Row(
-                          children: [
-                            Icon(Icons.lock_reset_rounded, size: 18),
-                            SizedBox(width: 8),
-                            Text('Reset Security PIN',
-                                style: TextStyle(fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'revoke',
-                        child: Row(
-                          children: [
-                            Icon(Icons.block_rounded,
-                                size: 18, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text('Revoke Access',
-                                style:
-                                    TextStyle(fontSize: 13, color: Colors.red)),
-                          ],
-                        ),
+                ),
+                const PopupMenuItem(
+                  value: 'reset_pin',
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock_reset_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Reset Security PIN',
+                          style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'revoke',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.block_rounded,
+                          size: 18, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Text(
+                        isCurrentUser ? 'Disable My Account' : 'Revoke Access',
+                        style: const TextStyle(fontSize: 13, color: Colors.red),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -268,9 +479,14 @@ class UserManagementScreen extends StatelessWidget {
     final email = data['email'] ?? 'No email';
     final name = data['name'] as String? ?? email.split('@').first;
     final previousRole = data['previousRole'] ?? 'cashier';
+    final status = data['status'] as String?;
     final disabledAt = data['disabledAt'] != null
         ? (data['disabledAt'] as Timestamp).toDate()
-        : null;
+        : (data['deniedAt'] != null
+            ? (data['deniedAt'] as Timestamp).toDate()
+            : null);
+
+    final isDenied = status == 'denied';
 
     return Card(
       elevation: 0,
@@ -282,26 +498,53 @@ class UserManagementScreen extends StatelessWidget {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        leading: const CircleAvatar(
-          backgroundColor: Colors.grey,
-          child: Icon(Icons.person_off_rounded, color: Colors.white, size: 20),
+        leading: CircleAvatar(
+          backgroundColor: isDenied ? Colors.red.shade100 : Colors.grey,
+          child: Icon(
+              isDenied ? Icons.gpp_bad_rounded : Icons.person_off_rounded,
+              color: isDenied ? Colors.red : Colors.white,
+              size: 20),
         ),
-        title: Text(name,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey)),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(name,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.grey)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isDenied ? Colors.red.shade50 : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                isDenied ? 'DENIED' : 'INACTIVE',
+                style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: isDenied ? Colors.red.shade800 : Colors.grey.shade700),
+              ),
+            ),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(email,
                 style: const TextStyle(fontSize: 11, color: Colors.grey)),
-            Text('Previous Role: ${_getRoleLabel(previousRole)}',
+            Text('Previous/Req Role: ${_getRoleLabel(previousRole)}',
                 style: const TextStyle(
                     fontSize: 10,
                     color: Colors.grey,
                     fontWeight: FontWeight.bold)),
             if (disabledAt != null)
-              Text('Disabled: ${DateFormat('MMM dd, yyyy').format(disabledAt)}',
-                  style: const TextStyle(fontSize: 10, color: Colors.grey)),
+              Text(
+                '${isDenied ? "Denied" : "Disabled"}: ${DateFormat('MMM dd, yyyy').format(disabledAt)}',
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
           ],
         ),
         trailing: Row(
@@ -310,11 +553,11 @@ class UserManagementScreen extends StatelessWidget {
             Switch(
               value: false,
               onChanged: (_) =>
-                  _confirmActivate(context, d.id, email, previousRole),
+                  _confirmActivate(context, d.id, name, email, previousRole),
             ),
             ElevatedButton.icon(
               onPressed: () =>
-                  _confirmActivate(context, d.id, email, previousRole),
+                  _confirmActivate(context, d.id, name, email, previousRole),
               icon: const Icon(Icons.restart_alt_rounded, size: 14),
               label: const Text('RE-ENABLE',
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
@@ -346,8 +589,128 @@ class UserManagementScreen extends StatelessWidget {
     };
   }
 
+  void _showApproveDialog(
+      BuildContext context, String id, String name, String email, String initialRequestedRole) {
+    String selectedRole =
+        ['admin', 'inventoryManager', 'cashier'].contains(initialRequestedRole)
+            ? initialRequestedRole
+            : 'cashier';
+
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSt) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.green),
+              SizedBox(width: 8),
+              Text('Approve Registration'),
+            ],
+          ),
+          content: Container(
+            width: 440,
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+              Text('Applicant: $name',
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold)),
+              Text('Email: $email',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey)),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedRole,
+                decoration: const InputDecoration(
+                    labelText: 'Assign Authorized Role',
+                    border: OutlineInputBorder()),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'admin', child: Text('Admin (Purple Badge)')),
+                  DropdownMenuItem(
+                      value: 'cashier', child: Text('Cashier (Green Badge)')),
+                  DropdownMenuItem(
+                      value: 'inventoryManager',
+                      child: Text('Inventory Manager (Blue Badge)')),
+                ],
+                onChanged: (v) {
+                  if (v != null) setSt(() => selectedRole = v);
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('CANCEL')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                FirebaseFirestore.instance.collection('users').doc(id).update({
+                  'role': selectedRole,
+                  'status': 'approved',
+                  'isDisabled': false,
+                  'approvedAt': FieldValue.serverTimestamp(),
+                });
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text(
+                          'Approved $name ($email) as ${_getRoleLabel(selectedRole)}!')),
+                );
+              },
+              child: const Text('APPROVE & GRANT ACCESS'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeny(BuildContext context, String id, String name, String email) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Deny Registration Request?'),
+        content: Text(
+            'Are you sure you want to deny $name ($email)? They will be blocked from accessing the staff portal.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () {
+              FirebaseFirestore.instance.collection('users').doc(id).update({
+                'status': 'denied',
+                'role': 'none',
+                'isDisabled': true,
+                'deniedAt': FieldValue.serverTimestamp(),
+              });
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Denied $name ($email) registration request.')),
+              );
+            },
+            child: const Text('DENY REQUEST'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showEditRoleDialog(
-      BuildContext context, String id, String email, String currentRole) {
+      BuildContext context, String id, String name, String email, String currentRole) async {
     String selected =
         ['admin', 'inventoryManager', 'cashier'].contains(currentRole)
             ? currentRole
@@ -359,52 +722,92 @@ class UserManagementScreen extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setSt) => AlertDialog(
           title: const Text('Edit Staff Role'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Staff Email: $email',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey)),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: ['admin', 'cashier', 'inventoryManager'].contains(selected)
-                    ? selected
-                    : 'cashier',
-                decoration: const InputDecoration(
-                    labelText: 'Assigned Role', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'admin', child: Text('Admin (Purple Badge)')),
-                  DropdownMenuItem(
-                      value: 'cashier', child: Text('Cashier (Green Badge)')),
-                  DropdownMenuItem(
-                      value: 'inventoryManager',
-                      child: Text('Inventory Manager (Blue Badge)')),
-                ],
-                onChanged: (v) {
-                  if (v != null) setSt(() => selected = v);
-                },
-              ),
-            ],
+          content: Container(
+            width: 440,
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Staff Member: $name',
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold)),
+                Text('Email: $email',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey)),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: ['admin', 'cashier', 'inventoryManager'].contains(selected)
+                      ? selected
+                      : 'cashier',
+                  decoration: const InputDecoration(
+                      labelText: 'Assigned Role', border: OutlineInputBorder()),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'admin', child: Text('Admin (Purple Badge)')),
+                    DropdownMenuItem(
+                        value: 'cashier', child: Text('Cashier (Green Badge)')),
+                    DropdownMenuItem(
+                        value: 'inventoryManager',
+                        child: Text('Inventory Manager (Blue Badge)')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setSt(() => selected = v);
+                  },
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('CANCEL')),
             ElevatedButton(
-              onPressed: () {
-                FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(id)
-                    .update({'role': selected});
+              onPressed: () async {
+                // Safety check: if demoting an admin, make sure another active admin exists
+                if (currentRole == 'admin' && selected != 'admin') {
+                  final activeAdmins = await _getActiveAdminCount();
+                  if (activeAdmins <= 1) {
+                    if (context.mounted) {
+                      showDialog(
+                        context: context,
+                        useRootNavigator: true,
+                        builder: (alertCtx) => AlertDialog(
+                          title: const Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded,
+                                  color: Colors.orange),
+                              SizedBox(width: 8),
+                              Text('Cannot Demote Admin'),
+                            ],
+                          ),
+                          content: Text(
+                              'You cannot demote $name ($email) because it is currently the only active Store Admin account. Please approve or assign another staff member as an Admin first.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(alertCtx),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                }
+
+                FirebaseFirestore.instance.collection('users').doc(id).update({
+                  'role': selected,
+                  'status': 'approved',
+                  'isDisabled': false,
+                });
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                       content: Text(
-                          'Updated $email role to ${_getRoleLabel(selected)}')),
+                          'Updated $name ($email) role to ${_getRoleLabel(selected)}')),
                 );
               },
               child: const Text('UPDATE ROLE'),
@@ -415,7 +818,8 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _showResetPinDialog(BuildContext context, String email) {
+  void _showResetPinDialog(
+      BuildContext context, String docId, String name, String email) {
     final pinCtrl = TextEditingController();
 
     showDialog(
@@ -423,14 +827,20 @@ class UserManagementScreen extends StatelessWidget {
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Reset Staff Security PIN'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Reset 4-digit PIN for: $email',
+        content: Container(
+          width: 440,
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Text('Reset 4-digit PIN for: $name',
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold)),
+            Text('Email: $email',
                 style: const TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.bold,
                     color: Colors.grey)),
             const SizedBox(height: 16),
             TextField(
@@ -446,23 +856,33 @@ class UserManagementScreen extends StatelessWidget {
             ),
           ],
         ),
-        actions: [
+      ),
+      actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
           ElevatedButton(
-            onPressed: () {
-              if (pinCtrl.text.trim().length != 4) {
+            onPressed: () async {
+              final newPin = pinCtrl.text.trim();
+              if (newPin.length != 4) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Please enter a 4-digit PIN.')),
                 );
                 return;
               }
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content:
-                        Text('Security PIN for $email updated successfully.')),
-              );
+
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(docId)
+                  .update({'pin': newPin});
+
+              if (context.mounted) {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text(
+                          'Security PIN for $name ($email) updated successfully.')),
+                );
+              }
             },
             child: const Text('SAVE PIN'),
           ),
@@ -472,33 +892,83 @@ class UserManagementScreen extends StatelessWidget {
   }
 
   void _confirmDisable(
-      BuildContext context, String id, String email, String currentRole) {
+      BuildContext context, String id, String name, String email, String currentRole) async {
+    // Safety check: if disabling an admin account, ensure another active admin exists
+    if (currentRole == 'admin') {
+      final activeAdmins = await _getActiveAdminCount();
+      if (activeAdmins <= 1) {
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            useRootNavigator: true,
+            builder: (ctx) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text('Cannot Disable Account'),
+                ],
+              ),
+              content: Text(
+                'You cannot disable $name ($email) because it is currently the only active Store Admin account. To retire or disable this account, please first approve or assign another staff member as an Admin.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (!context.mounted) return;
+
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Disable Employee Account?'),
         content: Text(
-            'Are you sure you want to disable $email? They will lose access to the staff portal immediately, but their profile history will be saved.'),
+            'Are you sure you want to disable $name ($email)? They will lose access to the staff portal immediately, but their profile history will be saved.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            onPressed: () {
-              FirebaseFirestore.instance.collection('users').doc(id).update({
+            onPressed: () async {
+              await FirebaseFirestore.instance.collection('users').doc(id).update({
                 'isDisabled': true,
+                'status': 'denied',
                 'previousRole': currentRole,
                 'role': 'disabled',
                 'disabledAt': FieldValue.serverTimestamp(),
               });
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text(
-                        'Disabled $email. Account moved to Staff History.')),
-              );
+
+              final currentUser = FirebaseAuth.instance.currentUser;
+              final isSelf = currentUser?.uid == id || currentUser?.email == email;
+
+              if (context.mounted) {
+                if (isSelf) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text(
+                            'Your admin account has been disabled. Logging out...')),
+                  );
+                  context.read<AppAuthProvider>().logout();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            'Disabled $name ($email). Account moved to Staff History.')),
+                  );
+                }
+              }
             },
             child: const Text('DISABLE EMPLOYEE'),
           ),
@@ -508,14 +978,14 @@ class UserManagementScreen extends StatelessWidget {
   }
 
   void _confirmActivate(
-      BuildContext context, String id, String email, String previousRole) {
+      BuildContext context, String id, String name, String email, String previousRole) {
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Re-enable Employee?'),
         content: Text(
-            'Are you sure you want to re-activate $email with role ${_getRoleLabel(previousRole)}? They will regain access to the staff portal.'),
+            'Are you sure you want to re-activate $name ($email) with role ${_getRoleLabel(previousRole)}? They will regain access to the staff portal.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
@@ -525,6 +995,7 @@ class UserManagementScreen extends StatelessWidget {
             onPressed: () {
               FirebaseFirestore.instance.collection('users').doc(id).update({
                 'isDisabled': false,
+                'status': 'approved',
                 'role': previousRole,
                 'activatedAt': FieldValue.serverTimestamp(),
               });
@@ -571,7 +1042,7 @@ class UserManagementScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 13)),
             SizedBox(height: 12),
             Text(
-                '• Active/Inactive Toggle: Instantly toggle employee portal access while saving their history.',
+                '• Admin Retirement: To disable your own admin account, ensure another active Admin exists first.',
                 style: TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
@@ -614,8 +1085,8 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
       return;
     }
 
-    if (email.isEmpty || !email.contains('@')) {
-      setState(() => _error = 'Please enter a valid email address.');
+    if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+      setState(() => _error = 'Please enter a valid real email address.');
       return;
     }
 
@@ -646,12 +1117,17 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
       );
 
       if (userCred.user != null) {
+        await userCred.user!.sendEmailVerification().catchError((e) {
+          debugPrint('Error sending verification email: $e');
+        });
+
         final uid = userCred.user!.uid;
         await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'name': name,
           'email': email,
           'pin': pin,
           'role': _selectedRole,
+          'status': 'approved',
           'isDisabled': false,
           'isCustomer': false,
           'createdAt': FieldValue.serverTimestamp(),
@@ -661,7 +1137,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Staff $name ($email) created successfully!'),
+              content: Text('Staff $name ($email) created! Verification email sent.'),
               backgroundColor: Theme.of(context).colorScheme.primary,
               behavior: SnackBarBehavior.floating,
             ),
@@ -695,6 +1171,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Row(
         children: [
           Icon(Icons.person_add_rounded),
@@ -703,8 +1180,9 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ],
       ),
-      content: SizedBox(
-        width: double.maxFinite,
+      content: Container(
+        width: 440,
+        constraints: const BoxConstraints(maxWidth: 440),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -719,7 +1197,8 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                 enabled: !_loading,
                 decoration: const InputDecoration(
                   labelText: 'Staff Full Name',
-                  prefixIcon: Icon(Icons.person_outline),
+                  prefixIcon: Icon(Icons.person_outline, size: 20),
+                  isDense: true,
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -730,7 +1209,8 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(
                   labelText: 'Staff Email',
-                  prefixIcon: Icon(Icons.email_outlined),
+                  prefixIcon: Icon(Icons.email_outlined, size: 20),
+                  isDense: true,
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -742,7 +1222,8 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                     : 'cashier',
                 decoration: const InputDecoration(
                   labelText: 'Assigned Role',
-                  prefixIcon: Icon(Icons.admin_panel_settings_outlined),
+                  prefixIcon: Icon(Icons.admin_panel_settings_outlined, size: 20),
+                  isDense: true,
                   border: OutlineInputBorder(),
                 ),
                 items: const [
@@ -769,11 +1250,13 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                 maxLength: 6,
                 decoration: InputDecoration(
                   labelText: 'Initial Security PIN / Password',
-                  prefixIcon: const Icon(Icons.pin_rounded),
+                  prefixIcon: const Icon(Icons.pin_rounded, size: 20),
+                  isDense: true,
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
-                        _obscurePin ? Icons.visibility_off : Icons.visibility),
+                        _obscurePin ? Icons.visibility_off : Icons.visibility,
+                        size: 20),
                     onPressed: () => setState(() => _obscurePin = !_obscurePin),
                   ),
                 ),

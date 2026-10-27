@@ -45,7 +45,12 @@ class _RefundRequestsScreenState extends State<RefundRequestsScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            const Text('Customer Refund Claims'),
+            const Flexible(
+              child: Text(
+                'Customer Refund Claims',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             if (pendingCount > 0) ...[
               const SizedBox(width: 8),
               Container(
@@ -221,14 +226,16 @@ class _RefundCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 Text('Order #${req.transactionId}',
                     style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: Colors.grey)),
-                const SizedBox(width: 8),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -447,8 +454,9 @@ class _RefundCard extends StatelessWidget {
 
             return AlertDialog(
               title: const Text('Approve Refund Request'),
-              content: SizedBox(
-                width: double.maxFinite,
+              content: Container(
+                width: 480,
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -542,8 +550,9 @@ class _RefundCard extends StatelessWidget {
 
             return AlertDialog(
               title: const Text('Decline / Reject Refund'),
-              content: SizedBox(
-                width: double.maxFinite,
+              content: Container(
+                width: 480,
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

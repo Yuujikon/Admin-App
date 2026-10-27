@@ -203,80 +203,82 @@ class ExpensesScreen extends StatelessWidget {
               left: 24,
               right: 24,
               top: 12),
-          child: MaxWidthContainer(
-            maxWidth: MaxWidthContainer.formMaxWidth,
-            alignment: Alignment.topCenter,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 24),
-                  decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.outline,
-                      borderRadius: BorderRadius.circular(2))),
-              Text('Log New Expense',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: TextField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Description',
-                        prefixIcon: Icon(Icons.edit_note_rounded))),
-              ),
-              const SizedBox(height: 16),
-              Row(children: [
-                Expanded(
-                    child: TextField(
-                        controller: amtCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                            labelText: 'Amount', prefixText: 'P '))),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        value: [
-                          'Operations',
-                          'Supplies',
-                          'Utilities',
-                          'Transport',
-                          'Others'
-                        ].contains(category)
-                            ? category
-                            : 'Operations',
-                        decoration: const InputDecoration(labelText: 'Category'),
-                        items: [
-                          'Operations',
-                          'Supplies',
-                          'Utilities',
-                          'Transport',
-                          'Others'
-                        ]
-                            .map((c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(c, overflow: TextOverflow.ellipsis)))
-                            .toList(),
-                        onChanged: (v) => setSt(() => category = v!))),
+          child: SingleChildScrollView(
+            child: MaxWidthContainer(
+              maxWidth: MaxWidthContainer.formMaxWidth,
+              alignment: Alignment.topCenter,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.outline,
+                        borderRadius: BorderRadius.circular(2))),
+                Text('Log New Expense',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(
+                          labelText: 'Description',
+                          prefixIcon: Icon(Icons.edit_note_rounded))),
+                ),
+                const SizedBox(height: 16),
+                Row(children: [
+                  Expanded(
+                      child: TextField(
+                          controller: amtCtrl,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                              labelText: 'Amount', prefixText: 'P '))),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          value: [
+                            'Operations',
+                            'Supplies',
+                            'Utilities',
+                            'Transport',
+                            'Others'
+                          ].contains(category)
+                              ? category
+                              : 'Operations',
+                          decoration: const InputDecoration(labelText: 'Category'),
+                          items: [
+                            'Operations',
+                            'Supplies',
+                            'Utilities',
+                            'Transport',
+                            'Others'
+                          ]
+                              .map((c) => DropdownMenuItem(
+                                  value: c,
+                                  child: Text(c, overflow: TextOverflow.ellipsis)))
+                              .toList(),
+                          onChanged: (v) => setSt(() => category = v!))),
+                ]),
+                const SizedBox(height: 24),
+                PrimaryButton(
+                  onPressed: () async {
+                    final amt = double.tryParse(amtCtrl.text) ?? 0;
+                    if (descCtrl.text.trim().isEmpty || amt <= 0) return;
+                    await ctx
+                        .read<ExpenseProvider>()
+                        .addExpense(descCtrl.text.trim(), amt, category);
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  minWidth: 200,
+                  maxWidth: 350,
+                  child: const Text('SAVE EXPENSE'),
+                ),
+                const SizedBox(height: 32),
               ]),
-              const SizedBox(height: 24),
-              PrimaryButton(
-                onPressed: () async {
-                  final amt = double.tryParse(amtCtrl.text) ?? 0;
-                  if (descCtrl.text.trim().isEmpty || amt <= 0) return;
-                  await ctx
-                      .read<ExpenseProvider>()
-                      .addExpense(descCtrl.text.trim(), amt, category);
-                  if (context.mounted) Navigator.pop(context);
-                },
-                minWidth: 200,
-                maxWidth: 350,
-                child: const Text('SAVE EXPENSE'),
-              ),
-              const SizedBox(height: 32),
-            ]),
+            ),
           ),
         ),
       ),

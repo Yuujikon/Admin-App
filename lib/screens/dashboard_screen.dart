@@ -184,12 +184,14 @@ Future<_DashboardData> _computeDashboardDataAsync(
 
 List<_DailyMetric> _computeChartMetrics(
   List<StoreTransaction> transactions,
-  List<LossRecord> lossRecords,
-) {
-  final now = DateTime.now();
+  List<LossRecord> lossRecords, {
+  int days = 7,
+  int offsetDays = 0,
+}) {
+  final now = DateTime.now().subtract(Duration(days: offsetDays));
   final List<_DailyMetric> list = [];
 
-  for (int i = 6; i >= 0; i--) {
+  for (int i = days - 1; i >= 0; i--) {
     final dayDate = now.subtract(Duration(days: i));
     final dayStr = DateFormat('yyyy-MM-dd').format(dayDate);
 
@@ -234,9 +236,16 @@ List<_DailyMetric> _computeChartMetrics(
 }
 
 /// Store executive dashboard screen displaying financial metrics, sales charts, and inventory stock alerts.
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   final Function(AppTab, {String? category}) onTabChange;
   const DashboardScreen({super.key, required this.onTabChange});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  _DashboardData? _cachedData;
 
   @override
   Widget build(BuildContext context) {
@@ -250,30 +259,9 @@ class DashboardScreen extends StatelessWidget {
         orderProvider.isLoading ||
         restockProvider.isLoading;
 
-    if (isSyncing) {
-      return Container(
-        color: Theme.of(context).colorScheme.surface,
-        alignment: Alignment.center,
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text(
-              'Synchronizing Store Data...',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-      );
-    }
-
     final auth = context.watch<AppAuthProvider>();
     final categoryCount =
         inventory.products.map((p) => p.category).toSet().length;
-    final bool isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
 
     // 2. ASYNCHRONOUS MATH PROCESSING
     final params = _IsolateComputationParams(
@@ -290,8 +278,13 @@ class DashboardScreen extends StatelessWidget {
     return FutureBuilder<_DashboardData>(
       future: _computeDashboardDataAsync(params),
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done ||
-            !snapshot.hasData) {
+        if (snapshot.hasData) {
+          _cachedData = snapshot.data;
+        }
+
+        // Only show full loading spinner if we have no cached data at all
+        if (_cachedData == null &&
+            (isSyncing || snapshot.connectionState != ConnectionState.done)) {
           return Container(
             color: Theme.of(context).colorScheme.surface,
             alignment: Alignment.center,
@@ -299,20 +292,25 @@ class DashboardScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
                 SizedBox(height: 16),
                 Text(
-                  'Synchronizing Store Data...',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  'Loading Dashboard...',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           );
         }
 
-        final data = snapshot.data!;
+        final data = _cachedData!;
+        final bool isRefreshing =
+            isSyncing || snapshot.connectionState != ConnectionState.done;
 
-        // 4. LAYOUT STRICTNESS (Root is Container + SafeArea + Bounded ListView)
         return Container(
           color: Theme.of(context).colorScheme.surface,
           child: SafeArea(
@@ -320,21 +318,61 @@ class DashboardScreen extends StatelessWidget {
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 960),
-                child: ListView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: Column(
                   children: [
-                    // 3. WIDGET ISOLATION (BLAST DOORS)
-                    _buildHeader(context, inventory),
-                    const SizedBox(height: 20),
-                    _buildKpiGrid(context, data, auth.role),
-                    const SizedBox(height: 16),
-                    _buildSummaryMetrics(context, data, auth.role,
-                        inventory.products.length, categoryCount),
-                    const SizedBox(height: 24),
-                    _buildChartSection(context, data.chartMetrics),
-                    const SizedBox(height: 24),
-                    _buildActionAlertsSection(context, data, inventory),
+                    // Subtle linear progress bar during background refresh
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      height: isRefreshing ? 3.0 : 0.0,
+                      child: isRefreshing
+                          ? LinearProgressIndicator(
+                              backgroundColor: Colors.transparent,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: 0.7),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          context.read<InventoryProvider>().initialize();
+                          context.read<RestockProvider>().refresh();
+                          await Future.delayed(
+                              const Duration(milliseconds: 600));
+                        },
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 20),
+                          children: [
+                            _buildHeader(context, inventory, isRefreshing),
+                            const SizedBox(height: 20),
+                            _buildKpiGrid(context, data, auth.role),
+                            const SizedBox(height: 16),
+                            _buildSummaryMetrics(
+                              context,
+                              data,
+                              auth.role,
+                              inventory.products.length,
+                              categoryCount,
+                            ),
+                            const SizedBox(height: 24),
+                            _buildChartSection(
+                              context,
+                              data.chartMetrics,
+                              inventory.transactions,
+                              inventory.lossRecords,
+                            ),
+                            const SizedBox(height: 24),
+                            _buildActionAlertsSection(context, data, inventory),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -347,7 +385,8 @@ class DashboardScreen extends StatelessWidget {
 
   // ── 3. MODULAR WIDGET COMPONENTS (BLAST DOORS) ─────────────────────────────
 
-  Widget _buildHeader(BuildContext context, InventoryProvider inventory) {
+  Widget _buildHeader(BuildContext context, InventoryProvider inventory,
+      [bool isSyncing = false]) {
     try {
       final statusLabel = inventory.settings.statusLabel;
       final Color successColor = Colors.green.shade700;
@@ -383,12 +422,29 @@ class DashboardScreen extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Admin Dashboard',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineMedium
-                    ?.copyWith(fontWeight: FontWeight.w900),
+              Row(
+                children: [
+                  Text(
+                    'Admin Dashboard',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                  if (isSyncing) ...[
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -438,20 +494,20 @@ class DashboardScreen extends StatelessWidget {
                   Icons.delete_sweep_rounded, errorColor),
               _StatCard("Pre-Orders", "${data.toProcessOrders}",
                   Icons.pending_actions_rounded, warningColor,
-                  onTap: () => onTabChange(AppTab.preOrders, category: null)),
+                  onTap: () => widget.onTabChange(AppTab.preOrders, category: null)),
             ]
           : [
               _StatCard("Total Products", "${data.lowStockProducts.length}",
                   Icons.inventory_2_rounded, infoColor,
-                  onTap: () => onTabChange(AppTab.inventory, category: null)),
+                  onTap: () => widget.onTabChange(AppTab.inventory, category: null)),
               _StatCard("Restock Needed", "${data.restockPending}",
                   Icons.add_shopping_cart_rounded, warningColor,
                   onTap: () =>
-                      onTabChange(AppTab.inventory, category: 'Low Stock')),
+                      widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
               _StatCard("Safety Warnings", "${data.lowStockProducts.length}",
                   Icons.warning_amber_rounded, errorColor,
                   onTap: () =>
-                      onTabChange(AppTab.inventory, category: 'Low Stock')),
+                      widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
               _StatCard(
                   "Categories", "Catalog", Icons.category_rounded, infoColor),
             ];
@@ -525,7 +581,7 @@ class DashboardScreen extends StatelessWidget {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
                       onTap: () =>
-                          onTabChange(AppTab.preOrders, category: null),
+                          widget.onTabChange(AppTab.preOrders, category: null),
                       child: _MiniStat('Sales Count', '${data.todayTx.length}'),
                     ),
                   ),
@@ -560,9 +616,18 @@ class DashboardScreen extends StatelessWidget {
     }
   }
 
-  Widget _buildChartSection(BuildContext context, List<_DailyMetric> metrics) {
+  Widget _buildChartSection(
+    BuildContext context,
+    List<_DailyMetric> metrics,
+    List<StoreTransaction> transactions,
+    List<LossRecord> lossRecords,
+  ) {
     try {
-      return _RevenueProfitChart(metrics: metrics);
+      return _RevenueProfitChart(
+        initialMetrics: metrics,
+        transactions: transactions,
+        lossRecords: lossRecords,
+      );
     } catch (_) {
       return Card(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -620,14 +685,16 @@ class DashboardScreen extends StatelessWidget {
                   return ListTile(
                     dense: true,
                     onTap: () =>
-                        onTabChange(AppTab.inventory, category: 'Low Stock'),
+                        widget.onTabChange(AppTab.inventory, category: 'Low Stock'),
                     title: Text(p.name,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
                         'Threshold: ${p.lowStockThreshold} ${p.unit} • Current: ${p.stock} ${p.unit}',
                         style: const TextStyle(fontSize: 10)),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    trailing: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         OutlinedButton.icon(
                           onPressed: () {
@@ -667,7 +734,6 @@ class DashboardScreen extends StatelessWidget {
                                 horizontal: 8, vertical: 4),
                           ),
                         ),
-                        const SizedBox(width: 6),
                         ElevatedButton.icon(
                           onPressed: () {
                             RestockInquiry? matchingInquiry;
@@ -977,8 +1043,9 @@ class DashboardScreen extends StatelessWidget {
 
           return AlertDialog(
             title: const Text('Store Management'),
-            content: SizedBox(
-              width: double.maxFinite,
+            content: Container(
+              width: 480,
+              constraints: const BoxConstraints(maxWidth: 480),
               height: MediaQuery.of(context).size.height * 0.7,
               child: SingleChildScrollView(
                 child: Column(
@@ -1374,12 +1441,41 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
-class _RevenueProfitChart extends StatelessWidget {
-  final List<_DailyMetric> metrics;
-  const _RevenueProfitChart({required this.metrics});
+enum ChartPeriod {
+  thisWeek('This week', 7),
+  thisMonth('This month', 30),
+  last90Days('Last 90 days', 90);
+
+  final String label;
+  final int days;
+  const ChartPeriod(this.label, this.days);
+}
+
+class _RevenueProfitChart extends StatefulWidget {
+  final List<_DailyMetric> initialMetrics;
+  final List<StoreTransaction> transactions;
+  final List<LossRecord> lossRecords;
+
+  const _RevenueProfitChart({
+    required this.initialMetrics,
+    required this.transactions,
+    required this.lossRecords,
+  });
+
+  @override
+  State<_RevenueProfitChart> createState() => _RevenueProfitChartState();
+}
+
+class _RevenueProfitChartState extends State<_RevenueProfitChart> {
+  ChartPeriod _selectedPeriod = ChartPeriod.thisWeek;
 
   @override
   Widget build(BuildContext context) {
+    final List<_DailyMetric> metrics = _selectedPeriod == ChartPeriod.thisWeek
+        ? widget.initialMetrics
+        : _computeChartMetrics(widget.transactions, widget.lossRecords,
+            days: _selectedPeriod.days);
+
     if (metrics.isEmpty) {
       return Card(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -1406,7 +1502,7 @@ class _RevenueProfitChart extends StatelessWidget {
                         .withValues(alpha: 0.4)),
                 const SizedBox(height: 8),
                 Text(
-                  'No 7-day revenue trend data available yet.',
+                  'No revenue trend data available yet.',
                   style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context)
@@ -1423,6 +1519,29 @@ class _RevenueProfitChart extends StatelessWidget {
 
     final totalGross =
         metrics.fold<double>(0.0, (sum, m) => sum + m.grossSales);
+
+    final priorMetrics = _computeChartMetrics(
+      widget.transactions,
+      widget.lossRecords,
+      days: _selectedPeriod.days,
+      offsetDays: _selectedPeriod.days,
+    );
+    final priorTotalGross =
+        priorMetrics.fold<double>(0.0, (sum, m) => sum + m.grossSales);
+
+    double percentChange;
+    if (priorTotalGross > 0) {
+      percentChange =
+          ((totalGross - priorTotalGross) / priorTotalGross) * 100;
+    } else if (totalGross > 0) {
+      percentChange = 100.0;
+    } else {
+      percentChange = 0.0;
+    }
+
+    final isPositive = percentChange >= 0;
+    final percentText =
+        '${isPositive ? '+' : ''}${percentChange.toStringAsFixed(1)}%';
 
     final maxY = metrics.fold<double>(
         0.0, (max, m) => m.grossSales > max ? m.grossSales : max);
@@ -1454,6 +1573,10 @@ class _RevenueProfitChart extends StatelessWidget {
 
     final greenColor = const Color(0xFF10B981);
     final blueColor = const Color(0xFF3B82F6);
+
+    final double titleInterval = _selectedPeriod == ChartPeriod.thisWeek
+        ? 1
+        : (_selectedPeriod == ChartPeriod.thisMonth ? 5 : 15);
 
     return Container(
       decoration: BoxDecoration(
@@ -1501,36 +1624,78 @@ class _RevenueProfitChart extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outlineVariant
-                        .withValues(alpha: 0.6),
-                  ),
-                  borderRadius: BorderRadius.circular(20),
+              PopupMenuButton<ChartPeriod>(
+                initialValue: _selectedPeriod,
+                onSelected: (ChartPeriod period) {
+                  setState(() {
+                    _selectedPeriod = period;
+                  });
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'This week',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurface,
+                itemBuilder: (BuildContext context) =>
+                    <PopupMenuEntry<ChartPeriod>>[
+                  for (final period in ChartPeriod.values)
+                    PopupMenuItem<ChartPeriod>(
+                      value: period,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (period == _selectedPeriod) ...[
+                            Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                          ] else ...[
+                            const SizedBox(width: 24),
+                          ],
+                          Text(
+                            period.label,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: period == _selectedPeriod
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ],
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.6),
                     ),
-                  ],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _selectedPeriod.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1570,24 +1735,32 @@ class _RevenueProfitChart extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.green.shade500.withValues(alpha: 0.15),
+                          color: (isPositive ? Colors.green : Colors.red)
+                              .shade500
+                              .withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.north_east_rounded,
+                              isPositive
+                                  ? Icons.north_east_rounded
+                                  : Icons.south_east_rounded,
                               size: 12,
-                              color: Colors.green.shade700,
+                              color: isPositive
+                                  ? Colors.green.shade700
+                                  : Colors.red.shade700,
                             ),
                             const SizedBox(width: 2),
                             Text(
-                              '+14.2%',
+                              percentText,
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.green.shade700,
+                                color: isPositive
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
                               ),
                             ),
                           ],
@@ -1694,19 +1867,23 @@ class _RevenueProfitChart extends StatelessWidget {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 1,
+                      interval: titleInterval,
                       getTitlesWidget: (val, meta) {
                         final int index = val.toInt();
                         if (index >= 0 &&
                             index < metrics.length &&
                             (val - index).abs() < 0.1) {
+                          final date = metrics[index].date;
+                          final labelStr = _selectedPeriod == ChartPeriod.thisWeek
+                              ? DateFormat('E').format(date)
+                              : DateFormat('MMM d').format(date);
                           return SideTitleWidget(
                             meta: meta,
                             space: 8,
                             child: Text(
-                              DateFormat('E').format(metrics[index].date),
+                              labelStr,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurfaceVariant,
@@ -1733,7 +1910,7 @@ class _RevenueProfitChart extends StatelessWidget {
                     barWidth: 3.5,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
-                      show: true,
+                      show: _selectedPeriod == ChartPeriod.thisWeek,
                       getDotPainter: (spot, percent, barData, index) =>
                           FlDotCirclePainter(
                         radius: 4.5,
@@ -1761,7 +1938,7 @@ class _RevenueProfitChart extends StatelessWidget {
                     barWidth: 3.0,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
-                      show: true,
+                      show: _selectedPeriod == ChartPeriod.thisWeek,
                       getDotPainter: (spot, percent, barData, index) =>
                           FlDotCirclePainter(
                         radius: 4,

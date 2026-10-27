@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -26,7 +27,15 @@ import '../utils/pricing_engine.dart';
 
 class ProductEditSheet extends StatefulWidget {
   final Product? product;
-  const ProductEditSheet({super.key, this.product});
+  final String? initialBarcode;
+  final String? initialSupplierId;
+
+  const ProductEditSheet({
+    super.key,
+    this.product,
+    this.initialBarcode,
+    this.initialSupplierId,
+  });
 
   @override
   State<ProductEditSheet> createState() => _ProductEditSheetState();
@@ -135,7 +144,8 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _stock = TextEditingController(text: p?.stock.toString() ?? '');
     _unit = TextEditingController(text: p?.unit ?? 'pcs');
     _shelf = TextEditingController(text: p?.shelfDays?.toString() ?? '');
-    _barcode = TextEditingController(text: p?.barcode ?? '');
+    _barcode = TextEditingController(
+        text: p?.barcode ?? widget.initialBarcode ?? '');
     _itemsPerCase =
         TextEditingController(text: p?.itemsPerCase?.toString() ?? '');
     _pickupWindow =
@@ -235,7 +245,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _taxable = p?.isTaxable ?? true;
     _status = p?.status ?? ProductStatus.published;
     _photoBase64 = p?.photoBase64;
-    _supplierId = p?.supplierId;
+    _supplierId = p?.supplierId ?? widget.initialSupplierId;
     _expiryDate = p?.expiryDate;
     _variants = p?.variants != null ? List.from(p!.variants) : [];
 
@@ -249,6 +259,8 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _boxesReceivedCtrl.addListener(_onUomCalculationChanged);
     _itemsPerBoxCtrl.addListener(_onUomCalculationChanged);
     _extraItemsCtrl.addListener(_onUomCalculationChanged);
+    _name.addListener(_onNameOrBrandChanged);
+    _brand.addListener(_onNameOrBrandChanged);
 
     _fName.addListener(() {
       if (!_fName.hasFocus &&
@@ -331,78 +343,89 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.amber.shade300),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          existingProduct.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16),
+        content: Container(
+          width: 440,
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            existingProduct.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade100,
-                          borderRadius: BorderRadius.circular(6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade100,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text('ALREADY IN STORE',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.brown)),
                         ),
-                        child: const Text('ALREADY IN STORE',
-                            style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.brown)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  if (existingProduct.barcode != null &&
-                      existingProduct.barcode!.isNotEmpty)
-                    Text('Barcode: ${existingProduct.barcode}',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade800)),
-                  Text(
-                      'Category: ${existingProduct.category} • Brand: ${existingProduct.brand ?? 'N/A'}',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade800)),
-                  const Divider(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                          'Current Stock: ${existingProduct.totalStock} ${existingProduct.unit}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text('Price: ${formatPeso(existingProduct.price)}',
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (existingProduct.barcode != null &&
+                        existingProduct.barcode!.isNotEmpty)
+                      Text('Barcode: ${existingProduct.barcode}',
                           style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Theme.of(context).colorScheme.primary)),
-                    ],
-                  ),
-                ],
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
+                    Text(
+                        'Category: ${existingProduct.category} • Brand: ${existingProduct.brand ?? 'N/A'}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant)),
+                    const Divider(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                            'Current Stock: ${existingProduct.totalStock} ${existingProduct.unit}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text('Price: ${formatPeso(existingProduct.price)}',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Theme.of(context).colorScheme.primary)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'This product is already registered in your store inventory.\n\nWhat would you like to do?',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-            ),
-          ],
+              const SizedBox(height: 14),
+              Text(
+                'This product is already registered in your store inventory.\n\nWhat would you like to do?',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -572,6 +595,53 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     }
   }
 
+  void _onNameOrBrandChanged() {
+    if (_parentIdCtrl.text.trim().isEmpty) {
+      _autoGenerateParentGroupId();
+    }
+  }
+
+  void _autoGenerateParentGroupId({bool force = false}) {
+    if (_parentIdCtrl.text.trim().isNotEmpty && !force) return;
+
+    final inventory = context.read<InventoryProvider>();
+    final name = _name.text.trim();
+    final brand = _brand.text.trim();
+
+    if (name.isEmpty && brand.isEmpty) return;
+
+    // 1. Check if an existing product in store shares the same brand
+    if (brand.isNotEmpty) {
+      try {
+        final match = inventory.products.firstWhere(
+          (p) =>
+              p.brand?.toLowerCase() == brand.toLowerCase() &&
+              p.parentId != null &&
+              p.parentId!.trim().isNotEmpty,
+        );
+        if (match.parentId != null && match.parentId!.isNotEmpty) {
+          _parentIdCtrl.text = match.parentId!;
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Derive a clean slugified group ID from Brand + Name Base
+    final rawText = brand.isNotEmpty
+        ? '$brand ${name.split(" ").take(2).join(" ")}'
+        : name.split(" ").take(2).join(" ");
+
+    final cleanSlug = rawText
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9\s]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-');
+
+    if (cleanSlug.isNotEmpty) {
+      _parentIdCtrl.text = 'GRP-$cleanSlug';
+    }
+  }
+
   String _getUomBreakdownText() {
     final boxes = int.tryParse(_boxesReceivedCtrl.text) ?? 0;
     final itemsBox = int.tryParse(_itemsPerBoxCtrl.text) ?? 0;
@@ -660,6 +730,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final inventory = context.watch<InventoryProvider>();
     final suppliers = inventory.suppliers;
     final allCats = {
@@ -669,7 +740,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     }.toList()
       ..sort();
 
-    final brandStyle = BrandStyling.getStyle(_brand.text, fontSize: 18);
+    final brandStyle = BrandStyling.getStyle(_brand.text, fontSize: 16);
 
     return BarcodeInterceptor(
       controllers: _focusMap,
@@ -677,6 +748,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       nameFocus: _fName,
       onBarcodeDetected: (code) async {
         setState(() => _barcode.text = code);
+        _fBarcode.requestFocus();
         await _handleBarcodeScan(code);
       },
       onTextDetected: (text) {
@@ -685,884 +757,1087 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
           _checkExistingProductByName(text);
         }
       },
-      child: Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: Container(
+          color: Theme.of(context).colorScheme.surface,
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
             left: 16,
             right: 16,
-            top: 24),
-        child: SingleChildScrollView(
-          child: MaxWidthContainer(
-            maxWidth: MaxWidthContainer.formMaxWidth,
-            alignment: Alignment.topCenter,
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            top: 12,
+          ),
+          child: SingleChildScrollView(
+            child: MaxWidthContainer(
+              maxWidth: 620,
+              alignment: Alignment.topCenter,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      _activeProduct == null
-                          ? 'Add New Product'
-                          : 'Edit Product',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    if (_activeProduct == null)
-                      TextButton.icon(
-                        onPressed: _fullScan,
-                        icon: const Icon(Icons.qr_code_scanner),
-                        label: const Text('Catalog Scan'),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // ── SECTION 1: PRODUCT IDENTITY (CATALOG PROFILE) ─────────────
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    side: BorderSide(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .outline
-                            .withValues(alpha: 0.4)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.badge_outlined,
-                                size: 20,
-                                color: Theme.of(context).colorScheme.primary),
-                            const SizedBox(width: 8),
-                            Text(
-                              'SECTION 1: PRODUCT IDENTITY (CATALOG PROFILE)',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                                letterSpacing: 0.5,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                          ],
+                    // Top Drag Handle
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        const Divider(height: 24),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
 
-                        // Image Picker Avatar
-                        Center(
-                          child: Stack(
+                    // Sheet Header
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                width: 90,
-                                height: 90,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(20),
-                                  border:
-                                      Border.all(color: Colors.grey.shade300),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: _processingImage
-                                    ? const Center(
-                                        child: CircularProgressIndicator())
-                                    : (_localPhoto != null
-                                        ? Image.file(_localPhoto!,
-                                            fit: BoxFit.contain)
-                                        : (_photoBase64 != null
-                                            ? Image.memory(
-                                                base64Decode(_photoBase64!),
-                                                fit: BoxFit.contain)
-                                            : const Icon(
-                                                Icons.add_a_photo_outlined,
-                                                size: 36,
-                                                color: Colors.grey))),
+                              Text(
+                                _activeProduct == null
+                                    ? 'Add New Product'
+                                    : 'Edit Product',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
                               ),
-                              if (!_processingImage)
-                                Positioned(
-                                  bottom: -6,
-                                  right: -6,
-                                  child: IconButton.filledTonal(
-                                    onPressed: _pickImage,
-                                    icon: const Icon(Icons.edit, size: 16),
-                                  ),
-                                ),
+                              Text(
+                                _activeProduct == null
+                                    ? 'Create catalog entry and log initial stock'
+                                    : 'Update product details, pricing, and UoM',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                      fontSize: 12,
+                                    ),
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        if (_activeProduct == null) ...[
+                          IconButton.filledTonal(
+                            onPressed: _fullScan,
+                            icon: const Icon(Icons.qr_code_scanner_rounded,
+                                size: 18),
+                            tooltip: 'Catalog Scan',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          tooltip: 'Close',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
 
-                        // Barcode Input
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: _barcode,
-                                focusNode: _fBarcode,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(
-                                      RegExp(r'[a-zA-Z0-9\-]')),
-                                  LengthLimitingTextInputFormatter(50),
-                                ],
-                                onFieldSubmitted: (v) async {
-                                  if (v.trim().isNotEmpty) {
-                                    await _handleBarcodeScan(v);
-                                  }
-                                },
-                                decoration: const InputDecoration(
-                                  labelText:
-                                      'Barcode (Leave blank to auto-generate PLU 200)',
-                                  prefixIcon: Icon(Icons.qr_code_scanner),
+                    // Photo & Barcode Header Card
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          GestureDetector(
+                            onTap: _pickImage,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  width: 62,
+                                  height: 62,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Theme.of(context).colorScheme.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant,
+                                    ),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: _processingImage
+                                      ? const Center(
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2))
+                                      : (_localPhoto != null
+                                          ? Image.file(_localPhoto!,
+                                              fit: BoxFit.cover)
+                                          : (_photoBase64 != null
+                                              ? Image.memory(
+                                                  base64Decode(_photoBase64!),
+                                                  fit: BoxFit.cover)
+                                              : Icon(
+                                                  Icons.add_a_photo_outlined,
+                                                  size: 24,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .outline,
+                                                ))),
+                                ),
+                                if (!_processingImage)
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.edit_rounded,
+                                          size: 10, color: Colors.white),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _barcode,
+                                    focusNode: _fBarcode,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                          RegExp(r'[a-zA-Z0-9\-]')),
+                                      LengthLimitingTextInputFormatter(50),
+                                    ],
+                                    onFieldSubmitted: (v) async {
+                                      if (v.trim().isNotEmpty) {
+                                        await _handleBarcodeScan(v);
+                                      }
+                                    },
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      labelText: 'Barcode / PLU',
+                                      hintText: 'Auto-generates if blank',
+                                      prefixIcon: Icon(
+                                          Icons.qr_code_scanner,
+                                          size: 18),
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                IconButton.filledTonal(
+                                  onPressed: _scanBarcode,
+                                  icon: const Icon(Icons.camera_alt_outlined,
+                                      size: 18),
+                                  tooltip: 'Scan Camera',
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                IconButton.filledTonal(
+                                  onPressed: () {
+                                    String code = _barcode.text.trim();
+                                    if (code.isEmpty) {
+                                      code =
+                                          BarcodeGenerator.generateInternalBarcode();
+                                      _barcode.text = code;
+                                    }
+                                    BarcodePrintDialog.showCustom(
+                                      context,
+                                      productName: _name.text,
+                                      price:
+                                          double.tryParse(_price.text) ?? 0,
+                                      barcode: code,
+                                    );
+                                  },
+                                  icon: const Icon(Icons.print_rounded,
+                                      size: 18),
+                                  tooltip: 'Print Label',
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── SECTION 1: PRODUCT IDENTITY ─────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.badge_outlined,
+                                  size: 18,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary),
+                              const SizedBox(width: 8),
+                              Text(
+                                'PRODUCT IDENTITY',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                  letterSpacing: 0.5,
+                                  color:
+                                      Theme.of(context).colorScheme.primary,
                                 ),
                               ),
-                            ),
-                            IconButton.filledTonal(
-                              onPressed: () {
-                                String code = _barcode.text.trim();
-                                if (code.isEmpty) {
-                                  code = BarcodeGenerator.generateInternalBarcode();
-                                  _barcode.text = code;
-                                }
-                                BarcodePrintDialog.showCustom(
-                                  context,
-                                  productName: _name.text,
-                                  price: double.tryParse(_price.text) ?? 0,
-                                  barcode: code,
-                                );
-                              },
-                              icon: const Icon(Icons.print_rounded),
-                              tooltip: 'Print Barcode Label',
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton.filledTonal(
-                              onPressed: _scanBarcode,
-                              icon: const Icon(Icons.qr_code_scanner_rounded),
-                              tooltip: 'Scan Barcode',
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Product Name Input (Required)
-                        TextFormField(
-                          controller: _name,
-                          focusNode: _fName,
-                          inputFormatters: [
-                            LengthLimitingTextInputFormatter(100)
-                          ],
-                          onFieldSubmitted: (v) {
-                            if (v.trim().isNotEmpty && _activeProduct == null) {
-                              _checkExistingProductByName(v);
-                            }
-                          },
-                          decoration: const InputDecoration(
-                              labelText: 'Product Name *',
-                              hintText: 'e.g. Coca-Cola 1.5L'),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) {
-                              return 'Product Name is required.';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Brand & Category Dropdown
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: _brand,
-                                focusNode: _fBrand,
-                                style: brandStyle.copyWith(fontSize: 16),
-                                decoration: const InputDecoration(
-                                    labelText: 'Brand',
-                                    hintText: 'e.g. Nestlé, Palmolive'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: allCats.contains(_category)
-                                    ? _category
-                                    : (allCats.isNotEmpty ? allCats.first : null),
-                                decoration: const InputDecoration(
-                                    labelText: 'Category *'),
-                                items: allCats
-                                    .map((c) => DropdownMenuItem(
-                                        value: c,
-                                        child: Text(c,
-                                            overflow: TextOverflow.ellipsis)))
-                                    .toList(),
-                                onChanged: (v) {
-                                  if (v != null) {
-                                    setState(() {
-                                      _category = v;
-                                      _autoCalculateSellingPrice();
-                                    });
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Parent Group ID Input (Requirement 2 & 3: Variant Grouping)
-                        TextFormField(
-                          controller: _parentIdCtrl,
-                          focusNode: _fParentId,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                                RegExp(r'[a-zA-Z0-9\-_]')),
-                            LengthLimitingTextInputFormatter(60),
-                          ],
-                          decoration: const InputDecoration(
-                            labelText:
-                                'Parent Group ID (Optional for Variant Grouping)',
-                            hintText:
-                                'e.g. GRP-PALMOLIVE-SHAMPOO, GRP-NESCAFE-STICK',
-                            prefixIcon:
-                                Icon(Icons.account_tree_outlined, size: 20),
-                            helperText:
-                                'Customer app displays 1 main card per Parent ID while backend tracks individual child SKU stock.',
-                            helperMaxLines: 2,
+                            ],
                           ),
-                        ),
-                        if (inventory.uniqueParentIds.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
+                          const SizedBox(height: 12),
+
+                          // Product Name
+                          TextFormField(
+                            controller: _name,
+                            focusNode: _fName,
+                            inputFormatters: [
+                              LengthLimitingTextInputFormatter(100)
+                            ],
+                            onFieldSubmitted: (v) {
+                              if (v.trim().isNotEmpty &&
+                                  _activeProduct == null) {
+                                _checkExistingProductByName(v);
+                              }
+                            },
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Product Name *',
+                              hintText: 'e.g. Coca-Cola 1.5L',
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'Product Name is required.';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Brand & Category
+                          Row(
                             children: [
-                              const Padding(
-                                padding: EdgeInsets.only(top: 4, right: 4),
-                                child: Text('Existing Parent Groups:',
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _brand,
+                                  focusNode: _fBrand,
+                                  style: brandStyle.copyWith(fontSize: 14),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Brand',
+                                    hintText: 'e.g. Nestlé',
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: allCats.contains(_category)
+                                      ? _category
+                                      : (allCats.isNotEmpty
+                                          ? allCats.first
+                                          : null),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Category *',
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                  items: allCats
+                                      .map((c) => DropdownMenuItem(
+                                          value: c,
+                                          child: Text(c,
+                                              overflow:
+                                                  TextOverflow.ellipsis)))
+                                      .toList(),
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      setState(() {
+                                        _category = v;
+                                        _autoCalculateSellingPrice();
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Parent Group ID Dropdown Selector & Auto-Generation
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: inventory.uniqueParentIds
+                                          .contains(_parentIdCtrl.text.trim())
+                                      ? _parentIdCtrl.text.trim()
+                                      : (_parentIdCtrl.text.trim().isNotEmpty
+                                          ? _parentIdCtrl.text.trim()
+                                          : null),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Parent Group ID (Variant Family)',
+                                    prefixIcon: const Icon(
+                                        Icons.account_tree_outlined,
+                                        size: 18),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    suffixIcon: Tooltip(
+                                      message: 'Auto-generate Group ID from Brand/Name',
+                                      child: IconButton(
+                                        icon: const Icon(Icons.auto_awesome_rounded,
+                                            size: 16, color: Colors.purple),
+                                        onPressed: () {
+                                          setState(() {
+                                            _autoGenerateParentGroupId(force: true);
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  hint: Text(
+                                    _parentIdCtrl.text.isNotEmpty
+                                        ? _parentIdCtrl.text
+                                        : 'Select existing or auto-generate...',
+                                    style: const TextStyle(fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  items: [
+                                    if (_parentIdCtrl.text.trim().isNotEmpty &&
+                                        !inventory.uniqueParentIds
+                                            .contains(_parentIdCtrl.text.trim()))
+                                      DropdownMenuItem<String>(
+                                        value: _parentIdCtrl.text.trim(),
+                                        child: Text(
+                                          '✨ Auto/Current: ${_parentIdCtrl.text.trim()}',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.purple),
+                                        ),
+                                      ),
+                                    ...inventory.uniqueParentIds.map(
+                                      (pId) => DropdownMenuItem<String>(
+                                        value: pId,
+                                        child: Text(
+                                          '📦 $pId',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setState(() {
+                                        _parentIdCtrl.text = val;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _parentIdCtrl,
+                            focusNode: _fParentId,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'[a-zA-Z0-9\-_]')),
+                              LengthLimitingTextInputFormatter(60),
+                            ],
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Custom Group ID Slug (Optional)',
+                              hintText: 'e.g. GRP-PALMOLIVE-SHAMPOO',
+                              prefixIcon:
+                                  Icon(Icons.edit_outlined, size: 16),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── SECTION 2: UOM & INVENTORY ──────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.widgets_outlined,
+                                  size: 18,
+                                  color: isDark
+                                      ? Colors.green.shade300
+                                      : Colors.green.shade800),
+                              const SizedBox(width: 8),
+                              Text(
+                                'UOM & INVENTORY LOG',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                  letterSpacing: 0.5,
+                                  color: isDark
+                                      ? Colors.green.shade300
+                                      : Colors.green.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // UoM Units
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _bulkUnitCtrl,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Bulk Unit Name',
+                                    hintText: 'e.g. box, tie, case',
+                                    prefixIcon: Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 18),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _unit,
+                                  focusNode: _fUnit,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Base Unit Name *',
+                                    hintText: 'e.g. pcs, bottle',
+                                    prefixIcon: Icon(Icons.label_outlined,
+                                        size: 18),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) {
+                                      return 'Enter base unit';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          // Bulk Presets
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                const Text('Presets: ',
                                     style: TextStyle(
                                         fontSize: 10,
                                         color: Colors.grey,
                                         fontWeight: FontWeight.bold)),
-                              ),
-                              ...inventory.uniqueParentIds
-                                  .take(5)
-                                  .map((pId) => InkWell(
+                                ...[
+                                  'box',
+                                  'case',
+                                  'bundle',
+                                  'tie',
+                                  'pack',
+                                  'sack',
+                                  'tray'
+                                ].map((preset) => Padding(
+                                      padding: const EdgeInsets.only(right: 4),
+                                      child: InkWell(
                                         onTap: () => setState(
-                                            () => _parentIdCtrl.text = pId),
+                                            () => _bulkUnitCtrl.text = preset),
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: Colors.purple.shade50,
+                                            color: Colors.teal.shade50,
                                             borderRadius:
-                                                BorderRadius.circular(8),
+                                                BorderRadius.circular(6),
                                             border: Border.all(
-                                                color: Colors.purple.shade200),
+                                                color: Colors.teal.shade200),
                                           ),
-                                          child: Text(
-                                            pId,
-                                            style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.purple.shade900,
-                                                fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      )),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-
-                        // Selling Price Input (Smart Pricing Engine Auto-Calculate)
-                        TextFormField(
-                          controller: _price,
-                          focusNode: _fPrice,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                                RegExp(r'^\d*\.?\d*'))
-                          ],
-                          onChanged: (_) {
-                            if (!_isCalculatingPrice) {
-                              setState(() => _isManualPriceOverride = true);
-                            }
-                          },
-                          decoration: InputDecoration(
-                            labelText: 'Selling Price *',
-                            prefixText: 'P ',
-                            suffixIcon: Tooltip(
-                              message:
-                                  'Auto-calculate based on ${(CategoryMarkupRules.getMarginForCategory(_category) * 100).toInt()}% category margin',
-                              child: IconButton(
-                                icon: Icon(
-                                  _isManualPriceOverride
-                                      ? Icons.lock_outline_rounded
-                                      : Icons.auto_awesome_rounded,
-                                  size: 18,
-                                  color: _isManualPriceOverride
-                                      ? Colors.orange
-                                      : Theme.of(context).colorScheme.primary,
-                                ),
-                                onPressed: () {
-                                  setState(
-                                      () => _isManualPriceOverride = false);
-                                  _autoCalculateSellingPrice();
-                                },
-                              ),
-                            ),
-                          ),
-                          validator: (v) {
-                            final p = double.tryParse(v ?? '');
-                            if (p == null || p <= 0) {
-                              return 'Valid Selling Price required.';
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // ── SECTION 2: UOM & INITIAL INVENTORY ───────────────────────
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    side: BorderSide(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .outline
-                            .withValues(alpha: 0.4)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.widgets_outlined,
-                                size: 20, color: Colors.green.shade800),
-                            const SizedBox(width: 8),
-                            Text(
-                              'SECTION 2: UOM & INITIAL INVENTORY LOG',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                                letterSpacing: 0.5,
-                                color: Colors.green.shade800,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Divider(height: 20),
-
-                        // UoM Unit Types (Bulk Unit & Base Unit)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: _bulkUnitCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Bulk Unit Name',
-                                  hintText: 'e.g. tie, bundle, case, box',
-                                  prefixIcon: Icon(Icons.inventory_2_outlined,
-                                      size: 18),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TextFormField(
-                                controller: _unit,
-                                focusNode: _fUnit,
-                                decoration: const InputDecoration(
-                                  labelText: 'Base Unit Name *',
-                                  hintText: 'e.g. sachet, pcs, bottle',
-                                  prefixIcon:
-                                      Icon(Icons.label_outlined, size: 18),
-                                ),
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty)
-                                    return 'Enter base unit';
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        // Quick Presets for Bulk Unit Name
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.only(top: 4, right: 4),
-                              child: Text('Common Bulk Units:',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey,
-                                      fontWeight: FontWeight.bold)),
-                            ),
-                            ...[
-                              'tie',
-                              'bundle',
-                              'case',
-                              'box',
-                              'pack',
-                              'sack',
-                              'tray'
-                            ].map((preset) => InkWell(
-                                  onTap: () => setState(
-                                      () => _bulkUnitCtrl.text = preset),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.teal.shade50,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                          color: Colors.teal.shade200),
-                                    ),
-                                    child: Text(preset,
-                                        style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.teal.shade900,
-                                            fontWeight: FontWeight.bold)),
-                                  ),
-                                )),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // UoM Breakdown Input Container
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade50.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.green.shade300),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.inventory_2_rounded,
-                                      size: 18, color: Colors.green.shade900),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'UoM Package & Cost Breakdown',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: Colors.green.shade900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Row 1: Cost per Box & Boxes Received
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _boxPriceCtrl,
-                                      focusNode: _fBoxPrice,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                              decimal: true),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                            RegExp(r'^\d*\.?\d*'))
-                                      ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Cost per Box *',
-                                        prefixText: 'P ',
-                                        hintText: 'e.g. 720.00',
-                                        isDense: true,
-                                        fillColor: Colors.white,
-                                        filled: true,
-                                      ),
-                                      validator: (v) {
-                                        final b = int.tryParse(
-                                                _boxesReceivedCtrl.text) ??
-                                            0;
-                                        if (b > 0) {
-                                          final p = double.tryParse(v ?? '');
-                                          if (p == null || p <= 0)
-                                            return 'Enter box cost';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _boxesReceivedCtrl,
-                                      focusNode: _fBoxesReceived,
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.digitsOnly
-                                      ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Boxes Received *',
-                                        hintText: 'e.g. 2',
-                                        isDense: true,
-                                        fillColor: Colors.white,
-                                        filled: true,
-                                      ),
-                                      validator: (v) {
-                                        final cost = double.tryParse(
-                                                _boxPriceCtrl.text) ??
-                                            0;
-                                        if (cost > 0) {
-                                          final b = int.tryParse(v ?? '');
-                                          if (b == null || b <= 0)
-                                            return 'Enter box count';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-
-                              // Row 2: Items per Box & Extra Loose Items
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _itemsPerBoxCtrl,
-                                      focusNode: _fItemsPerBox,
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.digitsOnly
-                                      ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Items per Box *',
-                                        hintText: 'e.g. 24',
-                                        isDense: true,
-                                        fillColor: Colors.white,
-                                        filled: true,
-                                      ),
-                                      validator: (v) {
-                                        final b = int.tryParse(
-                                                _boxesReceivedCtrl.text) ??
-                                            0;
-                                        if (b > 0) {
-                                          final i = int.tryParse(v ?? '');
-                                          if (i == null || i <= 0)
-                                            return 'Enter items/box';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _extraItemsCtrl,
-                                      focusNode: _fExtraItems,
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.digitsOnly
-                                      ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Extra Loose Items',
-                                        hintText: 'e.g. 2',
-                                        isDense: true,
-                                        fillColor: Colors.white,
-                                        filled: true,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              // Calculated Breakdown Badge
-                              if (_getUomBreakdownText().isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade100,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                        color: Colors.green.shade400),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.auto_awesome,
-                                          size: 16,
-                                          color: Colors.green.shade900),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _getUomBreakdownText(),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green.shade900,
-                                          ),
+                                          child: Text(preset,
+                                              style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.teal.shade900,
+                                                  fontWeight:
+                                                      FontWeight.bold)),
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
+                                    )),
                               ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
 
-                              const SizedBox(height: 12),
-
-                              // Initial Quantity (Base Units) & Unit Cost Inputs
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _stock,
-                                      focusNode: _fStock,
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.digitsOnly
-                                      ],
-                                      decoration: InputDecoration(
-                                        labelText:
-                                            'Initial Quantity (${_unit.text.isEmpty ? 'pcs' : _unit.text}) *',
-                                        hintText: 'e.g. 50',
-                                        isDense: true,
-                                        fillColor: Colors.white,
-                                        filled: true,
-                                        suffixIcon: const Tooltip(
-                                          message:
-                                              'Auto-calculated from UoM, but editable if extra items exist',
-                                          child:
-                                              Icon(Icons.edit_note, size: 20),
-                                        ),
+                          // UoM Breakdown Calculator Card
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.green.shade900
+                                      .withValues(alpha: 0.25)
+                                  : Colors.green.shade50
+                                      .withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: isDark
+                                      ? Colors.green.shade800
+                                      : Colors.green.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.auto_awesome_rounded,
+                                        size: 16,
+                                        color: isDark
+                                            ? Colors.green.shade300
+                                            : Colors.green.shade900),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'UoM Package Breakdown',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: isDark
+                                            ? Colors.green.shade300
+                                            : Colors.green.shade900,
                                       ),
-                                      validator: (v) {
-                                        final q = int.tryParse(v ?? '');
-                                        if (q == null || q < 0)
-                                          return 'Enter valid quantity';
-                                        return null;
-                                      },
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  if (context.watch<AppAuthProvider>().role ==
-                                      UserRole.admin) ...[
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+
+                                // Row 1: Cost per Box & Boxes Received
+                                Row(
+                                  children: [
                                     Expanded(
                                       child: TextFormField(
-                                        controller: _costPrice,
-                                        focusNode: _fCostPrice,
+                                        controller: _boxPriceCtrl,
+                                        focusNode: _fBoxPrice,
                                         keyboardType: const TextInputType
                                             .numberWithOptions(decimal: true),
                                         inputFormatters: [
                                           FilteringTextInputFormatter.allow(
                                               RegExp(r'^\d*\.?\d*'))
                                         ],
-                                        decoration: const InputDecoration(
-                                          labelText: 'Unit Cost *',
-                                          prefixText: 'P ',
-                                          hintText: 'e.g. 30.00',
+                                        decoration: InputDecoration(
                                           isDense: true,
-                                          fillColor: Colors.white,
+                                          labelText: 'Cost per Box',
+                                          prefixText: '₱ ',
+                                          hintText: 'e.g. 720.00',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
                                           filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
                                         ),
-                                        validator: (v) {
-                                          final c = double.tryParse(v ?? '');
-                                          if (c == null || c <= 0)
-                                            return 'Enter unit cost';
-                                          return null;
-                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _boxesReceivedCtrl,
+                                        focusNode: _fBoxesReceived,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Boxes Received',
+                                          hintText: 'e.g. 2',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Row 2: Items per Box & Extra Loose Items
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _itemsPerBoxCtrl,
+                                        focusNode: _fItemsPerBox,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Items per Box',
+                                          hintText: 'e.g. 24',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _extraItemsCtrl,
+                                        focusNode: _fExtraItems,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Extra Loose Items',
+                                          hintText: 'e.g. 2',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                if (_getUomBreakdownText().isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? Colors.green.shade900
+                                              .withValues(alpha: 0.4)
+                                          : Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _getUomBreakdownText(),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? Colors.green.shade200
+                                            : Colors.green.shade900,
+                                      ),
+                                    ),
+                                  ),
                                 ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Selling Price & Unit Cost (Auto-populated from UoM)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _price,
+                                  focusNode: _fPrice,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'^\d*\.?\d*'))
+                                  ],
+                                  onChanged: (_) {
+                                    if (!_isCalculatingPrice) {
+                                      setState(
+                                          () => _isManualPriceOverride = true);
+                                    }
+                                  },
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Selling Price *',
+                                    prefixText: '₱ ',
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 10),
+                                    suffixIcon: Tooltip(
+                                      message:
+                                          'Auto-calculate from ${(CategoryMarkupRules.getMarginForCategory(_category) * 100).toInt()}% margin',
+                                      child: IconButton(
+                                        icon: Icon(
+                                          _isManualPriceOverride
+                                              ? Icons.lock_outline_rounded
+                                              : Icons.auto_awesome_rounded,
+                                          size: 16,
+                                          color: _isManualPriceOverride
+                                              ? Colors.orange
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                        ),
+                                        onPressed: () {
+                                          setState(() =>
+                                              _isManualPriceOverride = false);
+                                          _autoCalculateSellingPrice();
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  validator: (v) {
+                                    final p = double.tryParse(v ?? '');
+                                    if (p == null || p <= 0) {
+                                      return 'Required.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (context.watch<AppAuthProvider>().role ==
+                                  UserRole.admin)
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _costPrice,
+                                    focusNode: _fCostPrice,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                          RegExp(r'^\d*\.?\d*'))
+                                    ],
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      labelText: 'Unit Cost *',
+                                      prefixText: '₱ ',
+                                      hintText: 'e.g. 30.00',
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                    ),
+                                    validator: (v) {
+                                      final c = double.tryParse(v ?? '');
+                                      if (c == null || c <= 0) {
+                                        return 'Required';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Initial Quantity (Base Units)
+                          TextFormField(
+                            controller: _stock,
+                            focusNode: _fStock,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText:
+                                  'Total Initial Quantity (${_unit.text.isEmpty ? 'pcs' : _unit.text}) *',
+                              hintText: 'e.g. 50',
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                            ),
+                            validator: (v) {
+                              final q = int.tryParse(v ?? '');
+                              if (q == null || q < 0) {
+                                return 'Enter valid quantity';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Batch Expiry Date Selector
+                          InkWell(
+                            onTap: _pickExpiryDate,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: _expiryDate == null
+                                      ? (isDark
+                                          ? Colors.red.shade700
+                                          : Colors.red.shade300)
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.event_available_outlined,
+                                    size: 18,
+                                    color: _expiryDate == null
+                                        ? (isDark
+                                            ? Colors.red.shade300
+                                            : Colors.red)
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _expiryDate == null
+                                          ? 'Batch Expiry Date * (Mandatory)'
+                                          : 'Expiry: ${DateFormat('MMMM dd, yyyy').format(_expiryDate!)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: _expiryDate == null
+                                            ? FontWeight.w600
+                                            : FontWeight.bold,
+                                        color: _expiryDate == null
+                                            ? (isDark
+                                                ? Colors.red.shade300
+                                                : Colors.red)
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurface,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_expiryDate != null)
+                                    GestureDetector(
+                                      onTap: () => setState(
+                                          () => _expiryDate = null),
+                                      child: const Icon(Icons.clear, size: 16),
+                                    )
+                                  else
+                                    const Icon(Icons.chevron_right, size: 18),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Safety Stock & Supplier
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _lowStockT,
+                                  focusNode: _fLowStockT,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly
+                                  ],
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Safety Stock',
+                                    hintText: 'e.g. 5',
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: DropdownButtonFormField<String?>(
+                                  isExpanded: true,
+                                  value: suppliers.any((s) => s.id == _supplierId)
+                                      ? _supplierId
+                                      : null,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Supplier',
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem<String?>(
+                                        value: null,
+                                        child: Text('None / Direct')),
+                                    ...suppliers.map((s) =>
+                                        DropdownMenuItem<String?>(
+                                            value: s.id,
+                                            child: Text(s.name,
+                                                overflow:
+                                                    TextOverflow.ellipsis))),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => _supplierId = v),
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 12),
+                          const SizedBox(height: 10),
 
-                        // Batch Expiry Date Selector (Mandatory)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(
-                            Icons.event_available_outlined,
-                            color: _expiryDate == null
-                                ? Colors.red
-                                : Theme.of(context).colorScheme.primary,
+                          // Invoice Notes
+                          TextFormField(
+                            controller: _notesCtrl,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Invoice / Delivery Notes (Optional)',
+                              hintText: 'e.g. Inv #10492 — Direct Delivery',
+                              prefixIcon: Icon(
+                                  Icons.receipt_long_outlined,
+                                  size: 18),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                            ),
                           ),
-                          title: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Text('Batch Expiry Date '),
-                              Text('*',
-                                  style: TextStyle(
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.bold)),
-                            ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Submit & Action Buttons
+                    Row(
+                      children: [
+                        if (_activeProduct != null) ...[
+                          IconButton.outlined(
+                            onPressed: () => _confirmDelete(context),
+                            icon: const Icon(Icons.delete_outline,
+                                color: Colors.red),
+                            tooltip: 'Delete Product',
+                            style: IconButton.styleFrom(
+                              side: const BorderSide(color: Colors.red),
+                            ),
                           ),
-                          subtitle: _expiryDate == null
-                              ? const Text(
-                                  'REQUIRED — Expiration Date Mandatory',
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                )
-                              : Text(
-                                  DateFormat('MMMM dd, yyyy')
-                                      .format(_expiryDate!),
-                                  style: TextStyle(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          const SizedBox(width: 10),
+                        ],
+                        Expanded(
+                          child: SizedBox(
+                            height: 46,
+                            child: FilledButton.icon(
+                              onPressed: _saving ? null : _saveProductForm,
+                              icon: _saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.save_rounded, size: 20),
+                              label: Text(
+                                _saving
+                                    ? 'Saving Profile...'
+                                    : (_activeProduct == null
+                                        ? 'SAVE & LOG STOCK'
+                                        : 'SAVE CHANGES'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  letterSpacing: 0.5,
                                 ),
-                          trailing: _expiryDate != null
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () =>
-                                      setState(() => _expiryDate = null),
-                                )
-                              : const Icon(Icons.chevron_right),
-                          onTap: _pickExpiryDate,
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Safety Stock Warning & Supplier Dropdown
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: _lowStockT,
-                                focusNode: _fLowStockT,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly
-                                ],
-                                decoration: const InputDecoration(
-                                  labelText: 'Safety Stock Warning',
-                                  hintText: 'e.g. 5',
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: GdcColors.primaryGreen,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: DropdownButtonFormField<String?>(
-                                isExpanded: true,
-                                value: suppliers.any((s) => s.id == _supplierId)
-                                    ? _supplierId
-                                    : null,
-                                decoration: const InputDecoration(
-                                    labelText: 'Supplier'),
-                                items: [
-                                  const DropdownMenuItem<String?>(
-                                      value: null,
-                                      child: Text('None / Direct')),
-                                  ...suppliers.map((s) =>
-                                      DropdownMenuItem<String?>(
-                                          value: s.id,
-                                          child: Text(s.name,
-                                              overflow:
-                                                  TextOverflow.ellipsis))),
-                                ],
-                                onChanged: (v) =>
-                                    setState(() => _supplierId = v),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Invoice / Delivery Notes
-                        TextFormField(
-                          controller: _notesCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Invoice / Delivery Notes (Optional)',
-                            hintText: 'e.g. Inv #10492 — Direct Delivery',
-                            prefixIcon:
-                                Icon(Icons.receipt_long_outlined, size: 18),
                           ),
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-
-                const SizedBox(height: 20),
-
-                // Submit Button
-                PrimaryButton(
-                  onPressed: _saving ? null : _saveProductForm,
-                  isLoading: _saving,
-                  icon: Icons.save_rounded,
-                  backgroundColor: GdcColors.primaryGreen,
-                  foregroundColor: Colors.white,
-                  minWidth: 200,
-                  maxWidth: 350,
-                  child: Text(_saving
-                      ? 'Saving Profile...'
-                      : (_activeProduct == null
-                          ? 'SAVE PRODUCT & RECORD INVENTORY HISTORY'
-                          : 'SAVE PRODUCT PROFILE & LOG')),
-                ),
-
-                if (_activeProduct != null) ...[
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => _confirmDelete(context),
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    label: const Text('DELETE PRODUCT',
-                        style: TextStyle(color: Colors.red)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.red),
-                      minimumSize: const Size(200, 48),
-                      maximumSize: const Size(350, 56),
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Future<void> _fullScan() async {
     final result = await showDialog<FullProductScannerResult>(
@@ -1620,6 +1895,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       setState(() {
         _barcode.text = result;
       });
+      _fBarcode.requestFocus();
       await _handleBarcodeScan(result);
     }
   }
@@ -1655,6 +1931,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         if (cp.category.isNotEmpty) {
           _category = cp.category;
         }
+        _autoGenerateParentGroupId();
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1698,6 +1975,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         if (extBrand != null && extBrand.isNotEmpty) {
           _brand.text = extBrand;
         }
+        _autoGenerateParentGroupId();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1771,11 +2049,14 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         context: context,
         useRootNavigator: true,
         builder: (ctx) => AlertDialog(
-          title: Row(
-            children: const [
+          title: const Row(
+            children: [
               Icon(Icons.warning_amber_rounded, color: Colors.red),
               SizedBox(width: 8),
-              Text('Expiration Date Required'),
+              Expanded(
+                child: Text('Expiration Date Required',
+                    overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
           content: const Text(

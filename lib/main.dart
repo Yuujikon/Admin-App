@@ -193,28 +193,49 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
       return const StaffLoginScreen();
     }
 
-    // If logged in but role not fetched yet or role is 'none'
-    if (auth.role == UserRole.none) {
+    // Check if email address needs verification (for email/password sign-up)
+    final isPasswordUser = user.providerData.any((p) => p.providerId == 'password');
+    if (isPasswordUser && !auth.isEmailVerified && user.email != 'markjeo.hinampas@gmail.com') {
       return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         body: Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(32.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.shield_outlined,
-                    size: 64, color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  Icons.mark_email_unread_rounded,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(height: 16),
                 Text(
-                  'Access Pending Approval',
+                  'Verify Your Email Address',
                   style: Theme.of(context)
                       .textTheme
                       .titleLarge
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'VERIFICATION REQUIRED',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Text(
-                  'Your account (${user.email ?? "User"}) requires staff role assignment from an Store Admin.',
+                  'A verification email was sent to ${user.email}.\nPlease check your email inbox and click the link to verify your real email account.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
@@ -222,7 +243,32 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                 ElevatedButton.icon(
                   onPressed: () => auth.refreshRole(),
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Check Permissions Status'),
+                  label: const Text('I Have Verified / Check Status'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      await auth.resendEmailVerification();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Verification email re-sent! Check your inbox.'),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not resend email. Try again later.'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.send_rounded, size: 16),
+                  label: const Text('Resend Verification Email'),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -234,6 +280,165 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
           ),
         ),
       );
+    }
+
+    // Account state screens when user has no active staff role assignment
+    if (auth.role == UserRole.none) {
+      if (auth.isDenied) {
+        // ACCESS DENIED SCREEN
+        return Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.gpp_bad_rounded,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Access Denied',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.error),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'ACCESS DENIED / REVOKED',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Your account (${user.email}) registration request was reviewed and denied by the Store Admin, or your access was revoked.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => auth.refreshRole(),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Check Permissions Status'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => auth.logout(),
+                    child: const Text('Log Out'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      } else {
+        // REGISTRATION PENDING APPROVAL SCREEN
+        final requestedStr = switch (auth.requestedRole) {
+          'cashier' => 'Cashier',
+          'inventoryManager' => 'Inventory Manager',
+          'admin' => 'Store Admin',
+          _ => 'Staff Role',
+        };
+
+        return Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.hourglass_top_rounded,
+                    size: 64,
+                    color: Colors.amber.shade800,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Registration Pending Approval',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Text(
+                      'PENDING ADMIN APPROVAL',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (auth.userFullName != null && auth.userFullName!.isNotEmpty) ...[
+                          Text('Applicant: ${auth.userFullName}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(height: 4),
+                        ],
+                        Text('Email: ${user.email}', style: const TextStyle(fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text('Requested Position: $requestedStr',
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Your registration request has been submitted successfully. A Store Admin must review your details and assign your authorized role before you can access the system.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => auth.refreshRole(),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Check Permissions Status'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => auth.logout(),
+                    child: const Text('Log Out'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
     }
 
     // Role-based destination: require 6-digit TOTP/PIN verification for all staff roles when 2FA is enabled

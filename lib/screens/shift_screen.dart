@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -84,67 +85,157 @@ class _NoActiveShiftView extends StatelessWidget {
 
   void _showOpenShiftDialog(BuildContext context, AppAuthProvider auth) {
     final floatCtrl = TextEditingController(text: '1000.00');
-    final cashierNameCtrl =
-        TextEditingController(text: auth.currentUser?.email ?? 'Cashier');
+    final currentEmail = auth.currentUser?.email ?? '';
+    final defaultName = auth.userFullName ??
+        (auth.currentUser?.displayName?.isNotEmpty == true
+            ? auth.currentUser!.displayName!
+            : (currentEmail.contains('@') ? currentEmail.split('@').first : 'Cashier'));
+
+    Map<String, String>? selectedStaff;
 
     showDialog(
       context: context,
       useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Open Register Shift'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: double.infinity,
-                child: TextField(
-                  controller: cashierNameCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'Cashier Name / Email',
-                      border: OutlineInputBorder()),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Open Register Shift'),
+            content: Container(
+              width: 440,
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Select Active Cashier / Staff:',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('users')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        final Map<String, Map<String, String>> staffMap = {};
+
+                        // Always put currently logged in staff first
+                        staffMap[auth.currentUser?.uid ?? 'current'] = {
+                          'uid': auth.currentUser?.uid ?? 'current',
+                          'name': defaultName,
+                          'email': currentEmail,
+                        };
+
+                        if (snapshot.hasData) {
+                          for (final doc in snapshot.data!.docs) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            if (data['isCustomer'] == true || data['isDisabled'] == true) continue;
+                            final email = data['email'] as String? ?? '';
+                            final name = data['name'] as String? ?? (email.contains('@') ? email.split('@').first : 'Staff');
+                            if (name.isNotEmpty && doc.id.isNotEmpty) {
+                              staffMap[doc.id] = {
+                                'uid': doc.id,
+                                'name': name,
+                                'email': email,
+                              };
+                            }
+                          }
+                        }
+
+                        final staffList = staffMap.values.toList();
+                        selectedStaff ??= staffList.first;
+
+                        final activeSelected = staffList.firstWhere(
+                          (s) => s['uid'] == selectedStaff!['uid'],
+                          orElse: () => staffList.first,
+                        );
+
+                        return DropdownButtonFormField<Map<String, String>>(
+                          value: activeSelected,
+                          decoration: const InputDecoration(
+                            labelText: 'Cashier / Employee Name',
+                            prefixIcon: Icon(Icons.person_outline),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          isExpanded: true,
+                          items: staffList.map((staff) {
+                            final name = staff['name']!;
+                            final email = staff['email']!;
+                            return DropdownMenuItem<Map<String, String>>(
+                              value: staff,
+                              child: Text.rich(
+                                TextSpan(
+                                  text: name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 13),
+                                  children: [
+                                    if (email.isNotEmpty)
+                                      TextSpan(
+                                        text: '  ($email)',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.normal,
+                                            fontSize: 11,
+                                            color: Colors.grey),
+                                      ),
+                                  ],
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() => selectedStaff = val);
+                            }
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextField(
+                        controller: floatCtrl,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+                        ],
+                        decoration: const InputDecoration(
+                            labelText: 'Opening Cash Float',
+                            prefixText: 'P ',
+                            border: OutlineInputBorder()),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: TextField(
-                  controller: floatCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
-                  ],
-                  decoration: const InputDecoration(
-                      labelText: 'Opening Cash Float',
-                      prefixText: 'P ',
-                      border: OutlineInputBorder()),
-                ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  final float = double.tryParse(floatCtrl.text) ?? 0.0;
+                  final cashierId = selectedStaff?['uid'] ?? auth.currentUser?.uid ?? 'uid-1';
+                  final cashierName = selectedStaff?['name'] ?? defaultName;
+
+                  await context.read<ShiftProvider>().openShift(
+                        cashierId: cashierId,
+                        cashierName: cashierName,
+                        openingFloat: float,
+                      );
+
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Start Shift'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              final float = double.tryParse(floatCtrl.text) ?? 0.0;
-              final name = cashierNameCtrl.text.trim();
-
-              await context.read<ShiftProvider>().openShift(
-                    cashierId: auth.currentUser?.uid ?? 'uid-1',
-                    cashierName: name.isEmpty ? 'Cashier' : name,
-                    openingFloat: float,
-                  );
-
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Start Shift'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -188,7 +279,7 @@ class _ActiveShiftView extends StatelessWidget {
                             Icon(Icons.point_of_sale_rounded,
                                 color: theme.colorScheme.primary, size: 20),
                             const SizedBox(width: 8),
-                            Text('X-READING (ACTIVE SHIFT)',
+                            Text('ACTIVE REGISTER SHIFT',
                                 style: TextStyle(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 13,
@@ -234,14 +325,14 @@ class _ActiveShiftView extends StatelessWidget {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(success
-                                    ? "Mid-day X-Reading printed! 🖨️"
+                                    ? "Mid-day Shift Report printed! 🖨️"
                                     : "Printer not connected or failed."),
                               ),
                             );
                           }
                         },
                         icon: const Icon(Icons.print_rounded, size: 16),
-                        label: const Text('PRINT X-READING',
+                        label: const Text('PRINT SHIFT REPORT',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 11)),
                       ),
@@ -259,7 +350,7 @@ class _ActiveShiftView extends StatelessWidget {
                 foregroundColor: Colors.white,
                 minWidth: 200,
                 maxWidth: 350,
-                child: const Text('Z-READING (CLOSE SHIFT)',
+                child: const Text('CLOSE REGISTER SHIFT',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               ),
             ),
@@ -340,7 +431,7 @@ class _ActiveShiftView extends StatelessWidget {
                       const SizedBox(width: 10),
                       const Expanded(
                         child: Text(
-                          'Confirm Close Shift & Z-Reading',
+                          'Confirm Close Register Shift',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
@@ -541,39 +632,43 @@ class _ActiveShiftView extends StatelessWidget {
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('Z-Reading Summary (Final)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Cashier: ${closed.cashierName}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            const Divider(height: 20),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Expected Cash:'),
-              Text(formatPeso(closed.expectedCash))
-            ]),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Actual Counted:'),
-              Text(formatPeso(closed.actualCashCounted ?? 0))
-            ]),
-            const Divider(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Cash Variance:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(
-                  formatPeso(closed.cashDifference),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: closed.isShortage
-                        ? Colors.red
-                        : (closed.isOverage ? Colors.green : Colors.blue),
+        title: const Text('End-of-Shift Summary (Final)'),
+        content: Container(
+          width: 420,
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Cashier: ${closed.cashierName}',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const Divider(height: 20),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const Text('Expected Cash:'),
+                Text(formatPeso(closed.expectedCash))
+              ]),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const Text('Actual Counted:'),
+                Text(formatPeso(closed.actualCashCounted ?? 0))
+              ]),
+              const Divider(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Cash Variance:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    formatPeso(closed.cashDifference),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: closed.isShortage
+                          ? Colors.red
+                          : (closed.isOverage ? Colors.green : Colors.blue),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -586,14 +681,14 @@ class _ActiveShiftView extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(success
-                        ? "Z-Reading printed successfully! 🖨️"
+                        ? "End-of-Shift Report printed successfully! 🖨️"
                         : "Printer not connected or failed."),
                   ),
                 );
               }
             },
             icon: const Icon(Icons.print_rounded, size: 16),
-            label: const Text('PRINT Z-READING'),
+            label: const Text('PRINT SHIFT REPORT'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue.shade800,
               foregroundColor: Colors.white,

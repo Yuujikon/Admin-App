@@ -210,9 +210,16 @@ class _SupplierCard extends StatelessWidget {
     } catch (_) {}
   }
 
-  Future<void> _sendSms(BuildContext context, String phone) async {
+  Future<void> _sendSms(BuildContext context, String phone, [String? supplierName]) async {
     if (phone.isEmpty) return;
-    final Uri uri = Uri(scheme: 'sms', path: phone);
+    final String message = (supplierName != null && supplierName.trim().isNotEmpty)
+        ? 'Hello $supplierName, this is GDC Store regarding inventory supply restocking.'
+        : 'Hello, this is GDC Store regarding inventory supply restocking.';
+    final Uri uri = Uri(
+      scheme: 'sms',
+      path: phone,
+      queryParameters: {'body': message},
+    );
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -226,9 +233,18 @@ class _SupplierCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: isDark ? 0 : 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colorScheme.outline.withValues(alpha: isDark ? 0.2 : 0.4),
+        ),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => Navigator.push(
@@ -236,24 +252,27 @@ class _SupplierCard extends StatelessWidget {
             MaterialPageRoute(
                 builder: (_) => SupplierDetailScreen(supplier: supplier))),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.1),
+                    radius: 20,
+                    backgroundColor: isDark
+                        ? colorScheme.primaryContainer
+                        : colorScheme.primary.withValues(alpha: 0.12),
                     child: Text(
                       supplier.name.isNotEmpty
                           ? supplier.name[0].toUpperCase()
                           : 'S',
                       style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold),
+                          color: isDark
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -261,69 +280,200 @@ class _SupplierCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(supplier.name,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        Text(supplier.category,
-                            style: Theme.of(context).textTheme.labelSmall),
+                        Text(
+                          supplier.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: colorScheme.onSurface,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          supplier.category,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
                   ),
-                  if (lowStockCount > 0)
+                  if (lowStockCount > 0) ...[
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.orange.shade200),
+                        color: isDark
+                            ? Colors.amber.shade900.withValues(alpha: 0.3)
+                            : Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.amber.shade700.withValues(alpha: 0.6)
+                              : Colors.amber.shade300,
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.warning_amber_rounded,
-                              size: 12, color: Colors.orange.shade800),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 13,
+                            color: isDark
+                                ? Colors.amber.shade300
+                                : Colors.amber.shade900,
+                          ),
                           const SizedBox(width: 4),
-                          Text('$lowStockCount LOW',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange.shade800)),
+                          Text(
+                            '$lowStockCount LOW',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: isDark
+                                  ? Colors.amber.shade200
+                                  : Colors.amber.shade900,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
                         ],
                       ),
                     ),
+                  ],
                 ],
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Icon(Icons.person_outline,
-                      size: 14,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 4),
-                  Text(
-                    supplier.contactName.isEmpty
-                        ? 'No contact name'
-                        : supplier.contactName,
-                    style: TextStyle(
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.person_outline_rounded,
+                      size: 13,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      supplier.contactName.isEmpty
+                          ? 'No contact person'
+                          : supplier.contactName,
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.phone_rounded,
-                        size: 18, color: Colors.green),
-                    tooltip: 'Call Supplier',
-                    onPressed: () => _makeCall(context, supplier.phone),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.sms_rounded,
-                        size: 18, color: Colors.blue),
-                    tooltip: 'SMS Supplier',
-                    onPressed: () => _sendSms(context, supplier.phone),
-                  ),
+                  const SizedBox(width: 8),
+                  if (supplier.phone.isNotEmpty) ...[
+                    Material(
+                      color: isDark
+                          ? Colors.green.shade900.withValues(alpha: 0.35)
+                          : Colors.green.shade50,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: isDark
+                              ? Colors.green.shade800
+                              : Colors.green.shade200,
+                        ),
+                      ),
+                      child: InkWell(
+                        onTap: () => _makeCall(context, supplier.phone),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.phone_rounded,
+                                size: 14,
+                                color: isDark
+                                    ? Colors.green.shade300
+                                    : Colors.green.shade700,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Call',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? Colors.green.shade300
+                                      : Colors.green.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Material(
+                      color: isDark
+                          ? Colors.blue.shade900.withValues(alpha: 0.35)
+                          : Colors.blue.shade50,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: isDark
+                              ? Colors.blue.shade800
+                              : Colors.blue.shade200,
+                        ),
+                      ),
+                      child: InkWell(
+                        onTap: () => _sendSms(context, supplier.phone, supplier.name),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.sms_rounded,
+                                size: 14,
+                                color: isDark
+                                    ? Colors.blue.shade300
+                                    : Colors.blue.shade700,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'SMS',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? Colors.blue.shade300
+                                      : Colors.blue.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],

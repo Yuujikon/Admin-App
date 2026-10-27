@@ -15,6 +15,7 @@ dependencies:
   firebase_auth:      ^5.0.0
   cloud_firestore:    ^5.0.0
   firebase_messaging: ^15.0.0
+  google_sign_in:     ^6.2.1
 
   # UI & state
   provider:           ^6.1.2

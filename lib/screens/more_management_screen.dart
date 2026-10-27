@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/printer_provider.dart';
+import '../services/auth_service.dart';
 import '../config/theme.dart';
 import '../utils/totp.dart';
 import 'user_management_screen.dart';
@@ -161,7 +162,7 @@ class MoreManagementScreen extends StatelessWidget {
                 _menuItemCard(
                   context,
                   icon: Icons.access_time_rounded,
-                  iconBg: const Color(0xFFE6F7F2),
+                  iconBg: GdcColors.creamActiveBackground,
                   iconColor: GdcColors.darkEmerald,
                   title: 'Shift & Cash Register',
                   subtitle: 'X/Z readings, cash drops & opening float',
@@ -208,7 +209,7 @@ class MoreManagementScreen extends StatelessWidget {
                   _menuItemCard(
                     context,
                     icon: Icons.article_outlined,
-                    iconBg: const Color(0xFFE6F7F2),
+                    iconBg: GdcColors.creamActiveBackground,
                     iconColor: GdcColors.darkEmerald,
                     title: 'Inventory Records & Logs',
                     subtitle:
@@ -249,8 +250,8 @@ class MoreManagementScreen extends StatelessWidget {
                     icon: Icons.inventory_2_outlined,
                     iconBg: const Color(0xFFFFEDD5),
                     iconColor: const Color(0xFFEA580C),
-                    title: 'Categories & Cooking Bundles',
-                    subtitle: 'Master categories and meal bundle sets',
+                    title: 'Categories, Bundles & Groups',
+                    subtitle: 'Master categories, meal sets & variant families',
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -552,8 +553,9 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
             ),
           ],
         ),
-        content: SizedBox(
-          width: double.maxFinite,
+        content: Container(
+          width: 440,
+          constraints: const BoxConstraints(maxWidth: 440),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,6 +799,14 @@ class _MyStaffAccountSection extends StatelessWidget {
     );
   }
 
+  void _showChangePinDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => const _ChangePinDialog(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AppAuthProvider>();
@@ -829,12 +839,17 @@ class _MyStaffAccountSection extends StatelessWidget {
                       color: Colors.blue),
                 ),
                 title: Text(
-                  user?.email ?? 'Staff Account',
+                  auth.userFullName != null && auth.userFullName!.isNotEmpty
+                      ? auth.userFullName!
+                      : (user?.displayName != null && user!.displayName!.isNotEmpty
+                          ? user.displayName!
+                          : (user?.email?.split('@').first ?? 'Staff Account')),
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 13),
+                      fontWeight: FontWeight.bold, fontSize: 14),
                 ),
-                subtitle: const Text('Currently logged in staff account',
-                    style: TextStyle(fontSize: 11)),
+                subtitle: Text(
+                    user?.email ?? 'Currently logged in staff account',
+                    style: const TextStyle(fontSize: 11)),
               ),
               const Divider(height: 1, indent: 16, endIndent: 16),
               ListTile(
@@ -854,6 +869,25 @@ class _MyStaffAccountSection extends StatelessWidget {
                     style: TextStyle(fontSize: 11)),
                 trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                 onTap: () => _showChangePasswordDialog(context),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.pin_rounded,
+                      color: Colors.purple),
+                ),
+                title: const Text('Change 4-Digit Security PIN',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: const Text('Update your 4-digit security PIN',
+                    style: TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+                onTap: () => _showChangePinDialog(context),
               ),
             ],
           ),
@@ -968,26 +1002,31 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final auth = context.watch<AppAuthProvider>();
+    final user = auth.currentUser;
 
     return AlertDialog(
       title: const Row(
         children: [
           Icon(Icons.lock_reset_rounded, color: Colors.blue),
           SizedBox(width: 8),
-          Text('Change Password',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text('Change Password',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis),
+          ),
         ],
       ),
-      content: SizedBox(
-        width: double.maxFinite,
+      content: Container(
+        width: 440,
+        constraints: const BoxConstraints(maxWidth: 440),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Logged in as: ${user?.email ?? 'Staff Account'}',
+                'Account: ${auth.userFullName ?? user?.displayName ?? 'Staff Account'} (${user?.email ?? ''})',
                 style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -1079,6 +1118,240 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
   }
 }
 
+class _ChangePinDialog extends StatefulWidget {
+  const _ChangePinDialog();
+
+  @override
+  State<_ChangePinDialog> createState() => _ChangePinDialogState();
+}
+
+class _ChangePinDialogState extends State<_ChangePinDialog> {
+  final _currentPinCtrl = TextEditingController();
+  final _newPinCtrl = TextEditingController();
+  final _confirmPinCtrl = TextEditingController();
+
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _currentPinCtrl.dispose();
+    _newPinCtrl.dispose();
+    _confirmPinCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final currentPin = _currentPinCtrl.text.trim();
+    final newPin = _newPinCtrl.text.trim();
+    final confirmPin = _confirmPinCtrl.text.trim();
+
+    final auth = context.read<AppAuthProvider>();
+    final userPin = auth.userPin;
+
+    if (userPin != null && userPin.isNotEmpty) {
+      if (currentPin.isEmpty) {
+        setState(() => _error = 'Please enter your current 4-digit PIN.');
+        return;
+      }
+      if (currentPin != userPin) {
+        final isStaticValid = await AuthService().verifyPin(currentPin);
+        if (!isStaticValid) {
+          setState(() => _error = 'Current 4-digit PIN is incorrect.');
+          return;
+        }
+      }
+    }
+
+    if (newPin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(newPin)) {
+      setState(() => _error = 'New PIN must be exactly 4 digits.');
+      return;
+    }
+
+    if (newPin != confirmPin) {
+      setState(() => _error = 'New 4-digit PINs do not match.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await auth.updateUserPin(newPin);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('4-Digit Security PIN updated successfully! 🔑'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Failed to update PIN: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AppAuthProvider>();
+    final user = auth.currentUser;
+    final hasExistingPin = auth.userPin != null && auth.userPin!.isNotEmpty;
+
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.pin_rounded, color: Colors.purple),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Change 4-Digit Security PIN',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+      content: Container(
+        width: 440,
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Account: ${auth.userFullName ?? user?.displayName ?? 'Staff Account'} (${user?.email ?? ''})',
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                hasExistingPin
+                    ? 'Enter your current 4-digit PIN and set a new 4-digit PIN.'
+                    : 'Set up your new 4-digit PIN for authorization and verification.',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              if (hasExistingPin) ...[
+                TextField(
+                  controller: _currentPinCtrl,
+                  enabled: !_loading,
+                  obscureText: _obscureCurrent,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
+                  decoration: InputDecoration(
+                    labelText: 'Current 4-Digit PIN',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscureCurrent
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setState(() => _obscureCurrent = !_obscureCurrent),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: _newPinCtrl,
+                enabled: !_loading,
+                obscureText: _obscureNew,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: InputDecoration(
+                  labelText: 'New 4-Digit Security PIN',
+                  prefixIcon: const Icon(Icons.pin_rounded),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        _obscureNew ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirmPinCtrl,
+                enabled: !_loading,
+                obscureText: _obscureConfirm,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Confirm New 4-Digit PIN',
+                  prefixIcon: const Icon(Icons.check_circle_outline),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureConfirm
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _loading ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.purple,
+            foregroundColor: Colors.white,
+          ),
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('SAVE PIN'),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Bluetooth ESC/POS Printer Section ────────────────────────────────────────
 
 class _PrinterToolsSection extends StatefulWidget {
@@ -1102,8 +1375,9 @@ class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
         useRootNavigator: true,
         builder: (ctx) => AlertDialog(
           title: const Text('Bluetooth Thermal Printer'),
-          content: SizedBox(
-            width: double.maxFinite,
+          content: Container(
+            width: 440,
+            constraints: const BoxConstraints(maxWidth: 440),
             child: devices.isEmpty
                 ? const Text(
                     'No paired bluetooth devices found. Please pair your thermal printer in your device Bluetooth settings first.')

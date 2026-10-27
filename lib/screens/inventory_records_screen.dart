@@ -30,6 +30,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
   String _searchQuery = '';
   _RecordTab _activeTab = _RecordTab.deliveryLogs;
   _DateFilter _dateFilter = _DateFilter.all;
+  bool _showSummaryCards = true;
 
   @override
   void initState() {
@@ -162,6 +163,16 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         title: const Text('Inventory Records & History'),
         actions: [
           IconButton(
+            icon: Icon(_showSummaryCards
+                ? Icons.unfold_less_rounded
+                : Icons.unfold_more_rounded),
+            tooltip: _showSummaryCards
+                ? 'Minimize Summary Metrics'
+                : 'Expand Summary Metrics',
+            onPressed: () =>
+                setState(() => _showSummaryCards = !_showSummaryCards),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh Records',
             onPressed: () => context.read<InventoryProvider>().initialize(),
@@ -175,66 +186,83 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── KPI Summary Cards ──────────────────────────────────────
-              _buildMetricCardsRow(
-                context,
-                totalDeliveryVal: totalDeliveryVal,
-                totalDeliveryQty: totalDeliveryQty,
-                activeLotsCount: activeLotsCount,
-                totalLossVal: totalLossVal,
+              // ── Collapsible Summary Header Row ─────────────────────────
+              Text(
+                'SUMMARY METRICS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
 
-              // ── Action Buttons Header Row ──────────────────────────────
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const StockReconciliationScreen(),
+              // ── KPI Summary Cards (Collapsible) ─────────────────────────
+              if (_showSummaryCards) ...[
+                _buildMetricCardsRow(
+                  context,
+                  totalDeliveryVal: totalDeliveryVal,
+                  totalDeliveryQty: totalDeliveryQty,
+                  activeLotsCount: activeLotsCount,
+                  totalLossVal: totalLossVal,
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              // ── Search & Audit Action Controls ──────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      onChanged: (v) => setState(() => _searchQuery = v),
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        hintText:
+                            'Search by product name, invoice #, received by…',
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.fact_check_rounded, size: 18),
-                  label: const Text('SHELF AUDIT',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.shade900,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // ── Search & Filter Controls ─────────────────────────────────
-              TextField(
-                controller: _searchCtrl,
-                onChanged: (v) => setState(() => _searchQuery = v),
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  hintText: 'Search by product name, invoice #, received by…',
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, size: 18),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const StockReconciliationScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.fact_check_rounded, size: 16),
+                    label: const Text('SHELF AUDIT',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber.shade900,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 10),
 
@@ -616,12 +644,13 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 2,
                 children: [
                   Text('Unit Cost: ${formatPeso(log.unitCost)}',
                       style: const TextStyle(
                           fontSize: 12, fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 8),
                   Text('• Total: ${formatPeso(log.totalValue)}',
                       style: TextStyle(
                           fontSize: 12,

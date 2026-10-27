@@ -192,52 +192,56 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         icon: const Icon(Icons.check_circle, color: Colors.green, size: 56),
         title: const Text('Sale Completed!'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Order #${widget.order.orderId} successfully collected.',
-                style: TextStyle(color: Colors.grey.shade700)),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(16),
+        content: Container(
+          width: 440,
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Order #${widget.order.orderId} successfully collected.',
+                  style: TextStyle(color: Colors.grey.shade700)),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total Amount:'),
+                        Text(formatPeso(tx.total),
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const Divider(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Cash Received:'),
+                        Text(formatPeso(tx.cashTendered),
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Change Returned:'),
+                        Text(formatPeso(tx.changeGiven),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total Amount:'),
-                      Text(formatPeso(tx.total),
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const Divider(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Cash Received:'),
-                      Text(formatPeso(tx.cashTendered),
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Change Returned:'),
-                      Text(formatPeso(tx.changeGiven),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           FilledButton(
@@ -567,7 +571,7 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
                 : null,
             hintText: '0.00',
             filled: true,
-            fillColor: Colors.grey.shade100,
+            fillColor: theme.colorScheme.surfaceContainerHighest,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             border: OutlineInputBorder(
@@ -806,7 +810,7 @@ class _WalkInItemPickerSheetState extends State<_WalkInItemPickerSheet> {
               hintText: 'Search product or scan barcode...',
               prefixIcon: const Icon(Icons.search),
               filled: true,
-              fillColor: Colors.grey.shade100,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),

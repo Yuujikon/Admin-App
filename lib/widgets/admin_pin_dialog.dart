@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/auth_service.dart';
 
 /// A 4-digit Admin PIN verification modal with masked digits, auto-submit on 4th digit,
-/// and lockout delay after 3 failed attempts (30-second cooldown).
+/// and lockout delay after 5 failed attempts (30-second cooldown).
 class AdminPinDialog extends StatefulWidget {
   final String title;
   final String message;
@@ -42,8 +43,8 @@ class AdminPinDialog extends StatefulWidget {
 class _AdminPinDialogState extends State<AdminPinDialog> {
   final _pinCtrl = TextEditingController();
   final _focusNode = FocusNode();
+  final _pinService = AuthService();
 
-  int _failedAttempts = 0;
   bool _isLockedOut = false;
   int _lockoutSeconds = 30;
   Timer? _lockoutTimer;
@@ -53,6 +54,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
   void initState() {
     super.initState();
     _pinCtrl.addListener(_onPinChanged);
+    _checkInitialLockout();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
@@ -66,6 +68,13 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     super.dispose();
   }
 
+  Future<void> _checkInitialLockout() async {
+    final rem = await _pinService.getRemainingLockoutSeconds();
+    if (rem > 0 && mounted) {
+      _startLockout(rem);
+    }
+  }
+
   void _onPinChanged() {
     if (_isLockedOut) return;
     if (_errorMessage != null) setState(() => _errorMessage = null);
@@ -75,45 +84,76 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     }
   }
 
-  void _verifyPin(String input) {
-    if (input == widget.correctPin) {
+  Future<void> _verifyPin(String input) async {
+    if (await _pinService.isLockedOut()) {
+      final rem = await _pinService.getRemainingLockoutSeconds();
+      _startLockout(rem);
+      return;
+    }
+
+    bool ok = false;
+    if (widget.correctPin != '1234') {
+      ok = (input == widget.correctPin);
+    } else {
+      ok = await _pinService.verifyPin(input);
+    }
+
+    if (!mounted) return;
+
+    if (ok) {
+      await _pinService.resetFailedAttempts();
       HapticFeedback.mediumImpact();
-      Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, true);
     } else {
       HapticFeedback.vibrate();
-      _failedAttempts++;
       _pinCtrl.clear();
+      final res = await _pinService.recordFailedAttempt();
+      final bool nowLocked = res['isLockedOut'] as bool;
+      final int remSec = res['remainingSeconds'] as int;
+      final int remAtt = res['remainingAttempts'] as int;
 
-      if (_failedAttempts >= 3) {
-        _startLockout();
+      if (nowLocked) {
+        _startLockout(remSec);
       } else {
         setState(() {
           _errorMessage =
-              'Incorrect PIN (${3 - _failedAttempts} attempts left)';
+              'Incorrect PIN ($remAtt ${remAtt == 1 ? "attempt" : "attempts"} left)';
         });
       }
     }
   }
 
-  void _startLockout() {
+  void _startLockout([int seconds = 30]) {
+    _lockoutTimer?.cancel();
     setState(() {
       _isLockedOut = true;
-      _lockoutSeconds = 30;
-      _errorMessage = 'Too many failed attempts. Locked for 30s.';
+      _lockoutSeconds = seconds;
+      _pinCtrl.clear();
+      _errorMessage = 'Too many failed attempts. Locked for ${seconds}s.';
     });
 
-    _lockoutTimer?.cancel();
-    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_lockoutSeconds > 1) {
-        setState(() => _lockoutSeconds--);
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      final rem = await _pinService.getRemainingLockoutSeconds();
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (rem > 0) {
+        setState(() {
+          _isLockedOut = true;
+          _lockoutSeconds = rem;
+          _errorMessage = 'Too many failed attempts. Locked for ${rem}s.';
+        });
       } else {
         timer.cancel();
-        setState(() {
-          _isLockedOut = false;
-          _failedAttempts = 0;
-          _errorMessage = null;
-        });
-        _focusNode.requestFocus();
+        await _pinService.resetFailedAttempts();
+        if (mounted) {
+          setState(() {
+            _isLockedOut = false;
+            _errorMessage = null;
+          });
+          _focusNode.requestFocus();
+        }
       }
     });
   }

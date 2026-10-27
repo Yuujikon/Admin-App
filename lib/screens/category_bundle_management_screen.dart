@@ -32,12 +32,12 @@ class _CategoryBundleManagementScreenState
     final products = inventory.products;
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       initialIndex: widget.initialIndex,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
-          title: const Text('Categories & Cooking Bundles'),
+          title: const Text('Categories, Bundles & Variant Groups'),
           backgroundColor: Theme.of(context).colorScheme.surface,
           bottom: TabBar(
             labelColor: Theme.of(context).colorScheme.primary,
@@ -51,7 +51,11 @@ class _CategoryBundleManagementScreenState
               ),
               Tab(
                 icon: Icon(Icons.auto_awesome_motion_rounded),
-                text: 'Cooking Bundles',
+                text: 'Meal Bundles',
+              ),
+              Tab(
+                icon: Icon(Icons.account_tree_outlined),
+                text: 'Parent Groups',
               ),
             ],
           ),
@@ -62,6 +66,7 @@ class _CategoryBundleManagementScreenState
                 context, inventory, settings, categories, products, bundles),
             _buildBundlesTab(
                 context, inventory, settings, categories, bundles, products),
+            _buildParentGroupsTab(context, inventory, products),
           ],
         ),
       ),
@@ -247,13 +252,17 @@ class _CategoryBundleManagementScreenState
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Add Category'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Category Name',
-            hintText: 'e.g. Beverages, Canned Goods',
+        content: Container(
+          width: 420,
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: 'Category Name',
+              hintText: 'e.g. Beverages, Canned Goods',
+            ),
+            autofocus: true,
           ),
-          autofocus: true,
         ),
         actions: [
           TextButton(
@@ -291,10 +300,14 @@ class _CategoryBundleManagementScreenState
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Edit Category'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(labelText: 'Category Name'),
-          autofocus: true,
+        content: Container(
+          width: 420,
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(labelText: 'Category Name'),
+            autofocus: true,
+          ),
         ),
         actions: [
           TextButton(
@@ -495,7 +508,10 @@ class _CategoryBundleManagementScreenState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                Row(
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Container(
                                       padding: const EdgeInsets.symmetric(
@@ -517,7 +533,6 @@ class _CategoryBundleManagementScreenState
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 6, vertical: 2),
@@ -536,9 +551,8 @@ class _CategoryBundleManagementScreenState
                                         ),
                                       ),
                                     ),
-                                    const Spacer(),
                                     Text(
-                                      '${b.productIds.length} items',
+                                      '• ${b.productIds.length} items',
                                       style: TextStyle(
                                           fontSize: 11,
                                           color: Theme.of(context)
@@ -626,6 +640,736 @@ class _CategoryBundleManagementScreenState
       builder: (ctx) => _BundleEditDialog(bundle: bundle),
     );
   }
+
+  // ── PARENT GROUPS TAB ──────────────────────────────────────────────────────
+
+  Widget _buildParentGroupsTab(
+    BuildContext context,
+    InventoryProvider inventory,
+    List<Product> products,
+  ) {
+    final parentIds = inventory.uniqueParentIds;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showCreateParentGroupDialog(context, products),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('New Group'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Overview Header Card
+            Card(
+              elevation: 0,
+              color: Theme.of(context)
+                  .colorScheme
+                  .tertiaryContainer
+                  .withValues(alpha: 0.3),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .tertiary
+                            .withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.account_tree_rounded,
+                          color: Theme.of(context).colorScheme.tertiary,
+                          size: 28),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${parentIds.length} Parent Variant Groups',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Group products into variant families (e.g. GRP-PALMOLIVE-SHAMPOO). Link products, rename or delete group IDs to manage variant families.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (parentIds.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Text('No parent variant groups created yet.'),
+                ),
+              )
+            else
+              ResponsiveCardGrid(
+                children: parentIds.map((pId) {
+                  final linkedProducts = inventory.getProductsByParentId(pId);
+                  return _parentGroupCard(
+                      context, inventory, pId, linkedProducts, products);
+                }).toList(),
+              ),
+            const SizedBox(height: 80),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _parentGroupCard(
+    BuildContext context,
+    InventoryProvider inventory,
+    String parentId,
+    List<Product> linkedProducts,
+    List<Product> allProducts,
+  ) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ExpansionTile(
+        shape: const RoundedRectangleBorder(side: BorderSide.none),
+        collapsedShape: const RoundedRectangleBorder(side: BorderSide.none),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Theme.of(context)
+                .colorScheme
+                .tertiaryContainer
+                .withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.account_tree_outlined,
+            color: Theme.of(context).colorScheme.tertiary,
+            size: 22,
+          ),
+        ),
+        title: Text(
+          parentId,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        subtitle: Text(
+          '${linkedProducts.length} ${linkedProducts.length == 1 ? "product linked" : "products linked"}',
+          style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Linked Products:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12)),
+                    TextButton.icon(
+                      onPressed: () => _showLinkProductsDialog(
+                          context, parentId, allProducts),
+                      icon: const Icon(Icons.add_link_rounded, size: 14),
+                      label: const Text('+ Link Products',
+                          style: TextStyle(fontSize: 11)),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (linkedProducts.isEmpty)
+                  const Text('No products currently assigned to this group.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey))
+                else
+                  ...linkedProducts.map((p) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_outline,
+                                size: 14, color: Colors.purple),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                p.name,
+                                style: const TextStyle(fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              formatPeso(p.price),
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: Icon(Icons.remove_circle_outline,
+                                  size: 16, color: Colors.red.shade400),
+                              tooltip: 'Unlink from group',
+                              onPressed: () async {
+                                await inventory
+                                    .saveProduct(p.copyWith(parentId: ''));
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          'Unlinked "${p.name}" from "$parentId"! ✅'),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      )),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _showLinkProductsDialog(
+                          context, parentId, allProducts),
+                      icon: const Icon(Icons.add_link_rounded, size: 16),
+                      label: const Text('+ Link Products',
+                          style: TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () => _showEditParentGroupDialog(
+                          context, inventory, parentId),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Rename',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 4),
+                    TextButton.icon(
+                      onPressed: () => _confirmDeleteParentGroup(
+                          context, inventory, parentId, linkedProducts.length),
+                      icon: const Icon(Icons.delete_outline,
+                          size: 16, color: Colors.red),
+                      label: const Text('Delete',
+                          style: TextStyle(fontSize: 12, color: Colors.red)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditParentGroupDialog(
+    BuildContext context,
+    InventoryProvider inventory,
+    String oldParentId,
+  ) {
+    final ctrl = TextEditingController(text: oldParentId);
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Parent Group ID'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            labelText: 'New Parent Group ID',
+            hintText: 'e.g. GRP-PALMOLIVE-SHAMPOO',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final newId = ctrl.text.trim();
+              if (newId.isEmpty || newId == oldParentId) {
+                Navigator.pop(ctx);
+                return;
+              }
+
+              final linked = inventory.getProductsByParentId(oldParentId);
+              for (final p in linked) {
+                await inventory.saveProduct(p.copyWith(parentId: newId));
+              }
+
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        'Renamed group "$oldParentId" to "$newId" across ${linked.length} products! ✅'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteParentGroup(
+    BuildContext context,
+    InventoryProvider inventory,
+    String parentId,
+    int productCount,
+  ) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete Group "$parentId"?'),
+        content: Text(
+          'Are you sure you want to delete this parent group ID?\n\n'
+          '• This will un-group $productCount ${productCount == 1 ? "product" : "products"} linked to "$parentId".\n'
+          '• The products themselves will NOT be deleted.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              final linked = inventory.getProductsByParentId(parentId);
+              for (final p in linked) {
+                await inventory.saveProduct(p.copyWith(parentId: ''));
+              }
+
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        'Deleted group "$parentId" and un-grouped $productCount products! ✅'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Delete Group',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLinkProductsDialog(
+    BuildContext context,
+    String parentId,
+    List<Product> allProducts,
+  ) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => _LinkProductsDialog(
+        parentId: parentId,
+        allProducts: allProducts,
+      ),
+    );
+  }
+
+  void _showCreateParentGroupDialog(
+    BuildContext context,
+    List<Product> allProducts,
+  ) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => _CreateParentGroupDialog(allProducts: allProducts),
+    );
+  }
+}
+
+// ── LINK PRODUCTS DIALOG ─────────────────────────────────────────────────────
+
+class _LinkProductsDialog extends StatefulWidget {
+  final String parentId;
+  final List<Product> allProducts;
+
+  const _LinkProductsDialog({
+    required this.parentId,
+    required this.allProducts,
+  });
+
+  @override
+  State<_LinkProductsDialog> createState() => _LinkProductsDialogState();
+}
+
+class _LinkProductsDialogState extends State<_LinkProductsDialog> {
+  late Set<String> _selectedProductIds;
+  String _search = '';
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedProductIds = widget.allProducts
+        .where((p) => p.parentId == widget.parentId)
+        .map((p) => p.id)
+        .toSet();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.allProducts.where((p) {
+      if (_search.isEmpty) return true;
+      final q = _search.toLowerCase();
+      return p.name.toLowerCase().contains(q) ||
+          (p.brand?.toLowerCase().contains(q) ?? false) ||
+          p.category.toLowerCase().contains(q);
+    }).toList();
+
+    return AlertDialog(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Link Products to Group',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(
+            widget.parentId,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: Theme.of(context).colorScheme.primary),
+          ),
+        ],
+      ),
+      content: Container(
+        width: 480,
+        constraints: const BoxConstraints(maxWidth: 480),
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search product or brand...',
+                prefixIcon: Icon(Icons.search, size: 18),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _search = v.trim()),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (ctx, i) {
+                  final p = filtered[i];
+                  final isChecked = _selectedProductIds.contains(p.id);
+                  final hasOtherGroup = p.parentId != null &&
+                      p.parentId!.isNotEmpty &&
+                      p.parentId != widget.parentId;
+
+                  return CheckboxListTile(
+                    dense: true,
+                    title: Text(p.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13)),
+                    subtitle: Text(
+                      hasOtherGroup
+                          ? '${p.category} • Current Group: ${p.parentId}'
+                          : '${p.category} • ${formatPeso(p.price)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            hasOtherGroup ? Colors.orange.shade800 : Colors.grey,
+                      ),
+                    ),
+                    value: isChecked,
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          _selectedProductIds.add(p.id);
+                        } else {
+                          _selectedProductIds.remove(p.id);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saving
+              ? null
+              : () async {
+                  final inventory = context.read<InventoryProvider>();
+                  setState(() => _saving = true);
+
+                  for (final p in widget.allProducts) {
+                    final isNowSelected = _selectedProductIds.contains(p.id);
+                    final isCurrentlyInGroup = p.parentId == widget.parentId;
+
+                    if (isNowSelected && !isCurrentlyInGroup) {
+                      // Attach to group
+                      await inventory
+                          .saveProduct(p.copyWith(parentId: widget.parentId));
+                    } else if (!isNowSelected && isCurrentlyInGroup) {
+                      // Remove from group
+                      await inventory.saveProduct(p.copyWith(parentId: ''));
+                    }
+                  }
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Updated linked products for "${widget.parentId}"! ✅'),
+                      ),
+                    );
+                  }
+                },
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Save Links'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── CREATE PARENT GROUP DIALOG ───────────────────────────────────────────────
+
+class _CreateParentGroupDialog extends StatefulWidget {
+  final List<Product> allProducts;
+
+  const _CreateParentGroupDialog({required this.allProducts});
+
+  @override
+  State<_CreateParentGroupDialog> createState() =>
+      __CreateParentGroupDialogState();
+}
+
+class __CreateParentGroupDialogState extends State<_CreateParentGroupDialog> {
+  final _groupIdCtrl = TextEditingController();
+  final Set<String> _selectedProductIds = {};
+  String _search = '';
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _groupIdCtrl.dispose();
+    super.dispose();
+  }
+
+  void _autoSuggestGroupId() {
+    if (_selectedProductIds.isEmpty) return;
+    final selectedProducts = widget.allProducts
+        .where((p) => _selectedProductIds.contains(p.id))
+        .toList();
+
+    final firstBrand = selectedProducts.first.brand;
+    final firstName = selectedProducts.first.name;
+
+    final rawText = (firstBrand != null && firstBrand.isNotEmpty)
+        ? '$firstBrand ${firstName.split(" ").take(2).join(" ")}'
+        : firstName.split(" ").take(2).join(" ");
+
+    final cleanSlug = rawText
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9\s]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-');
+
+    if (cleanSlug.isNotEmpty) {
+      _groupIdCtrl.text = 'GRP-$cleanSlug';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.allProducts.where((p) {
+      if (_search.isEmpty) return true;
+      final q = _search.toLowerCase();
+      return p.name.toLowerCase().contains(q) ||
+          (p.brand?.toLowerCase().contains(q) ?? false) ||
+          p.category.toLowerCase().contains(q);
+    }).toList();
+
+    return AlertDialog(
+      title: const Text('New Parent Variant Group'),
+      content: Container(
+        width: 480,
+        constraints: const BoxConstraints(maxWidth: 480),
+        height: 450,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _groupIdCtrl,
+              decoration: InputDecoration(
+                labelText: 'Parent Group ID *',
+                hintText: 'e.g. GRP-PALMOLIVE-SHAMPOO',
+                prefixIcon: const Icon(Icons.account_tree_outlined, size: 18),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.auto_awesome_rounded,
+                      size: 16, color: Colors.purple),
+                  tooltip: 'Suggest Group ID from selection',
+                  onPressed: _autoSuggestGroupId,
+                ),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Select Products to Include:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8),
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search product or brand...',
+                prefixIcon: Icon(Icons.search, size: 18),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _search = v.trim()),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (ctx, i) {
+                  final p = filtered[i];
+                  final isChecked = _selectedProductIds.contains(p.id);
+
+                  return CheckboxListTile(
+                    dense: true,
+                    title: Text(p.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13)),
+                    subtitle: Text(
+                        '${p.category} • ${formatPeso(p.price)}${p.parentId != null && p.parentId!.isNotEmpty ? " (Group: ${p.parentId})" : ""}',
+                        style: const TextStyle(fontSize: 11)),
+                    value: isChecked,
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          _selectedProductIds.add(p.id);
+                        } else {
+                          _selectedProductIds.remove(p.id);
+                        }
+                        if (_groupIdCtrl.text.isEmpty) {
+                          _autoSuggestGroupId();
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saving
+              ? null
+              : () async {
+                  final newGroupId = _groupIdCtrl.text.trim();
+                  if (newGroupId.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Please enter a Parent Group ID.')),
+                    );
+                    return;
+                  }
+                  if (_selectedProductIds.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content:
+                              Text('Please select at least one product.')),
+                    );
+                    return;
+                  }
+
+                  final inventory = context.read<InventoryProvider>();
+                  setState(() => _saving = true);
+
+                  for (final p in widget.allProducts) {
+                    if (_selectedProductIds.contains(p.id)) {
+                      await inventory
+                          .saveProduct(p.copyWith(parentId: newGroupId));
+                    }
+                  }
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Created Group "$newGroupId" with ${_selectedProductIds.length} products! ✅'),
+                      ),
+                    );
+                  }
+                },
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Create Group'),
+        ),
+      ],
+    );
+  }
 }
 
 // ── BUNDLE EDIT DIALOG ───────────────────────────────────────────────────────
@@ -687,8 +1431,9 @@ class _BundleEditDialogState extends State<_BundleEditDialog> {
       title: Text(widget.bundle == null
           ? 'Create Cooking Bundle'
           : 'Edit Cooking Bundle'),
-      content: SizedBox(
-        width: double.maxFinite,
+      content: Container(
+        width: 480,
+        constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

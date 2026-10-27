@@ -283,36 +283,40 @@ class _BatchAuditSheetState extends State<BatchAuditSheet> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setSt) => AlertDialog(
           title: const Text('Mark Batch Stock Write-off'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Product: ${product.name}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('Available in Batch: ${batch.quantity} ${product.unit}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: qtyCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Quantity Lost/Spoiled',
-                    border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<LossType>(
-                initialValue: lossType,
-                decoration: const InputDecoration(
-                    labelText: 'Reason for Loss', border: OutlineInputBorder()),
-                items: LossType.values
-                    .map((t) => DropdownMenuItem(
-                        value: t, child: Text(t.name.toUpperCase())))
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) setSt(() => lossType = val);
-                },
-              ),
-            ],
+          content: Container(
+            width: 440,
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Product: ${product.name}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Available in Batch: ${batch.quantity} ${product.unit}',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: qtyCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Quantity Lost/Spoiled',
+                      border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<LossType>(
+                  initialValue: lossType,
+                  decoration: const InputDecoration(
+                      labelText: 'Reason for Loss', border: OutlineInputBorder()),
+                  items: LossType.values
+                      .map((t) => DropdownMenuItem(
+                          value: t, child: Text(t.name.toUpperCase())))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) setSt(() => lossType = val);
+                  },
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

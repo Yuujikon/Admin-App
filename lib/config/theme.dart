@@ -3,39 +3,43 @@ import 'package:google_fonts/google_fonts.dart';
 
 /// Design system color constants for the GDC Sari-Sari Store brand.
 class GdcColors {
-  // GDC Design System Core Brand Colors
-  static const appBackground = Color(0xFFEDF1D6);
+  // GDC Design System Core Brand Colors - Warm Cream Theme
+  static const appBackground = Color(0xFFFAF6EE);
   static const whiteSurface = Color(0xFFFFFFFF);
   static const mainText = Color(0xFF172237);
   static const mutedText = Color(0xFF697386);
-  static const emeraldPrimary = Color(0xFF08B982);
-  static const darkEmerald = Color(0xFF009A69);
-  static const mintActiveBackground = Color(0xFFCCE9DF);
-  static const border = Color(0xFFD9DEE5);
-  static const strongBorder = Color(0xFF8F969F);
+  static const creamPrimary = Color(0xFFC87533);
+  static const darkCream = Color(0xFF7A3E18);
+  static const creamActiveBackground = Color(0xFFF3E8D3);
+  static const border = Color(0xFFE2D8C6);
+  static const strongBorder = Color(0xFFB8AA94);
   static const warningAmber = Color(0xFFE99A1A);
   static const dangerCoral = Color(0xFFE55454);
   static const violetAccent = Color(0xFF8754D2);
 
   // Backwards Compatibility Palette Aliases
+  static const emeraldPrimary = creamPrimary;
+  static const darkEmerald = darkCream;
+  static const mintActiveBackground = creamActiveBackground;
+
   static const deepNavy = Color(0xFF12213F);
   static const secondaryNavy = Color(0xFF1C2F55);
   static const deepGreen = mainText;
-  static const primaryGreen = emeraldPrimary;
-  static const secondaryGreen = darkEmerald;
+  static const primaryGreen = creamPrimary;
+  static const secondaryGreen = darkCream;
   static const backgroundCream = appBackground;
   static const paper = whiteSurface;
 
   // Dark Mode Palette
-  static const midnight = deepNavy;
-  static const slate = secondaryNavy;
-  static const mutedGreen = emeraldPrimary;
-  static const goldDim = darkEmerald;
+  static const midnight = Color(0xFF1E1B18);
+  static const slate = Color(0xFF2B2621);
+  static const mutedGreen = Color(0xFFE2A86E);
+  static const goldDim = creamPrimary;
 
   // Universal Semantic Tonal Colors
   static const errorLight = dangerCoral;
   static const errorDark = Color(0xFFF87171);
-  static const successLight = emeraldPrimary;
+  static const successLight = Color(0xFF10B981);
   static const successDark = Color(0xFF34D399);
   static const warningLight = warningAmber;
   static const warningDark = Color(0xFFFBBF24);
@@ -132,7 +136,7 @@ class GdcTheme {
             : GdcColors.mintActiveBackground,
         surfaceContainerHigh: isDark ? GdcColors.slate : GdcColors.whiteSurface,
         surfaceContainerHighest:
-            isDark ? const Color(0xFF383C40) : const Color(0xFFE4E9CD),
+            isDark ? const Color(0xFF383C40) : const Color(0xFFE8DFC8),
         tertiary: successColor,
         onTertiary: isDark ? GdcColors.midnight : Colors.white,
       ),

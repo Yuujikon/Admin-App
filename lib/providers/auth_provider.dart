@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../services/auth_service.dart';
 import '../utils/format.dart';
 import '../utils/totp.dart';
 
@@ -21,10 +23,42 @@ class AppAuthProvider extends ChangeNotifier {
   /// Active user role.
   UserRole get role => _role;
 
+  String _status = 'none';
+
+  /// Active user approval status ('pending', 'approved', 'denied', 'none').
+  String get status => _status;
+
+  /// True if account is waiting for admin approval.
+  bool get isPending => _status == 'pending';
+
+  /// True if account access was denied or revoked.
+  bool get isDenied => _status == 'denied';
+
+  /// True if account is approved by admin.
+  bool get isApproved => _status == 'approved';
+
+  String? _userFullName;
+
+  /// Active user full name.
+  String? get userFullName => _userFullName;
+
+  String? _requestedRole;
+
+  /// Requested employee role during registration.
+  String? get requestedRole => _requestedRole;
+
+  /// True if user's email address has been verified.
+  bool get isEmailVerified => _auth.currentUser?.emailVerified ?? false;
+
   String? _phoneNumber;
 
   /// User contact phone number.
   String? get phoneNumber => _phoneNumber;
+
+  String? _userPin;
+
+  /// Active 4-digit security PIN for employee account.
+  String? get userPin => _userPin;
 
   String? _totpSecret;
 
@@ -61,7 +95,11 @@ class AppAuthProvider extends ChangeNotifier {
         _listenToUserDoc(user.uid);
       } else {
         _role = UserRole.none;
+        _status = 'none';
+        _userFullName = null;
+        _requestedRole = null;
         _phoneNumber = null;
+        _userPin = null;
         _totpSecret = null;
         _isTotpLinked = false;
         _totpEnabled = true;
@@ -79,52 +117,59 @@ class AppAuthProvider extends ChangeNotifier {
         final data = doc.data()!;
         final roleStr = data['role'] ?? 'none';
         final isDisabled = data['isDisabled'] == true;
+        final statusVal = data['status'] as String?;
+
+        _userFullName = data['name'] as String?;
+        _requestedRole = data['requestedRole'] as String?;
         _phoneNumber = data['phoneNumber'];
+        _userPin = data['pin'] as String?;
         _totpSecret = data['totpSecret'];
         _isTotpLinked = data['totpLinked'] == true;
         _totpEnabled = data['totpEnabled'] ?? true;
 
-        if (_totpSecret == null || _totpSecret!.isEmpty) {
-          _totpSecret = TotpUtils.generateSecret();
+        if (_totpSecret == null || _totpSecret!.isEmpty || data['isCustomer'] == null) {
+          _totpSecret = _totpSecret ?? TotpUtils.generateSecret();
           await _db.collection('users').doc(uid).set({
             'totpSecret': _totpSecret,
+            'isCustomer': false,
+            if (data['status'] == null) 'status': roleStr == 'none' ? 'pending' : 'approved',
           }, SetOptions(merge: true));
         }
 
-        if (isDisabled) {
+        if (isDisabled || statusVal == 'denied') {
           _role = UserRole.none;
+          _status = 'denied';
+        } else if (statusVal == 'pending' || roleStr == 'none') {
+          _role = UserRole.none;
+          _status = 'pending';
         } else {
+          _status = 'approved';
           _role = UserRole.values.firstWhere(
             (e) => e.name == roleStr,
             orElse: () => UserRole.none,
           );
         }
-
-        // Special case: make sure the main admin is always an admin
-        if (currentUser?.email == 'markjeo.hinampas@gmail.com') {
-          _role = UserRole.admin;
-          if (roleStr != 'admin' || isDisabled) {
-            await _db.collection('users').doc(uid).set(
-                {'role': 'admin', 'isDisabled': false},
-                SetOptions(merge: true));
-          }
-        }
       } else {
         _totpSecret = TotpUtils.generateSecret();
         if (currentUser?.email == 'markjeo.hinampas@gmail.com') {
           _role = UserRole.admin;
+          _status = 'approved';
           await _db.collection('users').doc(uid).set({
             'email': currentUser?.email,
             'role': 'admin',
+            'status': 'approved',
+            'isCustomer': false,
             'isDisabled': false,
             'totpSecret': _totpSecret,
             'createdAt': FieldValue.serverTimestamp(),
           });
         } else {
           _role = UserRole.none;
+          _status = 'pending';
           await _db.collection('users').doc(uid).set({
             'email': currentUser?.email,
             'role': 'none',
+            'status': 'pending',
             'isCustomer': false,
             'isDisabled': false,
             'totpSecret': _totpSecret,
@@ -137,15 +182,111 @@ class AppAuthProvider extends ChangeNotifier {
     }, onError: (e) {
       debugPrint('Error listening to user role: $e');
       _role = UserRole.none;
+      _status = 'none';
       _initialized = true;
       notifyListeners();
     });
+  }
+
+  /// Registers a new employee credentials with Firebase Auth, sends verification email,
+  /// and creates initial Firestore pending user document.
+  Future<void> registerEmployee({
+    required String name,
+    required String email,
+    required String password,
+    required String requestedRole,
+  }) async {
+    final userCred = await _auth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password.trim(),
+    );
+
+    final user = userCred.user;
+    if (user != null) {
+      await user.sendEmailVerification().catchError((e) {
+        debugPrint('Error sending verification email: $e');
+      });
+
+      _totpSecret = TotpUtils.generateSecret();
+      await _db.collection('users').doc(user.uid).set({
+        'name': name.trim(),
+        'email': email.trim(),
+        'role': 'none',
+        'requestedRole': requestedRole,
+        'status': 'pending',
+        'isDisabled': false,
+        'isCustomer': false,
+        'authMethod': 'email',
+        'totpSecret': _totpSecret,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  /// Resends account verification email link to the active user.
+  Future<void> resendEmailVerification() async {
+    final user = currentUser;
+    if (user != null && !user.emailVerified) {
+      await user.sendEmailVerification();
+    }
+  }
+
+  /// Signs in or registers user via Google Auth.
+  /// Returns true if user document exists (returning user), false if first-time user who needs profile setup.
+  Future<bool> signInWithGoogle() async {
+    final GoogleSignIn googleSignIn = GoogleSignIn();
+    final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+    if (googleUser == null) {
+      throw Exception('Google sign-in was cancelled.');
+    }
+
+    final GoogleSignInAuthentication googleAuth =
+        await googleUser.authentication;
+    final OAuthCredential credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    final UserCredential userCred =
+        await _auth.signInWithCredential(credential);
+    final user = userCred.user;
+
+    if (user != null) {
+      final doc = await _db.collection('users').doc(user.uid).get();
+      return doc.exists;
+    }
+    return false;
+  }
+
+  /// Completes registration details for a first-time Google Sign-In user.
+  Future<void> completeGoogleRegistration({
+    required String name,
+    required String requestedRole,
+  }) async {
+    final user = currentUser;
+    if (user == null) return;
+
+    _totpSecret = TotpUtils.generateSecret();
+    await _db.collection('users').doc(user.uid).set({
+      'name': name.trim(),
+      'email': user.email,
+      'role': 'none',
+      'requestedRole': requestedRole,
+      'status': 'pending',
+      'isDisabled': false,
+      'isCustomer': false,
+      'authMethod': 'google',
+      'totpSecret': _totpSecret,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    notifyListeners();
   }
 
   /// Triggers a manual refresh of the user document permissions.
   Future<void> refreshRole() async {
     final user = currentUser;
     if (user != null) {
+      await user.reload();
       _userSub?.cancel();
       _listenToUserDoc(user.uid);
     }
@@ -161,6 +302,21 @@ class AppAuthProvider extends ChangeNotifier {
       'phoneNumber': sanitized,
     });
     _phoneNumber = sanitized;
+    notifyListeners();
+  }
+
+  /// Updates current user 4-digit security PIN in Firestore and local storage.
+  Future<void> updateUserPin(String newPin) async {
+    final user = currentUser;
+    if (user == null) return;
+
+    final trimmed = newPin.trim();
+    await _db.collection('users').doc(user.uid).set({
+      'pin': trimmed,
+    }, SetOptions(merge: true));
+
+    await AuthService().changePin(trimmed);
+    _userPin = trimmed;
     notifyListeners();
   }
 
@@ -227,6 +383,7 @@ class AppAuthProvider extends ChangeNotifier {
     _userSub?.cancel();
     await _auth.signOut();
     _role = UserRole.none;
+    _status = 'none';
     _adminVerified = false;
     notifyListeners();
   }
