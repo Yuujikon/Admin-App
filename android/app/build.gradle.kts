@@ -9,21 +9,6 @@ plugins {
 }
 
 dependencies {
-    // Import the Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
-
-    // Add the dependencies for Firebase products you want to use
-    // When using the BoM, don't specify versions in Firebase dependencies
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
-    implementation("com.google.firebase:firebase-messaging")
-    implementation("com.google.android.gms:play-services-base:18.5.0")
-    implementation("com.google.android.gms:play-services-ads-identifier:18.1.0")
-
-
-    // Add the dependencies for any other desired Firebase products
-    // https://firebase.google.com/docs/android/setup#available-libraries
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
 

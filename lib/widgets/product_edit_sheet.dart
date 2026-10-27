@@ -97,6 +97,12 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   bool _saving = false;
   bool _processingImage = false;
 
+  // Section Expansion States for Progressive Disclosure
+  bool _showBulkUom = false;
+  bool _showVariantFamily = false;
+  bool _showSupplierAlerts = false;
+  bool _showPerishableDetails = false;
+
   // Smart Pricing Engine & Bulk Cost Calculator Flags
   bool _isManualPriceOverride = false;
   bool _isCalculatingPrice = false;
@@ -117,6 +123,8 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     'Condiments',
     'Others'
   ];
+
+  static const _commonUnits = ['pcs', 'pack', 'can', 'bottle', 'kg', 'sachet'];
 
   @override
   void initState() {
@@ -248,6 +256,15 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _supplierId = p?.supplierId ?? widget.initialSupplierId;
     _expiryDate = p?.expiryDate;
     _variants = p?.variants != null ? List.from(p!.variants) : [];
+
+    // Auto-expand optional panels if product already has bulk data, parent ID, or supplier info
+    _showBulkUom = p?.hasBulkPacking == true ||
+        (initBoxes != null && initBoxes > 0) ||
+        (p?.packCost != null && p!.packCost! > 0);
+    _showVariantFamily = p?.parentId != null && p!.parentId!.isNotEmpty;
+    _showSupplierAlerts = (p?.supplierId != null && p!.supplierId!.isNotEmpty) ||
+        (p?.lowStockThreshold != null && p!.lowStockThreshold != 5);
+    _showPerishableDetails = _perishable || p?.shelfDays != null;
 
     if (p != null && p.price > 0 && p.costPrice > 0) {
       _isManualPriceOverride = true;
@@ -533,6 +550,11 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _supplierId = p.supplierId;
       _expiryDate = p.expiryDate;
       _variants = List.from(p.variants);
+
+      _showBulkUom = p.hasBulkPacking || (p.packCost != null && p.packCost! > 0);
+      _showVariantFamily = p.parentId != null && p.parentId!.isNotEmpty;
+      _showSupplierAlerts = p.supplierId != null || p.lowStockThreshold != 5;
+      _showPerishableDetails = p.isPerishable || p.shelfDays != null;
     });
   }
 
@@ -610,7 +632,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
     if (name.isEmpty && brand.isEmpty) return;
 
-    // 1. Check if an existing product in store shares the same brand
     if (brand.isNotEmpty) {
       try {
         final match = inventory.products.firstWhere(
@@ -626,7 +647,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       } catch (_) {}
     }
 
-    // 2. Derive a clean slugified group ID from Brand + Name Base
     final rawText = brand.isNotEmpty
         ? '$brand ${name.split(" ").take(2).join(" ")}'
         : name.split(" ").take(2).join(" ");
@@ -803,7 +823,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                               Text(
                                 _activeProduct == null
                                     ? 'Add New Product'
-                                    : 'Edit Product',
+                                    : 'Edit Product Profile',
                                 style: Theme.of(context)
                                     .textTheme
                                     .titleMedium
@@ -814,8 +834,8 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                               ),
                               Text(
                                 _activeProduct == null
-                                    ? 'Create catalog entry and log initial stock'
-                                    : 'Update product details, pricing, and UoM',
+                                    ? 'Fast product creation & initial stock logging'
+                                    : 'Update pricing, UoM, and product info',
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall
@@ -834,7 +854,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                             onPressed: _fullScan,
                             icon: const Icon(Icons.qr_code_scanner_rounded,
                                 size: 18),
-                            tooltip: 'Catalog Scan',
+                            tooltip: 'Scan Catalog Barcode',
                             visualDensity: VisualDensity.compact,
                           ),
                           const SizedBox(width: 4),
@@ -989,7 +1009,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── SECTION 1: PRODUCT IDENTITY ─────────────────────────
+                    // ── ESSENTIAL SECTION 1: CORE PRODUCT DETAILS ──────────
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -1009,14 +1029,14 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.badge_outlined,
+                              Icon(Icons.stars_rounded,
                                   size: 18,
                                   color: Theme.of(context)
                                       .colorScheme
                                       .primary),
                               const SizedBox(width: 8),
                               Text(
-                                'PRODUCT IDENTITY',
+                                'ESSENTIAL PRODUCT DETAILS',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 11,
@@ -1111,414 +1131,139 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                           ),
                           const SizedBox(height: 10),
 
-                          // Parent Group ID Dropdown Selector & Auto-Generation
-                          Row(
+                          // Base Unit Picker (Pills + Manual Text)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  isExpanded: true,
-                                  value: inventory.uniqueParentIds
-                                          .contains(_parentIdCtrl.text.trim())
-                                      ? _parentIdCtrl.text.trim()
-                                      : (_parentIdCtrl.text.trim().isNotEmpty
-                                          ? _parentIdCtrl.text.trim()
-                                          : null),
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    labelText: 'Parent Group ID (Variant Family)',
-                                    prefixIcon: const Icon(
-                                        Icons.account_tree_outlined,
-                                        size: 18),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 10),
-                                    suffixIcon: Tooltip(
-                                      message: 'Auto-generate Group ID from Brand/Name',
-                                      child: IconButton(
-                                        icon: const Icon(Icons.auto_awesome_rounded,
-                                            size: 16, color: Colors.purple),
-                                        onPressed: () {
-                                          setState(() {
-                                            _autoGenerateParentGroupId(force: true);
-                                          });
-                                        },
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _unit,
+                                      focusNode: _fUnit,
+                                      decoration: const InputDecoration(
+                                        isDense: true,
+                                        labelText: 'Base Unit *',
+                                        hintText: 'e.g. pcs, bottle',
+                                        prefixIcon: Icon(Icons.label_outlined,
+                                            size: 18),
+                                        contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 10),
                                       ),
-                                    ),
-                                  ),
-                                  hint: Text(
-                                    _parentIdCtrl.text.isNotEmpty
-                                        ? _parentIdCtrl.text
-                                        : 'Select existing or auto-generate...',
-                                    style: const TextStyle(fontSize: 13),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  items: [
-                                    if (_parentIdCtrl.text.trim().isNotEmpty &&
-                                        !inventory.uniqueParentIds
-                                            .contains(_parentIdCtrl.text.trim()))
-                                      DropdownMenuItem<String>(
-                                        value: _parentIdCtrl.text.trim(),
-                                        child: Text(
-                                          '✨ Auto/Current: ${_parentIdCtrl.text.trim()}',
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.purple),
-                                        ),
-                                      ),
-                                    ...inventory.uniqueParentIds.map(
-                                      (pId) => DropdownMenuItem<String>(
-                                        value: pId,
-                                        child: Text(
-                                          '📦 $pId',
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) {
-                                      setState(() {
-                                        _parentIdCtrl.text = val;
-                                      });
-                                    }
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _parentIdCtrl,
-                            focusNode: _fParentId,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r'[a-zA-Z0-9\-_]')),
-                              LengthLimitingTextInputFormatter(60),
-                            ],
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              labelText: 'Custom Group ID Slug (Optional)',
-                              hintText: 'e.g. GRP-PALMOLIVE-SHAMPOO',
-                              prefixIcon:
-                                  Icon(Icons.edit_outlined, size: 16),
-                              contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // ── SECTION 2: UOM & INVENTORY ──────────────────────────
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outlineVariant
-                              .withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.widgets_outlined,
-                                  size: 18,
-                                  color: isDark
-                                      ? Colors.green.shade300
-                                      : Colors.green.shade800),
-                              const SizedBox(width: 8),
-                              Text(
-                                'UOM & INVENTORY LOG',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 11,
-                                  letterSpacing: 0.5,
-                                  color: isDark
-                                      ? Colors.green.shade300
-                                      : Colors.green.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-
-                          // UoM Units
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _bulkUnitCtrl,
-                                  decoration: const InputDecoration(
-                                    isDense: true,
-                                    labelText: 'Bulk Unit Name',
-                                    hintText: 'e.g. box, tie, case',
-                                    prefixIcon: Icon(
-                                        Icons.inventory_2_outlined,
-                                        size: 18),
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 10),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _unit,
-                                  focusNode: _fUnit,
-                                  decoration: const InputDecoration(
-                                    isDense: true,
-                                    labelText: 'Base Unit Name *',
-                                    hintText: 'e.g. pcs, bottle',
-                                    prefixIcon: Icon(Icons.label_outlined,
-                                        size: 18),
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 10),
-                                  ),
-                                  validator: (v) {
-                                    if (v == null || v.trim().isEmpty) {
-                                      return 'Enter base unit';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // Bulk Presets
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                const Text('Presets: ',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.grey,
-                                        fontWeight: FontWeight.bold)),
-                                ...[
-                                  'box',
-                                  'case',
-                                  'bundle',
-                                  'tie',
-                                  'pack',
-                                  'sack',
-                                  'tray'
-                                ].map((preset) => Padding(
-                                      padding: const EdgeInsets.only(right: 4),
-                                      child: InkWell(
-                                        onTap: () => setState(
-                                            () => _bulkUnitCtrl.text = preset),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Colors.teal.shade50,
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                            border: Border.all(
-                                                color: Colors.teal.shade200),
-                                          ),
-                                          child: Text(preset,
-                                              style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: Colors.teal.shade900,
-                                                  fontWeight:
-                                                      FontWeight.bold)),
-                                        ),
-                                      ),
-                                    )),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-
-                          // UoM Breakdown Calculator Card
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors.green.shade900
-                                      .withValues(alpha: 0.25)
-                                  : Colors.green.shade50
-                                      .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: isDark
-                                      ? Colors.green.shade800
-                                      : Colors.green.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.auto_awesome_rounded,
-                                        size: 16,
-                                        color: isDark
-                                            ? Colors.green.shade300
-                                            : Colors.green.shade900),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'UoM Package Breakdown',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        color: isDark
-                                            ? Colors.green.shade300
-                                            : Colors.green.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-
-                                // Row 1: Cost per Box & Boxes Received
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _boxPriceCtrl,
-                                        focusNode: _fBoxPrice,
-                                        keyboardType: const TextInputType
-                                            .numberWithOptions(decimal: true),
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.allow(
-                                              RegExp(r'^\d*\.?\d*'))
-                                        ],
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          labelText: 'Cost per Box',
-                                          prefixText: '₱ ',
-                                          hintText: 'e.g. 720.00',
-                                          fillColor: Theme.of(context)
-                                              .colorScheme
-                                              .surface,
-                                          filled: true,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 10, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _boxesReceivedCtrl,
-                                        focusNode: _fBoxesReceived,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly
-                                        ],
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          labelText: 'Boxes Received',
-                                          hintText: 'e.g. 2',
-                                          fillColor: Theme.of(context)
-                                              .colorScheme
-                                              .surface,
-                                          filled: true,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 10, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-
-                                // Row 2: Items per Box & Extra Loose Items
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _itemsPerBoxCtrl,
-                                        focusNode: _fItemsPerBox,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly
-                                        ],
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          labelText: 'Items per Box',
-                                          hintText: 'e.g. 24',
-                                          fillColor: Theme.of(context)
-                                              .colorScheme
-                                              .surface,
-                                          filled: true,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 10, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _extraItemsCtrl,
-                                        focusNode: _fExtraItems,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly
-                                        ],
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          labelText: 'Extra Loose Items',
-                                          hintText: 'e.g. 2',
-                                          fillColor: Theme.of(context)
-                                              .colorScheme
-                                              .surface,
-                                          filled: true,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 10, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-
-                                if (_getUomBreakdownText().isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: isDark
-                                          ? Colors.green.shade900
-                                              .withValues(alpha: 0.4)
-                                          : Colors.green.shade100,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      _getUomBreakdownText(),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark
-                                            ? Colors.green.shade200
-                                            : Colors.green.shade900,
-                                      ),
+                                      onChanged: (_) => setState(() {}),
+                                      validator: (v) {
+                                        if (v == null || v.trim().isEmpty) {
+                                          return 'Enter base unit';
+                                        }
+                                        return null;
+                                      },
                                     ),
                                   ),
                                 ],
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 6),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    const Text('Quick Unit: ',
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey,
+                                            fontWeight: FontWeight.bold)),
+                                    ..._commonUnits.map(
+                                      (u) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(right: 4),
+                                        child: InkWell(
+                                          onTap: () {
+                                            setState(() {
+                                              _unit.text = u;
+                                            });
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: _unit.text.trim() == u
+                                                  ? Theme.of(context)
+                                                      .colorScheme
+                                                      .primaryContainer
+                                                  : Theme.of(context)
+                                                      .colorScheme
+                                                      .surface,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: _unit.text.trim() == u
+                                                    ? Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .outlineVariant,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              u,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: _unit.text.trim() == u
+                                                    ? Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurface,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 10),
 
-                          // Selling Price & Unit Cost (Auto-populated from UoM)
+                          // Selling Price & Unit Cost (Auto-Margin Enabled)
                           Row(
                             children: [
+                              if (context.watch<AppAuthProvider>().role ==
+                                  UserRole.admin) ...[
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _costPrice,
+                                    focusNode: _fCostPrice,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                          RegExp(r'^\d*\.?\d*'))
+                                    ],
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      labelText: 'Unit Cost *',
+                                      prefixText: '₱ ',
+                                      hintText: 'e.g. 30.00',
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                    ),
+                                    validator: (v) {
+                                      final c = double.tryParse(v ?? '');
+                                      if (c == null || c <= 0) {
+                                        return 'Required';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               Expanded(
                                 child: TextFormField(
                                   controller: _price,
@@ -1575,37 +1320,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                   },
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              if (context.watch<AppAuthProvider>().role ==
-                                  UserRole.admin)
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _costPrice,
-                                    focusNode: _fCostPrice,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                            decimal: true),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                          RegExp(r'^\d*\.?\d*'))
-                                    ],
-                                    decoration: const InputDecoration(
-                                      isDense: true,
-                                      labelText: 'Unit Cost *',
-                                      prefixText: '₱ ',
-                                      hintText: 'e.g. 30.00',
-                                      contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 10),
-                                    ),
-                                    validator: (v) {
-                                      final c = double.tryParse(v ?? '');
-                                      if (c == null || c <= 0) {
-                                        return 'Required';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
                             ],
                           ),
                           const SizedBox(height: 10),
@@ -1621,7 +1335,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                             decoration: InputDecoration(
                               isDense: true,
                               labelText:
-                                  'Total Initial Quantity (${_unit.text.isEmpty ? 'pcs' : _unit.text}) *',
+                                  'Initial Quantity (${_unit.text.isEmpty ? 'pcs' : _unit.text}) *',
                               hintText: 'e.g. 50',
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 10),
@@ -1673,7 +1387,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                   Expanded(
                                     child: Text(
                                       _expiryDate == null
-                                          ? 'Batch Expiry Date * (Mandatory)'
+                                          ? 'Batch Expiry Date * (Tap to Set)'
                                           : 'Expiry: ${DateFormat('MMMM dd, yyyy').format(_expiryDate!)}',
                                       style: TextStyle(
                                         fontSize: 13,
@@ -1702,9 +1416,391 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── COLLAPSIBLE SECTION A: BULK & UOM CALCULATOR ─────────
+                    _buildCollapsibleCard(
+                      title: 'Bulk & UoM Package Breakdown',
+                      subtitle: _getUomBreakdownText().isNotEmpty
+                          ? _getUomBreakdownText()
+                          : 'Cost per box, boxes received, & items per box calculator',
+                      icon: Icons.inventory_2_outlined,
+                      isExpanded: _showBulkUom,
+                      onToggle: () =>
+                          setState(() => _showBulkUom = !_showBulkUom),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _bulkUnitCtrl,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Bulk Unit Name',
+                                    hintText: 'e.g. box, tie, case',
+                                    prefixIcon: Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 18),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                const Text('Presets: ',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey,
+                                        fontWeight: FontWeight.bold)),
+                                ...[
+                                  'box',
+                                  'case',
+                                  'bundle',
+                                  'tie',
+                                  'pack',
+                                  'sack',
+                                  'tray'
+                                ].map((preset) => Padding(
+                                      padding: const EdgeInsets.only(right: 4),
+                                      child: InkWell(
+                                        onTap: () => setState(
+                                            () => _bulkUnitCtrl.text = preset),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.teal.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            border: Border.all(
+                                                color: Colors.teal.shade200),
+                                          ),
+                                          child: Text(preset,
+                                              style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.teal.shade900,
+                                                  fontWeight:
+                                                      FontWeight.bold)),
+                                        ),
+                                      ),
+                                    )),
+                              ],
+                            ),
+                          ),
                           const SizedBox(height: 10),
 
-                          // Safety Stock & Supplier
+                          // UoM Breakdown Calculator Fields
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.green.shade900
+                                      .withValues(alpha: 0.25)
+                                  : Colors.green.shade50
+                                      .withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: isDark
+                                      ? Colors.green.shade800
+                                      : Colors.green.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.auto_awesome_rounded,
+                                        size: 16,
+                                        color: isDark
+                                            ? Colors.green.shade300
+                                            : Colors.green.shade900),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'UoM Automatic Calculator',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: isDark
+                                            ? Colors.green.shade300
+                                            : Colors.green.shade900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _boxPriceCtrl,
+                                        focusNode: _fBoxPrice,
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(decimal: true),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                              RegExp(r'^\d*\.?\d*'))
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Cost per Box',
+                                          prefixText: '₱ ',
+                                          hintText: 'e.g. 720.00',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _boxesReceivedCtrl,
+                                        focusNode: _fBoxesReceived,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Boxes Received',
+                                          hintText: 'e.g. 2',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _itemsPerBoxCtrl,
+                                        focusNode: _fItemsPerBox,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Items per Box',
+                                          hintText: 'e.g. 24',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _extraItemsCtrl,
+                                        focusNode: _fExtraItems,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          labelText: 'Extra Loose Items',
+                                          hintText: 'e.g. 2',
+                                          fillColor: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          filled: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (_getUomBreakdownText().isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? Colors.green.shade900
+                                              .withValues(alpha: 0.4)
+                                          : Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _getUomBreakdownText(),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? Colors.green.shade200
+                                            : Colors.green.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── COLLAPSIBLE SECTION B: VARIANT FAMILY & GROUPING ─────
+                    _buildCollapsibleCard(
+                      title: 'Variant Family & Parent Group ID',
+                      subtitle: _parentIdCtrl.text.isNotEmpty
+                          ? 'Group: ${_parentIdCtrl.text}'
+                          : 'Link related flavor/size variants under one product family',
+                      icon: Icons.account_tree_outlined,
+                      isExpanded: _showVariantFamily,
+                      onToggle: () => setState(
+                          () => _showVariantFamily = !_showVariantFamily),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: inventory.uniqueParentIds
+                                          .contains(_parentIdCtrl.text.trim())
+                                      ? _parentIdCtrl.text.trim()
+                                      : (_parentIdCtrl.text.trim().isNotEmpty
+                                          ? _parentIdCtrl.text.trim()
+                                          : null),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    labelText: 'Parent Group ID',
+                                    prefixIcon: const Icon(
+                                        Icons.account_tree_outlined,
+                                        size: 18),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    suffixIcon: Tooltip(
+                                      message:
+                                          'Auto-generate Group ID from Brand/Name',
+                                      child: IconButton(
+                                        icon: const Icon(
+                                            Icons.auto_awesome_rounded,
+                                            size: 16,
+                                            color: Colors.purple),
+                                        onPressed: () {
+                                          setState(() {
+                                            _autoGenerateParentGroupId(
+                                                force: true);
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  hint: Text(
+                                    _parentIdCtrl.text.isNotEmpty
+                                        ? _parentIdCtrl.text
+                                        : 'Select existing or auto-generate...',
+                                    style: const TextStyle(fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  items: [
+                                    if (_parentIdCtrl.text.trim().isNotEmpty &&
+                                        !inventory.uniqueParentIds.contains(
+                                            _parentIdCtrl.text.trim()))
+                                      DropdownMenuItem<String>(
+                                        value: _parentIdCtrl.text.trim(),
+                                        child: Text(
+                                          '✨ Auto/Current: ${_parentIdCtrl.text.trim()}',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.purple),
+                                        ),
+                                      ),
+                                    ...inventory.uniqueParentIds.map(
+                                      (pId) => DropdownMenuItem<String>(
+                                        value: pId,
+                                        child: Text(
+                                          '📦 $pId',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setState(() {
+                                        _parentIdCtrl.text = val;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _parentIdCtrl,
+                            focusNode: _fParentId,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'[a-zA-Z0-9\-_]')),
+                              LengthLimitingTextInputFormatter(60),
+                            ],
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Custom Group Slug',
+                              hintText: 'e.g. GRP-PALMOLIVE-SHAMPOO',
+                              prefixIcon:
+                                  Icon(Icons.edit_outlined, size: 16),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── COLLAPSIBLE SECTION C: SUPPLIER & INVENTORY ALERTS ───
+                    _buildCollapsibleCard(
+                      title: 'Supplier & Stock Alerts',
+                      subtitle: _supplierId != null
+                          ? 'Supplier linked • Alert threshold: ${_lowStockT.text}'
+                          : 'Set low stock safety thresholds & supplier info',
+                      icon: Icons.local_shipping_outlined,
+                      isExpanded: _showSupplierAlerts,
+                      onToggle: () => setState(
+                          () => _showSupplierAlerts = !_showSupplierAlerts),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Row(
                             children: [
                               Expanded(
@@ -1717,7 +1813,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                   ],
                                   decoration: const InputDecoration(
                                     isDense: true,
-                                    labelText: 'Safety Stock',
+                                    labelText: 'Safety Stock Limit',
                                     hintText: 'e.g. 5',
                                     contentPadding: EdgeInsets.symmetric(
                                         horizontal: 12, vertical: 10),
@@ -1728,9 +1824,10 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                               Expanded(
                                 child: DropdownButtonFormField<String?>(
                                   isExpanded: true,
-                                  value: suppliers.any((s) => s.id == _supplierId)
-                                      ? _supplierId
-                                      : null,
+                                  value:
+                                      suppliers.any((s) => s.id == _supplierId)
+                                          ? _supplierId
+                                          : null,
                                   decoration: const InputDecoration(
                                     isDense: true,
                                     labelText: 'Supplier',
@@ -1755,8 +1852,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                             ],
                           ),
                           const SizedBox(height: 10),
-
-                          // Invoice Notes
                           TextFormField(
                             controller: _notesCtrl,
                             decoration: const InputDecoration(
@@ -1770,6 +1865,78 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                   horizontal: 12, vertical: 10),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── COLLAPSIBLE SECTION D: PERISHABLE & SHELF LIFE ───────
+                    _buildCollapsibleCard(
+                      title: 'Perishable & Shelf Life Options',
+                      subtitle: _perishable
+                          ? 'Marked perishable'
+                          : 'Optional shelf days & pickup window hours',
+                      icon: Icons.timer_outlined,
+                      isExpanded: _showPerishableDetails,
+                      onToggle: () => setState(() =>
+                          _showPerishableDetails = !_showPerishableDetails),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            title: const Text('Is Perishable Item?',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13)),
+                            subtitle: const Text(
+                                'Track shelf days and short-life warnings',
+                                style: TextStyle(fontSize: 11)),
+                            value: _perishable,
+                            onChanged: (v) => setState(() => _perishable = v),
+                          ),
+                          if (_perishable) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _shelf,
+                                    focusNode: _fShelf,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly
+                                    ],
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      labelText: 'Shelf Life (Days)',
+                                      hintText: 'e.g. 7',
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _pickupWindow,
+                                    focusNode: _fPickupWindow,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly
+                                    ],
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      labelText: 'Pickup Window (Hours)',
+                                      hintText: 'e.g. 24',
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1835,6 +2002,83 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsibleCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.3),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(icon,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: child,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -2043,7 +2287,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       return;
     }
 
-    // Mandatory Expiration Date Check to prevent chaotic inventory tracking
     if (_expiryDate == null) {
       showDialog(
         context: context,
@@ -2089,7 +2332,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     final inventoryProvider = context.read<InventoryProvider>();
     final authProvider = context.read<AppAuthProvider>();
 
-    // Safety check for existing product detection when adding a new product
     if (_activeProduct == null) {
       if (barcode.isNotEmpty) {
         final existingByBarcode = inventoryProvider.products
@@ -2109,7 +2351,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         return;
       }
     } else {
-      // Duplicate Barcode Check for existing product edit
       if (barcode.isNotEmpty) {
         final exists = inventoryProvider.products
             .any((p) => p.barcode == barcode && p.id != _activeProduct?.id);
@@ -2133,7 +2374,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       }
     }
 
-    // Auto-generate internal 12-digit PLU barcode starting with '200' if left empty
     if (barcode.isEmpty) {
       barcode = BarcodeGenerator.generateInternalBarcode();
     }
@@ -2141,7 +2381,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     setState(() => _saving = true);
 
     try {
-      // 1. Save or Update Catalog Entry
       final catalogMatch = inventoryProvider.catalog
           .where((cp) => cp.barcode == barcode)
           .toList();
@@ -2169,7 +2408,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
           int.tryParse(_itemsPerCase.text);
       final packCostVal = double.tryParse(_boxPriceCtrl.text);
 
-      // Construct Main Product Model
       final p = Product(
         id: _activeProduct?.id ?? '',
         name: name,
@@ -2201,7 +2439,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         batches: _activeProduct?.batches ?? const [],
       );
 
-      // Construct ProductBatch Model
       final initialBatch = ProductBatch(
         id: const Uuid().v4(),
         productId: p.id,
@@ -2213,7 +2450,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
             _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       );
 
-      // Build detailed inventory history log notes
       final boxes = int.tryParse(_boxesReceivedCtrl.text) ?? 0;
       final itemsBox = int.tryParse(_itemsPerBoxCtrl.text) ?? 0;
       final extra = int.tryParse(_extraItemsCtrl.text) ?? 0;
@@ -2243,7 +2479,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       final messenger = ScaffoldMessenger.of(context);
       final navigator = Navigator.of(context);
 
-      // Save product & write straight to inventory history (delivery_logs)
       await inventoryProvider.saveProductWithBatch(
         product: p,
         initialBatch: initialBatch,

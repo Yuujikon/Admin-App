@@ -15,14 +15,6 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-    
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.id.startsWith("org.jetbrains.kotlin")) {
-                useVersion("2.2.20")
-            }
-        }
-    }
 }
 
 plugins {
@@ -31,8 +23,7 @@ plugins {
     // START: FlutterFire Configuration
     id("com.google.gms.google-services") version "4.4.2" apply false
     // END: FlutterFire Configuration
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 
 include(":app")
