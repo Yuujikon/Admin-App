@@ -958,6 +958,7 @@ class _MyStaffAccountSection extends StatelessWidget {
       builder: (ctx) => const _RecoveryCodesDialog(),
     );
   }
+}
 
 class _ChangePasswordDialog extends StatefulWidget {
   const _ChangePasswordDialog();
