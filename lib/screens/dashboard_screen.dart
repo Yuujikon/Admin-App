@@ -416,12 +416,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           break;
       }
 
-      final String headerTitle = switch (role) {
-        UserRole.admin => 'Executive Dashboard',
-        UserRole.inventoryManager => 'Inventory Management',
-        UserRole.cashier => 'POS & Sales Dashboard',
-        UserRole.none => 'Store Dashboard',
-      };
+      const String headerTitle = 'GDC Store Dashboard';
 
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -490,52 +485,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Color infoColor = Colors.blue.shade700;
       final Color errorColor = Theme.of(context).colorScheme.error;
 
-      final inventory = context.read<InventoryProvider>();
-
-      final List<_StatCard> items = switch (role) {
-        UserRole.admin => [
-            _StatCard("Gross Sales", formatPeso(data.todayGrossSales),
-                Icons.auto_graph_rounded, successColor),
-            _StatCard("Net Profit", formatPeso(data.todayNetProfit),
-                Icons.monetization_on_rounded, infoColor),
-            _StatCard("Loss / Waste", formatPeso(data.todayLoss),
-                Icons.delete_sweep_rounded, errorColor),
-            _StatCard("Pre-Orders", "${data.toProcessOrders}",
-                Icons.pending_actions_rounded, warningColor,
-                onTap: () => widget.onTabChange(AppTab.preOrders, category: null)),
-          ],
-        UserRole.inventoryManager => [
-            _StatCard("Catalog Items", "${inventory.products.length}",
-                Icons.inventory_2_rounded, infoColor,
-                onTap: () => widget.onTabChange(AppTab.inventory, category: null)),
-            _StatCard("Restock Needed", "${data.restockPending}",
-                Icons.add_shopping_cart_rounded, warningColor,
-                onTap: () =>
-                    widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
-            _StatCard("Low Stock Alerts", "${data.lowStockProducts.length}",
-                Icons.warning_amber_rounded, errorColor,
-                onTap: () =>
-                    widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
-            _StatCard("Loss / Waste", formatPeso(data.todayLoss),
-                Icons.delete_sweep_rounded, errorColor),
-          ],
-        UserRole.cashier || UserRole.none => [
-            _StatCard("Today's Sales", formatPeso(data.todayGrossSales),
-                Icons.point_of_sale_rounded, successColor,
-                onTap: () => widget.onTabChange(AppTab.pos)),
-            _StatCard("Transactions", "${data.todayTx.length}",
-                Icons.receipt_long_rounded, infoColor,
-                onTap: () => widget.onTabChange(AppTab.salesHistory)),
-            _StatCard("Pre-Orders", "${data.toProcessOrders}",
-                Icons.assignment_rounded, warningColor,
-                onTap: () => widget.onTabChange(AppTab.preOrders)),
-            _StatCard(
-                "Units Sold",
-                "${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}",
-                Icons.shopping_bag_rounded,
-                infoColor),
-          ],
-      };
+      final items = [
+        _StatCard("Gross Sales", formatPeso(data.todayGrossSales),
+            Icons.auto_graph_rounded, successColor,
+            onTap: () => widget.onTabChange(AppTab.salesHistory)),
+        _StatCard("Net Profit", formatPeso(data.todayNetProfit),
+            Icons.monetization_on_rounded, infoColor,
+            onTap: () => widget.onTabChange(AppTab.reports)),
+        _StatCard("Loss / Waste", formatPeso(data.todayLoss),
+            Icons.delete_sweep_rounded, errorColor,
+            onTap: () => widget.onTabChange(AppTab.inventoryRecords)),
+        _StatCard("Pre-Orders", "${data.toProcessOrders}",
+            Icons.pending_actions_rounded, warningColor,
+            onTap: () => widget.onTabChange(AppTab.preOrders, category: null)),
+      ];
 
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -577,56 +540,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int categoryCount,
   ) {
     try {
-      final List<Widget> summaryWidgets = switch (role) {
-        UserRole.admin => [
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () =>
-                    widget.onTabChange(AppTab.preOrders, category: null),
-                child: _MiniStat('Sales Count', '${data.todayTx.length}'),
-              ),
-            ),
-            const _Divider(),
-            Expanded(
-              child: _MiniStat('Units Sold',
-                  '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}'),
-            ),
-            const _Divider(),
-            Expanded(
-              child: _MiniStat(
-                  'Avg Basket',
-                  data.todayTx.isEmpty
-                      ? '—'
-                      : formatPeso(
-                          data.todayGrossSales / data.todayTx.length)),
-            ),
-          ],
-        UserRole.inventoryManager => [
-            Expanded(child: _MiniStat('Total Items', '$totalProducts')),
-            const _Divider(),
-            Expanded(
-                child: _MiniStat(
-                    'Low Stock', '${data.lowStockProducts.length}')),
-            const _Divider(),
-            Expanded(child: _MiniStat('Categories', '$categoryCount')),
-          ],
-        UserRole.cashier || UserRole.none => [
-            Expanded(child: _MiniStat('Sales Today', '${data.todayTx.length}')),
-            const _Divider(),
-            Expanded(
-                child: _MiniStat('Units Sold',
-                    '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}')),
-            const _Divider(),
-            Expanded(
-                child: _MiniStat(
-                    'Avg Basket',
-                    data.todayTx.isEmpty
-                        ? '—'
-                        : formatPeso(
-                            data.todayGrossSales / data.todayTx.length))),
-          ],
-      };
+      final summaryWidgets = [
+        Expanded(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () =>
+                widget.onTabChange(AppTab.preOrders, category: null),
+            child: _MiniStat('Sales Count', '${data.todayTx.length}'),
+          ),
+        ),
+        const _Divider(),
+        Expanded(
+          child: _MiniStat('Units Sold',
+              '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}'),
+        ),
+        const _Divider(),
+        Expanded(
+          child: _MiniStat(
+              'Avg Basket',
+              data.todayTx.isEmpty
+                  ? '—'
+                  : formatPeso(
+                      data.todayGrossSales / data.todayTx.length)),
+        ),
+      ];
 
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),

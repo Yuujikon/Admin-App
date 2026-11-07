@@ -152,12 +152,6 @@ class _AdminAppState extends State<AdminApp> {
           isCompact: isCompact,
         );
 
-        // Ensure active destination is fallback-safe for the role
-        if (role == UserRole.cashier &&
-            _activeDestinationId == AdminDestination.dashboardId) {
-          _activeDestinationId = AdminDestination.posId;
-        }
-
         // Build navigation items with badge for pre-orders
         List<NavigationDestination> navDestinations = destinations.map((d) {
           Widget iconWidget = Icon(d.icon);
