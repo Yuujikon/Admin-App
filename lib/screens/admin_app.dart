@@ -482,19 +482,30 @@ class _AdminTopBar extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: GdcColors.creamActiveBackground,
-                  borderRadius: BorderRadius.circular(6),
+                  color: _getRoleBadgeBgColor(auth.role),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  _getRoleLabel(auth.role).toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: GdcColors.darkEmerald,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _getRoleIcon(auth.role),
+                      size: 11,
+                      color: _getRoleBadgeColor(auth.role),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _getRoleLabel(auth.role).toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: _getRoleBadgeColor(auth.role),
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -576,6 +587,27 @@ class _AdminTopBar extends StatelessWidget {
         UserRole.inventoryManager => 'Inventory Manager',
         UserRole.cashier => 'Cashier Staff',
         UserRole.none => 'Access Denied',
+      };
+
+  Color _getRoleBadgeColor(UserRole role) => switch (role) {
+        UserRole.admin => const Color(0xFF6A1B9A),
+        UserRole.inventoryManager => const Color(0xFF1565C0),
+        UserRole.cashier => const Color(0xFF2E7D32),
+        UserRole.none => Colors.grey.shade700,
+      };
+
+  Color _getRoleBadgeBgColor(UserRole role) => switch (role) {
+        UserRole.admin => const Color(0xFFF3E5F5),
+        UserRole.inventoryManager => const Color(0xFFE3F2FD),
+        UserRole.cashier => const Color(0xFFE8F5E9),
+        UserRole.none => Colors.grey.shade200,
+      };
+
+  IconData _getRoleIcon(UserRole role) => switch (role) {
+        UserRole.admin => Icons.shield_rounded,
+        UserRole.inventoryManager => Icons.inventory_2_rounded,
+        UserRole.cashier => Icons.point_of_sale_rounded,
+        UserRole.none => Icons.person_outline_rounded,
       };
 }
 

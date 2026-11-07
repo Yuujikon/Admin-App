@@ -134,15 +134,15 @@ class MoreManagementScreen extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFD1FAE5),
+                              color: _getRoleColor(auth.role, context).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               _getRoleLabel(auth.role),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w900,
-                                color: Color(0xFF059669),
+                                color: _getRoleColor(auth.role, context),
                               ),
                             ),
                           ),
