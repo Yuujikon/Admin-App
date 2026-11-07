@@ -923,13 +923,41 @@ class _MyStaffAccountSection extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                 onTap: () => _showChangePinDialog(context),
               ),
+              if (auth.role == UserRole.admin) ...[
+                const Divider(),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.key_rounded, color: Colors.blue),
+                  ),
+                  title: const Text('Admin Backup Recovery Codes',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 13)),
+                  subtitle: const Text(
+                      'View or generate 8-character codes for emergency PIN recovery',
+                      style: TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+                  onTap: () => _showRecoveryCodesDialog(context),
+                ),
+              ],
             ],
           ),
         ),
       ],
     );
   }
-}
+
+  void _showRecoveryCodesDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => const _RecoveryCodesDialog(),
+    );
+  }
 
 class _ChangePasswordDialog extends StatefulWidget {
   const _ChangePasswordDialog();
@@ -1380,6 +1408,150 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
               : const Text('SAVE PIN'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecoveryCodesDialog extends StatefulWidget {
+  const _RecoveryCodesDialog();
+
+  @override
+  State<_RecoveryCodesDialog> createState() => _RecoveryCodesDialogState();
+}
+
+class _RecoveryCodesDialogState extends State<_RecoveryCodesDialog> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AppAuthProvider>();
+    final codes = auth.recoveryCodes;
+
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.key_rounded, color: Colors.blue),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Admin Backup Recovery Codes',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+      content: Container(
+        width: 440,
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Save these 8-character codes in a secure place. If you forget your 6-digit Admin PIN, you can use any of these codes to clear your old PIN and log in.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              if (_loading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24.0),
+                    child: CircularProgressIndicator(color: Colors.blue),
+                  ),
+                )
+              else if (codes.isEmpty)
+                const Center(
+                  child: Text('No recovery codes available. Tap below to generate.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    children: codes
+                        .map(
+                          (c) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.shield_outlined,
+                                    size: 16, color: Colors.blue),
+                                const SizedBox(width: 8),
+                                SelectableText(
+                                  c,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'monospace',
+                                    fontSize: 14,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (codes.isNotEmpty)
+          TextButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: codes.join('\n')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Recovery codes copied to clipboard! 📋'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('COPY ALL'),
+          ),
+        ElevatedButton.icon(
+          onPressed: _loading
+              ? null
+              : () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (c) => AlertDialog(
+                      title: const Text('Regenerate Recovery Codes?'),
+                      content: const Text(
+                          'Generating new codes will invalidate all existing recovery codes. Are you sure?'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(c, false),
+                            child: const Text('CANCEL')),
+                        ElevatedButton(
+                            onPressed: () => Navigator.pop(c, true),
+                            child: const Text('REGENERATE')),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true) {
+                    setState(() => _loading = true);
+                    await auth.regenerateRecoveryCodes();
+                    if (mounted) setState(() => _loading = false);
+                  }
+                },
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('REGENERATE NEW'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+          ),
         ),
       ],
     );

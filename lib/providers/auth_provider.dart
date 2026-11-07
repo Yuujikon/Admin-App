@@ -63,6 +63,11 @@ class AppAuthProvider extends ChangeNotifier {
   /// Active 6-digit security PIN for employee account.
   String? get userPin => _userPin;
 
+  List<String> _recoveryCodes = [];
+
+  /// Active 8-character backup recovery codes for emergency admin PIN reset.
+  List<String> get recoveryCodes => List.unmodifiable(_recoveryCodes);
+
   String? _totpSecret;
 
   /// Active 2FA secret key.
@@ -130,12 +135,26 @@ class AppAuthProvider extends ChangeNotifier {
         _isTotpLinked = data['totpLinked'] == true;
         _totpEnabled = data['totpEnabled'] ?? true;
 
+        final rawCodes = data['recoveryCodes'];
+        if (rawCodes is List) {
+          _recoveryCodes = List<String>.from(rawCodes.map((e) => e.toString()));
+        } else {
+          _recoveryCodes = [];
+        }
+
         if (_totpSecret == null || _totpSecret!.isEmpty || data['isCustomer'] == null) {
           _totpSecret = _totpSecret ?? TotpUtils.generateSecret();
           await _db.collection('users').doc(uid).set({
             'totpSecret': _totpSecret,
             'isCustomer': false,
             if (data['status'] == null) 'status': roleStr == 'none' ? 'pending' : 'approved',
+          }, SetOptions(merge: true));
+        }
+
+        if (roleStr == 'admin' && _recoveryCodes.isEmpty) {
+          _recoveryCodes = generateRecoveryCodes();
+          await _db.collection('users').doc(uid).set({
+            'recoveryCodes': _recoveryCodes,
           }, SetOptions(merge: true));
         }
 
@@ -369,6 +388,77 @@ class AppAuthProvider extends ChangeNotifier {
   void setAdminVerified(bool val) {
     _adminVerified = val;
     notifyListeners();
+  }
+
+  /// Generates [count] formatted 8-character uppercase backup recovery codes (e.g. XXXX-XXXX).
+  static List<String> generateRecoveryCodes({int count = 5}) {
+    final random = Random.secure();
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excludes ambiguous characters (0, 1, O, I)
+    final List<String> codes = [];
+    for (int i = 0; i < count; i++) {
+      final code = List.generate(8, (index) => chars[random.nextInt(chars.length)]).join();
+      codes.add('${code.substring(0, 4)}-${code.substring(4)}');
+    }
+    return codes;
+  }
+
+  /// Generates new backup recovery codes for active admin and updates Firestore.
+  Future<List<String>> regenerateRecoveryCodes() async {
+    final user = currentUser;
+    if (user == null) return [];
+
+    final newCodes = generateRecoveryCodes();
+    _recoveryCodes = newCodes;
+    await _db.collection('users').doc(user.uid).set({
+      'recoveryCodes': newCodes,
+    }, SetOptions(merge: true));
+    notifyListeners();
+    return newCodes;
+  }
+
+  /// Verifies an emergency backup recovery code for admin account.
+  /// If valid, consumes/removes the code from Firestore, clears the existing 6-digit PIN,
+  /// and returns true.
+  Future<bool> verifyAndConsumeRecoveryCode(String codeInput) async {
+    final user = currentUser;
+    if (user == null) return false;
+
+    final sanitized = codeInput.replaceAll('-', '').replaceAll(' ', '').toUpperCase();
+    if (sanitized.isEmpty) return false;
+
+    int matchIndex = _recoveryCodes.indexWhere(
+      (c) => c.replaceAll('-', '').replaceAll(' ', '').toUpperCase() == sanitized,
+    );
+
+    if (matchIndex == -1) {
+      final doc = await _db.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        final rawCodes = doc.data()?['recoveryCodes'];
+        if (rawCodes is List) {
+          final firestoreCodes = List<String>.from(rawCodes.map((e) => e.toString()));
+          matchIndex = firestoreCodes.indexWhere(
+            (c) => c.replaceAll('-', '').replaceAll(' ', '').toUpperCase() == sanitized,
+          );
+          if (matchIndex != -1) {
+            _recoveryCodes = firestoreCodes;
+          }
+        }
+      }
+    }
+
+    if (matchIndex == -1) return false;
+
+    _recoveryCodes.removeAt(matchIndex);
+    _userPin = null;
+
+    await _db.collection('users').doc(user.uid).update({
+      'recoveryCodes': _recoveryCodes,
+      'pin': FieldValue.delete(),
+    });
+
+    await AuthService().clearPin();
+    notifyListeners();
+    return true;
   }
 
   /// Formats TOTP URI string for QR code generation in Google Authenticator.

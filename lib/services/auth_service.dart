@@ -103,6 +103,13 @@ class AuthService {
     await resetFailedAttempts();
   }
 
+  /// Clears stored local admin PIN preferences.
+  Future<void> clearPin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('admin_pin');
+    await resetFailedAttempts();
+  }
+
   /// Authenticates a user with Firebase Authentication using [email] and [password].
   Future<void> loginToFirebase(String email, String password) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);

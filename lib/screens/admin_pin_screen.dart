@@ -398,26 +398,56 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   }
 
   void _showForgotPinDialog(BuildContext context) {
+    final auth = context.read<AppAuthProvider>();
+    final isAdmin = auth.role == UserRole.admin;
+
+    if (!isAdmin) {
+      showDialog(
+        context: context,
+        useRootNavigator: true,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.help_outline_rounded, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Forgot Security PIN?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: const Text(
+            'Security PIN resets for staff must be authorized by a Store Admin or requested via your store account owner (markjeo.hinampas@gmail.com).\n\nAlternatively, ask a Store Admin to reset your PIN from User Management.',
+            style: TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.help_outline_rounded, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('Forgot Security PIN?',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: const Text(
-          'Security PIN resets must be authorized by a Super Admin or requested via your store account owner (markjeo.hinampas@gmail.com).\n\nAlternatively, use Google Authenticator 2FA code to log in directly.',
-          style: TextStyle(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-        ],
+      barrierDismissible: false,
+      builder: (dialogCtx) => _AdminRecoveryDialog(
+        onSuccess: () {
+          _showSetNewPinDialog(context);
+        },
+      ),
+    );
+  }
+
+  void _showSetNewPinDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => _SetNewPinDialog(
+        onCompleted: () {
+          _onSuccess();
+        },
       ),
     );
   }
@@ -701,3 +731,301 @@ class _AdminPinScreenState extends State<AdminPinScreen>
     );
   }
 }
+
+class _AdminRecoveryDialog extends StatefulWidget {
+  final VoidCallback onSuccess;
+  const _AdminRecoveryDialog({required this.onSuccess});
+
+  @override
+  State<_AdminRecoveryDialog> createState() => _AdminRecoveryDialogState();
+}
+
+class _AdminRecoveryDialogState extends State<_AdminRecoveryDialog> {
+  final _codeCtrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final input = _codeCtrl.text.trim();
+    if (input.isEmpty) {
+      setState(() => _error = 'Please enter your Backup Recovery Code.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final auth = context.read<AppAuthProvider>();
+    final ok = await auth.verifyAndConsumeRecoveryCode(input);
+
+    if (!mounted) return;
+
+    if (ok) {
+      Navigator.pop(context);
+      widget.onSuccess();
+    } else {
+      setState(() {
+        _loading = false;
+        _error =
+            'Invalid or already used Backup Recovery Code. Please verify your code and try again.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.shield_rounded, color: Colors.blue),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Admin Emergency PIN Recovery',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+      content: Container(
+        width: 440,
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter one of your 8-character Backup Recovery Codes (e.g. A1B2-C3D4) to remove your current 6-digit PIN and set a new one.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _codeCtrl,
+              enabled: !_loading,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                labelText: 'Backup Recovery Code',
+                hintText: 'e.g. A1B2-C3D4',
+                prefixIcon: Icon(Icons.key_rounded),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
+        ElevatedButton.icon(
+          onPressed: _loading ? null : _submit,
+          icon: _loading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.verified_user_rounded, size: 18),
+          label: const Text('VERIFY & RESET PIN'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SetNewPinDialog extends StatefulWidget {
+  final VoidCallback onCompleted;
+  const _SetNewPinDialog({required this.onCompleted});
+
+  @override
+  State<_SetNewPinDialog> createState() => _SetNewPinDialogState();
+}
+
+class _SetNewPinDialogState extends State<_SetNewPinDialog> {
+  final _newPinCtrl = TextEditingController();
+  final _confirmPinCtrl = TextEditingController();
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _newPinCtrl.dispose();
+    _confirmPinCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final newPin = _newPinCtrl.text.trim();
+    final confirmPin = _confirmPinCtrl.text.trim();
+
+    if (newPin.length != 6 || !RegExp(r'^\d{6}$').hasMatch(newPin)) {
+      setState(() => _error = 'New PIN must be exactly 6 digits.');
+      return;
+    }
+
+    if (newPin != confirmPin) {
+      setState(() => _error = 'New 6-digit PINs do not match.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final auth = context.read<AppAuthProvider>();
+      await auth.updateUserPin(newPin);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                '6-Digit Security PIN set successfully! You are now logged in. 🔑'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        widget.onCompleted();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Failed to update PIN: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.lock_reset_rounded, color: Colors.purple),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Set New 6-Digit Admin PIN',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+      content: Container(
+        width: 440,
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your old PIN has been removed using your Recovery Code. Please enter and confirm a new 6-digit Security PIN to log in.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _newPinCtrl,
+                enabled: !_loading,
+                obscureText: _obscureNew,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: InputDecoration(
+                  labelText: 'New 6-Digit Security PIN',
+                  prefixIcon: const Icon(Icons.pin_rounded),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        _obscureNew ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirmPinCtrl,
+                enabled: !_loading,
+                obscureText: _obscureConfirm,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Confirm New 6-Digit PIN',
+                  prefixIcon: const Icon(Icons.check_circle_outline),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureConfirm
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        ElevatedButton(
+          onPressed: _loading ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.purple,
+            foregroundColor: Colors.white,
+          ),
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('SAVE PIN & LOG IN'),
+        ),
+      ],
+    );
+  }
+}
+
