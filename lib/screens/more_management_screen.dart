@@ -696,87 +696,121 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
                 ),
                 const Divider(),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Google Authenticator TOTP Key',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 12)),
-                          const SizedBox(height: 2),
-                          Text(
-                            _isKeyVisible ? readableSecret : maskedSecret,
-                            style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 11,
-                                fontFamily: 'monospace',
-                                letterSpacing: 0.8),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                          _isKeyVisible
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          color: Colors.blue,
-                          size: 20),
-                      tooltip: _isKeyVisible ? 'Mask Key' : 'Show Key',
-                      onPressed: () =>
-                          setState(() => _isKeyVisible = !_isKeyVisible),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.qr_code_2_rounded,
-                          color: Colors.blue, size: 20),
-                      tooltip: 'QR / Setup Instructions',
-                      onPressed: () => _showSetupDialog(context, auth),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _launchAuthenticatorApp(context, auth),
-                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                        label: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('OPEN AUTHENTICATOR APP',
-                              style: TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.bold)),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 10, horizontal: 8),
+                if (!auth.isTotpLinked) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Google Authenticator TOTP Key',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isKeyVisible ? readableSecret : maskedSecret,
+                              style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  letterSpacing: 0.8),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: OutlinedButton(
+                      IconButton(
+                        icon: Icon(
+                            _isKeyVisible
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                            color: Colors.blue,
+                            size: 20),
+                        tooltip: _isKeyVisible ? 'Mask Key' : 'Show Key',
+                        onPressed: () =>
+                            setState(() => _isKeyVisible = !_isKeyVisible),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.qr_code_2_rounded,
+                            color: Colors.blue, size: 20),
+                        tooltip: 'QR / Setup Instructions',
                         onPressed: () => _showSetupDialog(context, auth),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 10, horizontal: 8),
-                        ),
-                        child: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('SETUP KEY',
-                              style: TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _launchAuthenticatorApp(context, auth),
+                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('OPEN AUTHENTICATOR APP',
+                                style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10, horizontal: 8),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: OutlinedButton(
+                          onPressed: () => _showSetupDialog(context, auth),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10, horizontal: 8),
+                          ),
+                          child: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('SETUP KEY',
+                                style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle_rounded,
+                          color: Colors.green.shade600, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Google Authenticator Linked',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Colors.green.shade800),
+                            ),
+                            const Text(
+                              'Key is set up & configured on device',
+                              style:
+                                  TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => auth.regenerateTotpSecret(),
+                        child: const Text('Re-setup Key',
+                            style: TextStyle(fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -881,10 +915,10 @@ class _MyStaffAccountSection extends StatelessWidget {
                   child: const Icon(Icons.pin_rounded,
                       color: Colors.purple),
                 ),
-                title: const Text('Change 4-Digit Security PIN',
+                title: const Text('Change 6-Digit Security PIN',
                     style:
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: const Text('Update your 4-digit security PIN',
+                subtitle: const Text('Update your 6-digit security PIN',
                     style: TextStyle(fontSize: 11)),
                 trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                 onTap: () => _showChangePinDialog(context),
@@ -1155,25 +1189,25 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
 
     if (userPin != null && userPin.isNotEmpty) {
       if (currentPin.isEmpty) {
-        setState(() => _error = 'Please enter your current 4-digit PIN.');
+        setState(() => _error = 'Please enter your current 6-digit PIN.');
         return;
       }
       if (currentPin != userPin) {
         final isStaticValid = await AuthService().verifyPin(currentPin);
         if (!isStaticValid) {
-          setState(() => _error = 'Current 4-digit PIN is incorrect.');
+          setState(() => _error = 'Current 6-digit PIN is incorrect.');
           return;
         }
       }
     }
 
-    if (newPin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(newPin)) {
-      setState(() => _error = 'New PIN must be exactly 4 digits.');
+    if (newPin.length != 6 || !RegExp(r'^\d{6}$').hasMatch(newPin)) {
+      setState(() => _error = 'New PIN must be exactly 6 digits.');
       return;
     }
 
     if (newPin != confirmPin) {
-      setState(() => _error = 'New 4-digit PINs do not match.');
+      setState(() => _error = 'New 6-digit PINs do not match.');
       return;
     }
 
@@ -1189,7 +1223,7 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('4-Digit Security PIN updated successfully! 🔑'),
+            content: Text('6-Digit Security PIN updated successfully! 🔑'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
           ),
@@ -1217,7 +1251,7 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
           Icon(Icons.pin_rounded, color: Colors.purple),
           SizedBox(width: 8),
           Expanded(
-            child: Text('Change 4-Digit Security PIN',
+            child: Text('Change 6-Digit Security PIN',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 overflow: TextOverflow.ellipsis),
           ),
@@ -1241,8 +1275,8 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
               const SizedBox(height: 6),
               Text(
                 hasExistingPin
-                    ? 'Enter your current 4-digit PIN and set a new 4-digit PIN.'
-                    : 'Set up your new 4-digit PIN for authorization and verification.',
+                    ? 'Enter your current 6-digit PIN and set a new 6-digit PIN.'
+                    : 'Set up your new 6-digit PIN for authorization and verification.',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),
@@ -1252,12 +1286,12 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
                   enabled: !_loading,
                   obscureText: _obscureCurrent,
                   keyboardType: TextInputType.number,
-                  maxLength: 4,
+                  maxLength: 6,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                   ],
                   decoration: InputDecoration(
-                    labelText: 'Current 4-Digit PIN',
+                    labelText: 'Current 6-Digit PIN',
                     prefixIcon: const Icon(Icons.lock_outline),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -1276,12 +1310,12 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
                 enabled: !_loading,
                 obscureText: _obscureNew,
                 keyboardType: TextInputType.number,
-                maxLength: 4,
+                maxLength: 6,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                 ],
                 decoration: InputDecoration(
-                  labelText: 'New 4-Digit Security PIN',
+                  labelText: 'New 6-Digit Security PIN',
                   prefixIcon: const Icon(Icons.pin_rounded),
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
@@ -1297,12 +1331,12 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
                 enabled: !_loading,
                 obscureText: _obscureConfirm,
                 keyboardType: TextInputType.number,
-                maxLength: 4,
+                maxLength: 6,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                 ],
                 decoration: InputDecoration(
-                  labelText: 'Confirm New 4-Digit PIN',
+                  labelText: 'Confirm New 6-Digit PIN',
                   prefixIcon: const Icon(Icons.check_circle_outline),
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(

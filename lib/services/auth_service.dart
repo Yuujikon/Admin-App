@@ -74,7 +74,7 @@ class AuthService {
   Future<bool> verifyPin(String pin) async {
     if (await isLockedOut()) return false;
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString('admin_pin') ?? '1234';
+    final stored = prefs.getString('admin_pin') ?? '123456';
     if (pin == stored) return true;
 
     // Check currently logged in user's PIN in Firestore

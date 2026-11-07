@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../utils/email_validator.dart';
 import '../widgets/premium_components.dart';
 
 /// Login and self-registration authentication screen for store staff and store admin accounts.
@@ -380,6 +381,12 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       return;
     }
 
+    final emailErr = EmailValidator.validate(email);
+    if (emailErr != null) {
+      setState(() => _error = emailErr);
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -418,8 +425,9 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       return;
     }
 
-    if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
-      setState(() => _error = 'Please enter a valid email address.');
+    final emailErr = EmailValidator.validate(email);
+    if (emailErr != null) {
+      setState(() => _error = emailErr);
       return;
     }
 

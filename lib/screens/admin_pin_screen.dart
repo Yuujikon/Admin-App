@@ -7,7 +7,6 @@ import '../providers/auth_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/order_provider.dart';
 import '../services/auth_service.dart';
-import '../config/theme.dart';
 import '../utils/totp.dart';
 
 /// Screen for 2FA TOTP code or Admin PIN verification prior to granting full application access.
@@ -162,7 +161,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
 
   void _onKey(String key) {
     if (_isVerifying || _isLockedOut) return;
-    final limit = _useStaticPin ? 4 : 6;
+    const limit = 6;
 
     if (key == '⌫') {
       if (_pin.isNotEmpty) {
@@ -276,7 +275,8 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       bool launched = false;
       for (final uri in directUris) {
         try {
-          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+          launched =
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
           if (launched) break;
         } catch (_) {}
       }
@@ -374,7 +374,8 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       icon: const Icon(Icons.copy_rounded, size: 20),
                       tooltip: 'Copy Key',
                       onPressed: () {
-                        Clipboard.setData(ClipboardData(text: auth.totpSecret));
+                        Clipboard.setData(
+                            ClipboardData(text: auth.totpSecret));
                         auth.markTotpLinked();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -519,7 +520,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                           ? '${auth.userFullName} ($email)'
                           : email,
                       style: TextStyle(
-                          color: Theme.of(context).semantic.success,
+                          color: Theme.of(context).colorScheme.primary,
                           fontSize: 11,
                           fontWeight: FontWeight.bold),
                     ),
@@ -543,12 +544,12 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                         label: Text(
                           _useStaticPin
                               ? 'Use Google Authenticator'
-                              : 'Use 4-Digit Offline PIN',
+                              : 'Use 6-Digit Offline PIN',
                           style: const TextStyle(
                               fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                       ),
-                      if (!_useStaticPin) ...[
+                      if (!_useStaticPin && !auth.isTotpLinked) ...[
                         IconButton(
                           icon: const Icon(Icons.info_outline_rounded,
                               size: 18, color: Colors.blue),
@@ -563,7 +564,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(
-                        !_useStaticPin ? 6 : 4,
+                        6,
                         (i) => Container(
                             width: 14,
                             height: 14,

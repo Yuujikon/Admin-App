@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
+import '../utils/email_validator.dart';
 import '../widgets/responsive_layout.dart';
 
 class UserManagementScreen extends StatelessWidget {
@@ -834,7 +835,7 @@ class UserManagementScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            Text('Reset 4-digit PIN for: $name',
+            Text('Reset 6-digit PIN for: $name',
                 style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold)),
@@ -846,10 +847,10 @@ class UserManagementScreen extends StatelessWidget {
             TextField(
               controller: pinCtrl,
               keyboardType: TextInputType.number,
-              maxLength: 4,
+              maxLength: 6,
               obscureText: true,
               decoration: const InputDecoration(
-                labelText: 'New 4-Digit Security PIN',
+                labelText: 'New 6-Digit Security PIN',
                 prefixIcon: Icon(Icons.pin_rounded),
                 border: OutlineInputBorder(),
               ),
@@ -863,9 +864,9 @@ class UserManagementScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: () async {
               final newPin = pinCtrl.text.trim();
-              if (newPin.length != 4) {
+              if (newPin.length != 6 || !RegExp(r'^\d{6}$').hasMatch(newPin)) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a 4-digit PIN.')),
+                  const SnackBar(content: Text('Please enter a 6-digit PIN.')),
                 );
                 return;
               }
@@ -1085,14 +1086,15 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
       return;
     }
 
-    if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
-      setState(() => _error = 'Please enter a valid real email address.');
+    final emailErr = EmailValidator.validate(email);
+    if (emailErr != null) {
+      setState(() => _error = emailErr);
       return;
     }
 
-    if (pin.length < 4) {
+    if (pin.length != 6 || !RegExp(r'^\d{6}$').hasMatch(pin)) {
       setState(
-          () => _error = 'Security PIN/Password must be at least 4 digits.');
+          () => _error = 'Security PIN must be exactly 6 digits.');
       return;
     }
 
@@ -1111,9 +1113,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
       final userCred = await secondaryAuth.createUserWithEmailAndPassword(
         email: email,
-        password: pin.length >= 6
-            ? pin
-            : '${pin}0000', // ensure valid firebase auth pass
+        password: pin,
       );
 
       if (userCred.user != null) {

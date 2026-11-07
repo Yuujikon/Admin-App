@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 
-/// A 4-digit Admin PIN verification modal with masked digits, auto-submit on 4th digit,
+/// A 6-digit Admin PIN verification modal with masked digits, auto-submit on 6th digit,
 /// and lockout delay after 5 failed attempts (30-second cooldown).
 class AdminPinDialog extends StatefulWidget {
   final String title;
@@ -13,15 +13,15 @@ class AdminPinDialog extends StatefulWidget {
   const AdminPinDialog({
     super.key,
     this.title = 'Admin Authorization Required',
-    this.message = 'Enter 4-digit Admin PIN to approve action.',
-    this.correctPin = '1234', // Default Admin PIN
+    this.message = 'Enter 6-digit Admin PIN to approve action.',
+    this.correctPin = '123456', // Default Admin PIN
   });
 
   static Future<bool> verify(
     BuildContext context, {
     String title = 'Admin Authorization Required',
-    String message = 'Enter 4-digit Admin PIN to approve action.',
-    String correctPin = '1234',
+    String message = 'Enter 6-digit Admin PIN to approve action.',
+    String correctPin = '123456',
   }) async {
     final result = await showDialog<bool>(
       context: context,
@@ -79,7 +79,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     if (_isLockedOut) return;
     if (_errorMessage != null) setState(() => _errorMessage = null);
 
-    if (_pinCtrl.text.length == 4) {
+    if (_pinCtrl.text.length == 6) {
       _verifyPin(_pinCtrl.text);
     }
   }
@@ -92,7 +92,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     }
 
     bool ok = false;
-    if (widget.correctPin != '1234') {
+    if (widget.correctPin != '123456') {
       ok = (input == widget.correctPin);
     } else {
       ok = await _pinService.verifyPin(input);
@@ -186,12 +186,12 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
           // Masked PIN Indicator Dots
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(4, (index) {
+            children: List.generate(6, (index) {
               final bool isFilled = index < _pinCtrl.text.length;
               return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 8),
-                width: 16,
-                height: 16,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                width: 14,
+                height: 14,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: _isLockedOut
@@ -219,7 +219,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
               keyboardType: TextInputType.number,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(4),
+                LengthLimitingTextInputFormatter(6),
               ],
             ),
           ),

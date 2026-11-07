@@ -211,7 +211,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Verify Your Email Address',
+                  'Real Email Verification Required',
                   style: Theme.of(context)
                       .textTheme
                       .titleLarge
@@ -235,7 +235,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'A verification email was sent to ${user.email}.\nPlease check your email inbox and click the link to verify your real email account.',
+                  'A verification link was sent to ${user.email}.\n\nMade-up or fake email addresses cannot receive this link and will be permanently blocked from accessing the application. Please check your inbox and click the verification link.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),

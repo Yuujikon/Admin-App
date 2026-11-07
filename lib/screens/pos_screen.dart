@@ -37,7 +37,7 @@ class _PosScreenState extends State<PosScreen> {
   Customer? _selectedCustomer;
 
   double _lastTotal = 0, _lastChange = 0;
-  bool _showCart = false;
+  bool _showCart = true;
 
   @override
   void initState() {
@@ -359,7 +359,7 @@ class _PosScreenState extends State<PosScreen> {
           _selectedCustomer = null;
           _done = true;
           _saving = false;
-          _showCart = false;
+          _showCart = true;
         });
       }
     } catch (e) {
@@ -479,16 +479,12 @@ class _PosScreenState extends State<PosScreen> {
                           onRemove: (id, vid) => setState(() {
                             _cart.removeWhere(
                                 (c) => c.productId == id && c.variantId == vid);
-                            if (_cart.isEmpty) {
-                              _showCart = false;
-                            }
                           }),
                           onComplete: _completeSale,
                           onSelectCustomer: (c) =>
                               setState(() => _selectedCustomer = c),
                           onClear: () => setState(() {
                             _cart.clear();
-                            _showCart = false;
                           }),
                           onBackToProducts: () =>
                               setState(() => _showCart = false),
@@ -1478,16 +1474,6 @@ class _PosViewSwitcher extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Products Tab
-          _buildTab(
-            context,
-            isSelected: !showCart,
-            icon: Icons.grid_view_rounded,
-            label: 'Products',
-            badgeCount: null,
-            onTap: () => onViewChanged(false),
-          ),
-          const SizedBox(width: 4),
           // Basket Tab
           _buildTab(
             context,
@@ -1496,6 +1482,16 @@ class _PosViewSwitcher extends StatelessWidget {
             label: 'Basket',
             badgeCount: totalCartItems > 0 ? totalCartItems : null,
             onTap: () => onViewChanged(true),
+          ),
+          const SizedBox(width: 4),
+          // Products Tab
+          _buildTab(
+            context,
+            isSelected: !showCart,
+            icon: Icons.grid_view_rounded,
+            label: 'Products',
+            badgeCount: null,
+            onTap: () => onViewChanged(false),
           ),
         ],
       ),

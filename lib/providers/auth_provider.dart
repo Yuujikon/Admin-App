@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
+import '../utils/email_validator.dart';
 import '../utils/format.dart';
 import '../utils/totp.dart';
 
@@ -57,7 +60,7 @@ class AppAuthProvider extends ChangeNotifier {
 
   String? _userPin;
 
-  /// Active 4-digit security PIN for employee account.
+  /// Active 6-digit security PIN for employee account.
   String? get userPin => _userPin;
 
   String? _totpSecret;
@@ -196,6 +199,14 @@ class AppAuthProvider extends ChangeNotifier {
     required String password,
     required String requestedRole,
   }) async {
+    final emailErr = EmailValidator.validate(email);
+    if (emailErr != null) {
+      throw FirebaseAuthException(
+        code: 'invalid-email',
+        message: emailErr,
+      );
+    }
+
     final userCred = await _auth.createUserWithEmailAndPassword(
       email: email.trim(),
       password: password.trim(),
@@ -305,7 +316,7 @@ class AppAuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Updates current user 4-digit security PIN in Firestore and local storage.
+  /// Updates current user 6-digit security PIN in Firestore and local storage.
   Future<void> updateUserPin(String newPin) async {
     final user = currentUser;
     if (user == null) return;
