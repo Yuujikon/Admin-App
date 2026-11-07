@@ -349,7 +349,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 20),
                           children: [
-                            _buildHeader(context, inventory, auth.role, isRefreshing),
+                            _buildHeader(context, inventory, isRefreshing),
                             const SizedBox(height: 20),
                             _buildKpiGrid(context, data, auth.role),
                             const SizedBox(height: 16),
@@ -386,7 +386,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ── 3. MODULAR WIDGET COMPONENTS (BLAST DOORS) ─────────────────────────────
 
   Widget _buildHeader(BuildContext context, InventoryProvider inventory,
-      UserRole role, [bool isSyncing = false]) {
+      [bool isSyncing = false]) {
     try {
       final statusLabel = inventory.settings.statusLabel;
       final Color successColor = Colors.green.shade700;
@@ -416,13 +416,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           break;
       }
 
-      final String headerTitle = switch (role) {
-        UserRole.admin => 'Executive Dashboard',
-        UserRole.inventoryManager => 'Stock Control Dashboard',
-        UserRole.cashier => 'Cashier Sales Dashboard',
-        UserRole.none => 'Store Dashboard',
-      };
-
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -432,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Row(
                 children: [
                   Text(
-                    headerTitle,
+                    'Admin Dashboard',
                     style: Theme.of(context)
                         .textTheme
                         .headlineMedium
@@ -490,52 +483,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Color infoColor = Colors.blue.shade700;
       final Color errorColor = Theme.of(context).colorScheme.error;
 
-      final inventory = context.read<InventoryProvider>();
-
-      final List<_StatCard> items = switch (role) {
-        UserRole.admin => [
-            _StatCard("Gross Sales", formatPeso(data.todayGrossSales),
-                Icons.auto_graph_rounded, successColor),
-            _StatCard("Net Profit", formatPeso(data.todayNetProfit),
-                Icons.monetization_on_rounded, infoColor),
-            _StatCard("Loss / Waste", formatPeso(data.todayLoss),
-                Icons.delete_sweep_rounded, errorColor),
-            _StatCard("Pre-Orders", "${data.toProcessOrders}",
-                Icons.pending_actions_rounded, warningColor,
-                onTap: () => widget.onTabChange(AppTab.preOrders, category: null)),
-          ],
-        UserRole.inventoryManager => [
-            _StatCard("Catalog Items", "${inventory.products.length}",
-                Icons.inventory_2_rounded, infoColor,
-                onTap: () => widget.onTabChange(AppTab.inventory, category: null)),
-            _StatCard("Restock Needed", "${data.restockPending}",
-                Icons.add_shopping_cart_rounded, warningColor,
-                onTap: () =>
-                    widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
-            _StatCard("Low Stock Alerts", "${data.lowStockProducts.length}",
-                Icons.warning_amber_rounded, errorColor,
-                onTap: () =>
-                    widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
-            _StatCard("Loss / Waste", formatPeso(data.todayLoss),
-                Icons.delete_sweep_rounded, errorColor),
-          ],
-        UserRole.cashier || UserRole.none => [
-            _StatCard("Today's Sales", formatPeso(data.todayGrossSales),
-                Icons.point_of_sale_rounded, successColor,
-                onTap: () => widget.onTabChange(AppTab.pos)),
-            _StatCard("Transactions", "${data.todayTx.length}",
-                Icons.receipt_long_rounded, infoColor,
-                onTap: () => widget.onTabChange(AppTab.salesHistory)),
-            _StatCard("Pre-Orders", "${data.toProcessOrders}",
-                Icons.assignment_rounded, warningColor,
-                onTap: () => widget.onTabChange(AppTab.preOrders)),
-            _StatCard(
-                "Units Sold",
-                "${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}",
-                Icons.shopping_bag_rounded,
-                infoColor),
-          ],
-      };
+      final bool isAdmin = role == UserRole.admin;
+      final items = isAdmin
+          ? [
+              _StatCard("Gross Sales", formatPeso(data.todayGrossSales),
+                  Icons.auto_graph_rounded, successColor),
+              _StatCard("Net Profit", formatPeso(data.todayNetProfit),
+                  Icons.monetization_on_rounded, infoColor),
+              _StatCard("Loss / Waste", formatPeso(data.todayLoss),
+                  Icons.delete_sweep_rounded, errorColor),
+              _StatCard("Pre-Orders", "${data.toProcessOrders}",
+                  Icons.pending_actions_rounded, warningColor,
+                  onTap: () => widget.onTabChange(AppTab.preOrders, category: null)),
+            ]
+          : [
+              _StatCard("Total Products", "${data.lowStockProducts.length}",
+                  Icons.inventory_2_rounded, infoColor,
+                  onTap: () => widget.onTabChange(AppTab.inventory, category: null)),
+              _StatCard("Restock Needed", "${data.restockPending}",
+                  Icons.add_shopping_cart_rounded, warningColor,
+                  onTap: () =>
+                      widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
+              _StatCard("Safety Warnings", "${data.lowStockProducts.length}",
+                  Icons.warning_amber_rounded, errorColor,
+                  onTap: () =>
+                      widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
+              _StatCard(
+                  "Categories", "Catalog", Icons.category_rounded, infoColor),
+            ];
 
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -577,56 +552,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int categoryCount,
   ) {
     try {
-      final List<Widget> summaryWidgets = switch (role) {
-        UserRole.admin => [
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () =>
-                    widget.onTabChange(AppTab.preOrders, category: null),
-                child: _MiniStat('Sales Count', '${data.todayTx.length}'),
-              ),
-            ),
-            const _Divider(),
-            Expanded(
-              child: _MiniStat('Units Sold',
-                  '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}'),
-            ),
-            const _Divider(),
-            Expanded(
-              child: _MiniStat(
-                  'Avg Basket',
-                  data.todayTx.isEmpty
-                      ? '—'
-                      : formatPeso(
-                          data.todayGrossSales / data.todayTx.length)),
-            ),
-          ],
-        UserRole.inventoryManager => [
-            Expanded(child: _MiniStat('Total Items', '$totalProducts')),
-            const _Divider(),
-            Expanded(
-                child: _MiniStat(
-                    'Low Stock', '${data.lowStockProducts.length}')),
-            const _Divider(),
-            Expanded(child: _MiniStat('Categories', '$categoryCount')),
-          ],
-        UserRole.cashier || UserRole.none => [
-            Expanded(child: _MiniStat('Sales Today', '${data.todayTx.length}')),
-            const _Divider(),
-            Expanded(
-                child: _MiniStat('Units Sold',
-                    '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}')),
-            const _Divider(),
-            Expanded(
-                child: _MiniStat(
-                    'Avg Basket',
-                    data.todayTx.isEmpty
-                        ? '—'
-                        : formatPeso(
-                            data.todayGrossSales / data.todayTx.length))),
-          ],
-      };
+      final bool isAdmin = role == UserRole.admin;
 
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
@@ -649,7 +575,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         child: Row(
-          children: summaryWidgets,
+          children: isAdmin
+              ? [
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () =>
+                          widget.onTabChange(AppTab.preOrders, category: null),
+                      child: _MiniStat('Sales Count', '${data.todayTx.length}'),
+                    ),
+                  ),
+                  const _Divider(),
+                  Expanded(
+                    child: _MiniStat('Units Sold',
+                        '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}'),
+                  ),
+                  const _Divider(),
+                  Expanded(
+                    child: _MiniStat(
+                        'Avg Basket',
+                        data.todayTx.isEmpty
+                            ? '—'
+                            : formatPeso(
+                                data.todayGrossSales / data.todayTx.length)),
+                  ),
+                ]
+              : [
+                  Expanded(child: _MiniStat('Total Items', '$totalProducts')),
+                  const _Divider(),
+                  Expanded(
+                      child: _MiniStat(
+                          'Low Stock', '${data.lowStockProducts.length}')),
+                  const _Divider(),
+                  Expanded(child: _MiniStat('Categories', '$categoryCount')),
+                ],
         ),
       );
     } catch (_) {

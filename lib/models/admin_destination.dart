@@ -197,20 +197,12 @@ class AdminDestination {
       // Cashier
       return const [
         AdminDestination(
-          id: dashboardId,
-          label: 'Dashboard',
-          icon: Icons.grid_view_outlined,
-          selectedIcon: Icons.grid_view_rounded,
-          route: '/dashboard',
-          priority: 1,
-        ),
-        AdminDestination(
           id: posId,
           label: 'Point of Sale',
           icon: Icons.shopping_cart_outlined,
           selectedIcon: Icons.shopping_cart_rounded,
           route: '/pos',
-          priority: 2,
+          priority: 1,
         ),
         AdminDestination(
           id: preOrdersId,
@@ -218,7 +210,7 @@ class AdminDestination {
           icon: Icons.assignment_outlined,
           selectedIcon: Icons.assignment_rounded,
           route: '/pre_orders',
-          priority: 3,
+          priority: 2,
         ),
         AdminDestination(
           id: salesHistoryId,
@@ -226,7 +218,7 @@ class AdminDestination {
           icon: Icons.history_toggle_off_rounded,
           selectedIcon: Icons.history_rounded,
           route: '/sales_history',
-          priority: 4,
+          priority: 3,
         ),
         AdminDestination(
           id: shiftId,
@@ -234,7 +226,7 @@ class AdminDestination {
           icon: Icons.access_time_outlined,
           selectedIcon: Icons.access_time_filled,
           route: '/shift',
-          priority: 5,
+          priority: 4,
         ),
         AdminDestination(
           id: moreId,
@@ -242,7 +234,7 @@ class AdminDestination {
           icon: Icons.more_horiz_rounded,
           selectedIcon: Icons.more_horiz_rounded,
           route: '/more',
-          priority: 6,
+          priority: 5,
         ),
       ];
     }
