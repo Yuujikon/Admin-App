@@ -134,15 +134,15 @@ class MoreManagementScreen extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: _getRoleColor(auth.role, context).withValues(alpha: 0.15),
+                              color: const Color(0xFFD1FAE5),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               _getRoleLabel(auth.role),
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w900,
-                                color: _getRoleColor(auth.role, context),
+                                color: Color(0xFF059669),
                               ),
                             ),
                           ),
@@ -481,6 +481,8 @@ class _AccountSecuritySection extends StatefulWidget {
 }
 
 class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
+  bool _isKeyVisible = false;
+
   Future<void> _launchAuthenticatorApp(
       BuildContext context, AppAuthProvider auth) async {
     if (!auth.isTotpLinked) {
@@ -638,6 +640,8 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AppAuthProvider>();
+    final readableSecret = TotpUtils.formatSecretReadable(auth.totpSecret);
+    const maskedSecret = "•••• •••• •••• ••••";
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -693,6 +697,47 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
                 const Divider(),
                 const SizedBox(height: 8),
                 if (!auth.isTotpLinked) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Google Authenticator TOTP Key',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isKeyVisible ? readableSecret : maskedSecret,
+                              style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  letterSpacing: 0.8),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                            _isKeyVisible
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                            color: Colors.blue,
+                            size: 20),
+                        tooltip: _isKeyVisible ? 'Mask Key' : 'Show Key',
+                        onPressed: () =>
+                            setState(() => _isKeyVisible = !_isKeyVisible),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.qr_code_2_rounded,
+                            color: Colors.blue, size: 20),
+                        tooltip: 'QR / Setup Instructions',
+                        onPressed: () => _showSetupDialog(context, auth),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
