@@ -103,22 +103,29 @@ class _PosScreenState extends State<PosScreen> {
       final idx =
           _cart.indexWhere((c) => c.productId == p.id && c.variantId == vid);
 
-      final stock = variant?.stock ?? p.stock;
+      final stock = variant?.availableStock ?? p.availableStock;
       final price = variant?.price ?? p.price;
       final cost = variant?.costPrice ?? p.costPrice;
       final name = variant != null ? '${p.name} (${variant.name})' : p.name;
+      final reservedCount = variant?.reservedStock ?? p.reservedStock;
 
       if (idx >= 0) {
         if (_cart[idx].qty < stock) {
           _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty + 1);
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Max stock reached.')));
+          final msg = reservedCount > 0
+              ? 'Max available stock reached ($reservedCount units reserved for pre-orders).'
+              : 'Max available stock reached.';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(msg)));
         }
       } else {
         if (stock <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Item out of stock.')));
+          final msg = reservedCount > 0
+              ? 'Item unavailable for walk-in sale ($reservedCount units reserved for pre-orders).'
+              : 'Item out of stock.';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(msg)));
           return;
         }
         _cart.insert(
@@ -250,8 +257,8 @@ class _PosScreenState extends State<PosScreen> {
         try {
           final p = products.firstWhere((p) => p.id == id);
           stock = variantId != null
-              ? p.variants.firstWhere((v) => v.id == variantId).stock
-              : p.stock;
+              ? p.variants.firstWhere((v) => v.id == variantId).availableStock
+              : p.availableStock;
         } catch (_) {}
 
         final int maxStock = stock < 1 ? 1 : stock;
@@ -279,14 +286,19 @@ class _PosScreenState extends State<PosScreen> {
     for (var item in _cart) {
       try {
         final p = products.firstWhere((p) => p.id == item.productId);
-        final int currentStock = item.variantId != null
-            ? p.variants.firstWhere((v) => v.id == item.variantId).stock
-            : p.stock;
+        final int currentAvailable = item.variantId != null
+            ? p.variants
+                .firstWhere((v) => v.id == item.variantId)
+                .availableStock
+            : p.availableStock;
 
-        if (currentStock < item.qty) {
+        if (currentAvailable < item.qty) {
+          final reservedNote = p.reservedStock > 0
+              ? ' (${p.reservedStock} reserved for pre-orders)'
+              : '';
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(
-                  'Cannot complete sale: ${item.name} has only $currentStock units left.')));
+                  'Cannot complete sale: ${item.name} has only $currentAvailable available units left$reservedNote.')));
           return;
         }
       } catch (_) {
@@ -812,7 +824,10 @@ class _PosProductTile extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis)),
                               const SizedBox(width: 4),
-                              Text('${p.stock}',
+                              Text(
+                                  p.reservedStock > 0
+                                      ? '${p.availableStock} (${p.reservedStock} res)'
+                                      : '${p.availableStock}',
                                   style: TextStyle(
                                       fontSize: 10,
                                       color: isLow ? Colors.red : Colors.grey)),
@@ -983,15 +998,18 @@ class _CartPanel extends StatelessWidget {
                         item.qty >= (product.wholesaleThreshold ?? 999);
 
                     int stock = 0;
+                    int reserved = 0;
                     if (product != null) {
                       if (item.variantId != null) {
                         try {
-                          stock = product.variants
-                              .firstWhere((v) => v.id == item.variantId)
-                              .stock;
+                          final v = product.variants
+                              .firstWhere((v) => v.id == item.variantId);
+                          stock = v.availableStock;
+                          reserved = v.reservedStock;
                         } catch (_) {}
                       } else {
-                        stock = product.stock;
+                        stock = product.availableStock;
+                        reserved = product.reservedStock;
                       }
                     }
 
@@ -1004,10 +1022,14 @@ class _CartPanel extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (isOutOfStock)
-                            const Padding(
-                                padding: EdgeInsets.only(left: 4, bottom: 4),
-                                child: Text('⚠️ THIS ITEM IS NOW SOLD OUT',
-                                    style: TextStyle(
+                            Padding(
+                                padding:
+                                    const EdgeInsets.only(left: 4, bottom: 4),
+                                child: Text(
+                                    reserved > 0
+                                        ? '⚠️ ALL $reserved UNITS RESERVED FOR ONLINE ORDERS'
+                                        : '⚠️ THIS ITEM IS NOW SOLD OUT',
+                                    style: const TextStyle(
                                         fontSize: 9,
                                         color: Colors.red,
                                         fontWeight: FontWeight.bold)))
@@ -1016,7 +1038,7 @@ class _CartPanel extends StatelessWidget {
                                 padding:
                                     const EdgeInsets.only(left: 4, bottom: 4),
                                 child: Text(
-                                    '⚠️ ONLY ${product.stock} LEFT IN STOCK',
+                                    '⚠️ ONLY $stock AVAILABLE FOR SALE${reserved > 0 ? " ($reserved reserved)" : ""}',
                                     style: const TextStyle(
                                         fontSize: 9,
                                         color: Colors.orange,
@@ -1105,9 +1127,8 @@ class _CartPanel extends StatelessWidget {
                       child: TextField(
                           controller: cashCtrl,
                           focusNode: cashFocus,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(
-                                  decimal: true, signed: false),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true, signed: false),
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(
                                 RegExp(r'^\d*\.?\d{0,2}')),
@@ -1133,8 +1154,7 @@ class _CartPanel extends StatelessWidget {
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white))
+                                      strokeWidth: 2, color: Colors.white))
                               : const Text('PAY'))),
                 ]),
                 if (cart.isNotEmpty) ...[
@@ -1155,8 +1175,7 @@ class _CartPanel extends StatelessWidget {
                     Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Short:',
-                              style: TextStyle(fontSize: 11)),
+                          const Text('Short:', style: TextStyle(fontSize: 11)),
                           Text(formatPeso(breakdown.total - cashNum),
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold,
@@ -1304,13 +1323,13 @@ class _SuccessView extends StatelessWidget {
                 onPressed: onNewSale,
                 icon: const Icon(Icons.add_shopping_cart_rounded),
                 label: const Text('NEW SALE',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: GdcColors.primaryGreen,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 36, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 36, vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                 ),
@@ -1606,4 +1625,3 @@ class _PosViewSwitcher extends StatelessWidget {
     );
   }
 }
-

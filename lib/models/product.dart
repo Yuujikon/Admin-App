@@ -14,6 +14,7 @@ class ProductVariant {
   final double price;
   final double costPrice;
   final int stock;
+  final int reservedStock;
   final int? initialStock;
   final String? barcode;
 
@@ -23,20 +24,27 @@ class ProductVariant {
     required this.price,
     this.costPrice = 0,
     required this.stock,
+    this.reservedStock = 0,
     this.initialStock,
     this.barcode,
   });
+
+  int get availableStock {
+    final avail = stock - reservedStock;
+    return avail > 0 ? avail : 0;
+  }
 
   int get effectiveInitialStock =>
       (initialStock != null && initialStock! > 0) ? initialStock! : stock;
 
   bool get isOutOfStockForCustomer =>
-      stock <= 0 || stock <= (effectiveInitialStock * 0.15).ceil();
+      availableStock <= 0 ||
+      availableStock <= (effectiveInitialStock * 0.15).ceil();
 
   int get maxPurchasableStock {
-    if (stock <= 0) return 0;
+    if (availableStock <= 0) return 0;
     final buffer = (effectiveInitialStock * 0.15).ceil();
-    final available = stock - buffer;
+    final available = availableStock - buffer;
     return available > 0 ? available : 0;
   }
 
@@ -51,6 +59,8 @@ class ProductVariant {
       price: double.tryParse(data['price']?.toString() ?? '0') ?? 0.0,
       costPrice: double.tryParse(data['costPrice']?.toString() ?? '0') ?? 0.0,
       stock: int.tryParse(data['stock']?.toString() ?? '0') ?? 0,
+      reservedStock:
+          int.tryParse(data['reservedStock']?.toString() ?? '0') ?? 0,
       initialStock: int.tryParse(data['initialStock']?.toString() ?? ''),
       barcode: data['barcode']?.toString(),
     );
@@ -62,6 +72,7 @@ class ProductVariant {
         'price': price,
         'costPrice': costPrice,
         'stock': stock,
+        'reservedStock': reservedStock,
         'initialStock': initialStock ?? stock,
         'barcode': barcode,
       };
@@ -71,6 +82,7 @@ class ProductVariant {
     double? price,
     double? costPrice,
     int? stock,
+    int? reservedStock,
     int? initialStock,
     String? barcode,
   }) =>
@@ -80,6 +92,7 @@ class ProductVariant {
         price: price ?? this.price,
         costPrice: costPrice ?? this.costPrice,
         stock: stock ?? this.stock,
+        reservedStock: reservedStock ?? this.reservedStock,
         initialStock: initialStock ?? this.initialStock,
         barcode: barcode ?? this.barcode,
       );
@@ -95,6 +108,7 @@ class Product {
   final double price;
   final double costPrice; // Base unit COGS (per piece)
   final int stock; // Always stored in base units (e.g. pieces)
+  final int reservedStock; // Quantity reserved for active online pre-orders
   final int? initialStock;
   final String unit; // Base unit e.g. 'pcs', 'bottle', 'can'
 
@@ -129,6 +143,7 @@ class Product {
     required this.price,
     this.costPrice = 0,
     required this.stock,
+    this.reservedStock = 0,
     this.initialStock,
     this.unit = 'pcs',
     this.bulkUnit = 'box',
@@ -148,6 +163,12 @@ class Product {
     this.variants = const [],
     this.batches = const [],
   });
+
+  /// Stock physically available for sale to walk-in customers (excluding active pre-order reservations).
+  int get availableStock {
+    final avail = stock - reservedStock;
+    return avail > 0 ? avail : 0;
+  }
 
   // ── UOM CONVERSION HELPERS ──
 
@@ -190,12 +211,12 @@ class Product {
 
   bool get isOutOfStockForCustomer {
     if (hasVariants) {
-      if (variants.isEmpty) return totalStock <= 0;
+      if (variants.isEmpty) return totalAvailableStock <= 0;
       return variants.every((v) => v.isOutOfStockForCustomer);
     } else {
-      if (stock <= 0) return true;
+      if (availableStock <= 0) return true;
       final buffer = (effectiveInitialStock * 0.15).ceil();
-      return stock <= buffer;
+      return availableStock <= buffer;
     }
   }
 
@@ -203,9 +224,9 @@ class Product {
     if (hasVariants) {
       return variants.fold(0, (acc, v) => acc + v.maxPurchasableStock);
     } else {
-      if (stock <= 0) return 0;
+      if (availableStock <= 0) return 0;
       final buffer = (effectiveInitialStock * 0.15).ceil();
-      final available = stock - buffer;
+      final available = availableStock - buffer;
       return available > 0 ? available : 0;
     }
   }
@@ -219,6 +240,11 @@ class Product {
   /// Returns the total stock (sum of variants if they exist, otherwise base stock).
   int get totalStock =>
       hasVariants ? variants.fold(0, (acc, v) => acc + v.stock) : stock;
+
+  /// Returns total available stock across variants or base stock.
+  int get totalAvailableStock => hasVariants
+      ? variants.fold(0, (acc, v) => acc + v.availableStock)
+      : availableStock;
 
   /// Factory constructor for parsing Firestore [DocumentSnapshot].
   factory Product.fromFirestore(DocumentSnapshot doc) {
@@ -237,6 +263,7 @@ class Product {
         price: double.tryParse(d['price']?.toString() ?? '0') ?? 0.0,
         costPrice: double.tryParse(d['costPrice']?.toString() ?? '0') ?? 0.0,
         stock: int.tryParse(d['stock']?.toString() ?? '0') ?? 0,
+        reservedStock: int.tryParse(d['reservedStock']?.toString() ?? '0') ?? 0,
         initialStock: int.tryParse(d['initialStock']?.toString() ?? ''),
         unit: d['unit']?.toString() ?? 'pcs',
         bulkUnit: d['bulkUnit']?.toString() ?? 'box',
@@ -304,6 +331,7 @@ class Product {
         'price': price,
         'costPrice': costPrice,
         'stock': stock,
+        'reservedStock': reservedStock,
         'initialStock': initialStock ?? stock,
         'unit': unit,
         'bulkUnit': bulkUnit,
@@ -334,6 +362,7 @@ class Product {
     String? category,
     double? price,
     int? stock,
+    int? reservedStock,
     int? initialStock,
     double? costPrice,
     String? unit,
@@ -362,6 +391,7 @@ class Product {
         price: price ?? this.price,
         costPrice: costPrice ?? this.costPrice,
         stock: stock ?? this.stock,
+        reservedStock: reservedStock ?? this.reservedStock,
         initialStock: initialStock ?? this.initialStock,
         unit: unit ?? this.unit,
         bulkUnit: bulkUnit ?? this.bulkUnit,
