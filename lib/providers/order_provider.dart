@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 import '../models/order.dart';
 import '../models/product.dart';
+import '../models/loss_record.dart';
 import '../models/transaction.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../utils/pricing_engine.dart';
+import '../utils/format.dart';
 
 import 'base_provider.dart';
 
@@ -20,6 +22,7 @@ class OrderProvider extends BaseProvider {
   String _adminName = 'Admin';
   final Set<String> _processingOrders = {};
   final Set<String> _knownOrderIds = {};
+  final Set<String> _processedCancelledOrderIds = {};
 
   final StreamController<PreOrder> _newOrderStreamController =
       StreamController<PreOrder>.broadcast();
@@ -69,6 +72,27 @@ class OrderProvider extends BaseProvider {
 
     registerSubscription(_fs.ordersStream().listen((list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      // Detect remote order cancellations (e.g., when customer cancels on customer app)
+      if (_orders.isNotEmpty) {
+        final Map<String, OrderStatus> prevStatuses = {
+          for (final o in _orders) o.id: o.status
+        };
+
+        for (final newOrder in list) {
+          final prevStatus = prevStatuses[newOrder.id];
+          if (newOrder.status == OrderStatus.cancelled &&
+              prevStatus != null &&
+              prevStatus != OrderStatus.cancelled &&
+              !_processedCancelledOrderIds.contains(newOrder.id)) {
+            _processOrderRestockAndLoss(
+              newOrder,
+              reason: newOrder.rejectionReason ?? 'Cancelled by customer via app',
+              processedBy: newOrder.customerName,
+            );
+          }
+        }
+      }
 
       if (_knownOrderIds.isNotEmpty) {
         final newOrders = list.where((o) =>
@@ -406,15 +430,13 @@ class OrderProvider extends BaseProvider {
     final order = _orders.firstWhere((o) => o.id == orderId);
     if (order.status == OrderStatus.cancelled) return;
 
-    // Replenish stock on cancellation for active orders (pending, staging, ready, collected)
+    // Process smart restocking and loss write-off determination automatically
     if (order.status == OrderStatus.pending ||
         order.status == OrderStatus.staging ||
         order.status == OrderStatus.ready ||
         order.status == OrderStatus.collected) {
-      // Create inverted cart items to "increment" stock
-      final returnItems =
-          order.items.map((i) => i.copyWith(qty: -i.qty)).toList();
-      await _fs.decrementStockBatch(returnItems);
+      await _processOrderRestockAndLoss(order,
+          reason: reason, processedBy: isAuto ? 'System' : _adminName);
     }
 
     final updatedOrder = order.copyWith(
@@ -428,6 +450,88 @@ class OrderProvider extends BaseProvider {
     if (isAuto) {
       await NotificationService.sendOrderAutoCancelled(
           order.orderId, order.customerEmail);
+    }
+  }
+
+  /// Automatically evaluates whether items in a cancelled order are fit to be restocked into inventory,
+  /// or should be logged as an Inventory Loss/Spoilage write-off.
+  Future<void> _processOrderRestockAndLoss(
+    PreOrder order, {
+    String? reason,
+    String? processedBy,
+  }) async {
+    if (_processedCancelledOrderIds.contains(order.id)) return;
+    _processedCancelledOrderIds.add(order.id);
+
+    try {
+      final allProducts = await _fs.getProductsOnce();
+      final Map<String, Product> productMap = {
+        for (final p in allProducts) p.id: p
+      };
+
+      final List<CartItem> itemsToRestock = [];
+      final now = DateTime.now();
+      final String adminUser = processedBy ?? _adminName;
+
+      for (final item in order.items) {
+        final product = productMap[item.productId];
+
+        bool isFitToRestock = true;
+        String unfitReason = 'Expired or unfit item';
+
+        if (product != null) {
+          if (product.expiryDate != null && product.expiryDate!.isBefore(now)) {
+            isFitToRestock = false;
+            unfitReason =
+                'Product expiration date (${formatDate(product.expiryDate!)}) has passed';
+          } else if (product.isPerishable &&
+              order.createdAt
+                  .add(Duration(days: product.shelfDays ?? 1))
+                  .isBefore(now)) {
+            isFitToRestock = false;
+            unfitReason = 'Perishable item exceeded shelf life timeframe';
+          }
+        }
+
+        final lowerReason = reason?.toLowerCase() ?? '';
+        if (lowerReason.contains('damaged') ||
+            lowerReason.contains('spoiled') ||
+            lowerReason.contains('broken') ||
+            lowerReason.contains('expired')) {
+          isFitToRestock = false;
+          unfitReason = 'Cancellation reason: $reason';
+        }
+
+        if (isFitToRestock) {
+          // Fit for restock: create negative qty cart item for decrementStockBatch (which increments stock)
+          itemsToRestock.add(item.copyWith(qty: -item.qty));
+        } else {
+          // Unfit for restock: log as an Inventory Loss / Spoilage Record
+          final lossRecord = LossRecord(
+            id: const Uuid().v4(),
+            productId: item.productId,
+            productName: item.name,
+            qty: item.qty,
+            unitPrice: product?.costPrice ?? item.price,
+            type: lowerReason.contains('damaged')
+                ? LossType.damaged
+                : LossType.expired,
+            notes:
+                'Auto written-off from cancelled order #${order.orderId}: $unfitReason',
+            createdAt: now,
+            processedBy: adminUser,
+            referenceId: order.orderId,
+          );
+          await _fs.recordLoss(lossRecord);
+        }
+      }
+
+      // Restock fit items back into active product inventory
+      if (itemsToRestock.isNotEmpty) {
+        await _fs.decrementStockBatch(itemsToRestock);
+      }
+    } catch (e) {
+      debugPrint('Error processing restock/loss for order ${order.id}: $e');
     }
   }
 

@@ -141,6 +141,19 @@ class FirestoreService {
         return list;
       });
 
+  Future<List<Product>> getProductsOnce() async {
+    final snap = await _products.get();
+    final List<Product> list = [];
+    for (final doc in snap.docs) {
+      try {
+        list.add(Product.fromFirestore(doc));
+      } catch (e) {
+        debugPrint('Error parsing Product ${doc.id}: $e');
+      }
+    }
+    return list;
+  }
+
   Future<void> addProduct(Product p) => _products.add(p.toFirestore());
 
   Future<void> updateProduct(Product p) =>
