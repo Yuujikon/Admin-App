@@ -124,6 +124,7 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
           _walkInItems.add(CartItem(
             productId: selectedProduct.id,
             name: selectedProduct.name,
+            barcode: selectedProduct.barcode ?? '',
             price: selectedProduct.price,
             costPrice: selectedProduct.costPrice,
             qty: 1,

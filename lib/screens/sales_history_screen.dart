@@ -8,6 +8,7 @@ import '../providers/inventory_provider.dart';
 import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 import '../widgets/responsive_layout.dart';
+import '../widgets/return_swap_dialog.dart';
 
 enum RefundHistoryFilter { all, approved, rejected }
 
@@ -358,16 +359,68 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           letterSpacing: 1)),
                   const SizedBox(height: 12),
                   ...tx.items.map((i) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: 10),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('${i.qty}x',
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold, fontSize: 13)),
                             const SizedBox(width: 12),
                             Expanded(
-                                child: Text(i.name,
-                                    style: const TextStyle(fontSize: 14))),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(i.name,
+                                            style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600)),
+                                      ),
+                                      if (i.returnedQty > 0) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                            border: Border.all(
+                                                color: Colors.red.shade200),
+                                          ),
+                                          child: Text(
+                                            'Returned: ${i.returnedQty}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.red.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  if (i.variantName != null)
+                                    Text('Variant: ${i.variantName}',
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.teal,
+                                            fontWeight: FontWeight.w600)),
+                                  Text(
+                                    'Barcode: ${i.barcode.isNotEmpty ? i.barcode : "N/A"} • ${formatPeso(i.price)} each',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontFamily: 'monospace',
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
                             Text(formatPeso(i.price * i.qty),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
@@ -419,6 +472,24 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
               child: Column(
                 children: [
+                  if (!tx.isRefunded) ...[
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        ReturnSwapDialog.show(context, tx);
+                      },
+                      icon: const Icon(Icons.published_with_changes_rounded),
+                      label: const Text('PROCESS RETURN / SWAP'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 54),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   ElevatedButton.icon(
                     onPressed: tx.isRefunded
                         ? null
@@ -451,20 +522,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  if (!tx.isRefunded)
-                    OutlinedButton.icon(
-                      onPressed: () => _confirmRefund(context, tx, inventory),
-                      icon: const Icon(Icons.undo_rounded),
-                      label: const Text('ISSUE REFUND'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                        minimumSize: const Size(double.infinity, 54),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
-                      ),
-                    ),
                 ],
               ),
             ),

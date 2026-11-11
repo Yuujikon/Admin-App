@@ -132,12 +132,12 @@ service cloud.firestore {
     // ─────────────────────────────────────────────────────────────────────────
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isStaff() || isAdmin();
+      allow write: if isAdmin();
     }
 
     match /store_settings/{settingId} {
       allow read: if true;
-      allow write: if isStaff() || isAdmin();
+      allow write: if isAdmin();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

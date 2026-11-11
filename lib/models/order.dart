@@ -50,9 +50,11 @@ class CartItem {
   final String? variantId;
   final String name;
   final String? variantName;
+  final String barcode;
   final double price;
   final double costPrice;
   final int qty;
+  final int returnedQty;
   final bool isPerishable;
   final String? notes;
   final double totalCogs;
@@ -63,9 +65,11 @@ class CartItem {
     this.variantId,
     required this.name,
     this.variantName,
+    this.barcode = '',
     required this.price,
     this.costPrice = 0,
     required this.qty,
+    this.returnedQty = 0,
     this.isPerishable = false,
     this.notes,
     this.totalCogs = 0.0,
@@ -97,9 +101,11 @@ class CartItem {
       variantId: m['variantId'],
       name: m['name'] ?? '',
       variantName: m['variantName'],
+      barcode: m['barcode']?.toString() ?? '',
       price: (m['price'] as num? ?? 0).toDouble(),
       costPrice: effectiveCostPrice,
       qty: safeQty,
+      returnedQty: (m['returnedQty'] as num? ?? 0).toInt(),
       isPerishable: m['isPerishable'] ?? false,
       notes: m['notes']?.toString(),
       totalCogs:
@@ -113,9 +119,11 @@ class CartItem {
         if (variantId != null) 'variantId': variantId,
         'name': name,
         if (variantName != null) 'variantName': variantName,
+        'barcode': barcode,
         'price': price,
         'costPrice': costPrice,
         'qty': qty < 1 ? 1 : qty,
+        'returnedQty': returnedQty,
         'isPerishable': isPerishable,
         if (notes != null) 'notes': notes,
         'totalCogs': totalCogs > 0 ? totalCogs : (costPrice * qty),
@@ -124,8 +132,10 @@ class CartItem {
 
   CartItem copyWith({
     int? qty,
+    int? returnedQty,
     double? price,
     double? costPrice,
+    String? barcode,
     String? notes,
     double? totalCogs,
     List<BatchDepletionRecord>? depletedBatches,
@@ -135,9 +145,11 @@ class CartItem {
         variantId: variantId,
         name: name,
         variantName: variantName,
+        barcode: barcode ?? this.barcode,
         price: price ?? this.price,
         costPrice: costPrice ?? this.costPrice,
         qty: qty != null ? (qty < 1 ? 1 : qty) : this.qty,
+        returnedQty: returnedQty ?? this.returnedQty,
         isPerishable: isPerishable,
         notes: notes ?? this.notes,
         totalCogs: totalCogs ?? this.totalCogs,

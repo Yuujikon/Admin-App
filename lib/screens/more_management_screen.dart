@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/printer_provider.dart';
+import '../providers/inventory_provider.dart';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
 import '../utils/totp.dart';
@@ -298,6 +299,16 @@ class MoreManagementScreen extends StatelessWidget {
                                 builder: (_) => const ReportsScreen()));
                       }
                     },
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.timer_outlined,
+                    iconBg: const Color(0xFFFEF3C7),
+                    iconColor: const Color(0xFFD97706),
+                    title: 'Order Expiration Windows',
+                    subtitle:
+                        'Set pickup time limits for perishable, mixed & standard items',
+                    onTap: () => _showOrderExpirationModal(context),
                   ),
                   const SizedBox(height: 24),
                 ],
@@ -1803,3 +1814,133 @@ class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
     );
   }
 }
+
+void _showOrderExpirationModal(BuildContext context) {
+  final auth = context.read<AppAuthProvider>();
+  if (auth.role != UserRole.admin) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+            'Access Denied: Store Admin privileges required to manage order expiration settings.'),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+
+  showDialog(
+    context: context,
+    builder: (ctx) {
+      return Consumer<InventoryProvider>(
+        builder: (context, inventory, child) {
+          final settings = inventory.settings;
+          return AlertDialog(
+            title: const Text('Order Expiration Windows'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Time customers have to pick up their orders before auto-cancellation.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  _WindowInput(
+                    label: 'Perishables Only (Hours)',
+                    hint: 'e.g. 2',
+                    value: settings.perishableWindowHours,
+                    onChanged: (v) => inventory.saveStoreSettings(
+                        settings.copyWith(perishableWindowHours: v)),
+                  ),
+                  const SizedBox(height: 12),
+                  _WindowInput(
+                    label: 'Mixed Orders (Hours)',
+                    hint: 'e.g. 24',
+                    value: settings.mixedWindowHours,
+                    onChanged: (v) => inventory.saveStoreSettings(
+                        settings.copyWith(mixedWindowHours: v)),
+                  ),
+                  const SizedBox(height: 12),
+                  _WindowInput(
+                    label: 'Non-Perishables (Hours)',
+                    hint: 'e.g. 72',
+                    value: settings.standardWindowHours,
+                    onChanged: (v) => inventory.saveStoreSettings(
+                        settings.copyWith(standardWindowHours: v)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+class _WindowInput extends StatefulWidget {
+  final String label, hint;
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _WindowInput({
+    required this.label,
+    required this.hint,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  State<_WindowInput> createState() => _WindowInputState();
+}
+
+class _WindowInputState extends State<_WindowInput> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value?.toString() ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant _WindowInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) {
+      final newText = widget.value?.toString() ?? '';
+      if (_controller.text != newText) {
+        _controller.text = newText;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      keyboardType: TextInputType.number,
+      controller: _controller,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        hintText: widget.hint,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      onChanged: (v) => widget.onChanged(int.tryParse(v)),
+    );
+  }
+}
+

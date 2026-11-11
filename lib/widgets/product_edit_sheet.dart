@@ -37,6 +37,27 @@ class ProductEditSheet extends StatefulWidget {
     this.initialSupplierId,
   });
 
+  /// Standard launcher for [ProductEditSheet] as a bottom sheet with gesture safety & scroll control.
+  static Future<T?> show<T>({
+    required BuildContext context,
+    Product? product,
+    String? initialBarcode,
+    String? initialSupplierId,
+  }) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ProductEditSheet(
+        product: product,
+        initialBarcode: initialBarcode,
+        initialSupplierId: initialSupplierId,
+      ),
+    );
+  }
+
   @override
   State<ProductEditSheet> createState() => _ProductEditSheetState();
 }
@@ -454,12 +475,9 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                   final parentCtx = context;
                   Navigator.pop(ctx);
                   Navigator.pop(parentCtx);
-                  showModalBottomSheet(
+                  ReceiveDeliverySheet.show(
                     context: parentCtx,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) =>
-                        ReceiveDeliverySheet(initialProduct: existingProduct),
+                    initialProduct: existingProduct,
                   );
                 },
                 icon: const Icon(Icons.add_business_rounded, size: 20),
@@ -748,6 +766,73 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     super.dispose();
   }
 
+  bool _hasUnsavedChanges() {
+    if (_saving) return false;
+    final p = _activeProduct;
+    if (p == null) {
+      return _name.text.trim().isNotEmpty ||
+          _brand.text.trim().isNotEmpty ||
+          _price.text.trim().isNotEmpty ||
+          (_costPrice.text.trim().isNotEmpty && _costPrice.text.trim() != '0') ||
+          _stock.text.trim().isNotEmpty ||
+          (_barcode.text.trim().isNotEmpty &&
+              _barcode.text.trim() != (widget.initialBarcode ?? '')) ||
+          _shelf.text.trim().isNotEmpty ||
+          _itemsPerCase.text.trim().isNotEmpty ||
+          _boxPriceCtrl.text.trim().isNotEmpty ||
+          _boxesReceivedCtrl.text.trim().isNotEmpty ||
+          _notesCtrl.text.trim().isNotEmpty ||
+          _localPhoto != null;
+    } else {
+      return _name.text.trim() != p.name ||
+          _brand.text.trim() != (p.brand ?? '') ||
+          _price.text.trim() != p.price.toString() ||
+          _costPrice.text.trim() != p.costPrice.toString() ||
+          _stock.text.trim() != p.stock.toString() ||
+          _unit.text.trim() != p.unit ||
+          _barcode.text.trim() != (p.barcode ?? '') ||
+          _notesCtrl.text.trim().isNotEmpty ||
+          _localPhoto != null;
+    }
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges()) return true;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard Unsaved Changes?'),
+        content: const Text(
+          'You have unsaved information in this form. Are you sure you want to discard your changes and close?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Discard Changes'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _handleClose() async {
+    final shouldPop = await _confirmDiscardChanges();
+    if (shouldPop && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -761,108 +846,121 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       ..sort();
 
     final brandStyle = BrandStyling.getStyle(_brand.text, fontSize: 16);
+    final maxHeight = MediaQuery.of(context).size.height * 0.90;
 
-    return BarcodeInterceptor(
-      controllers: _focusMap,
-      barcodeFocus: _fBarcode,
-      nameFocus: _fName,
-      onBarcodeDetected: (code) async {
-        setState(() => _barcode.text = code);
-        _fBarcode.requestFocus();
-        await _handleBarcodeScan(code);
-      },
-      onTextDetected: (text) {
-        setState(() => _name.text = text);
-        if (_activeProduct == null && text.trim().isNotEmpty) {
-          _checkExistingProductByName(text);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _confirmDiscardChanges();
+        if (shouldPop && mounted) {
+          Navigator.of(context).pop();
         }
       },
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: Container(
-          color: Theme.of(context).colorScheme.surface,
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            left: 16,
-            right: 16,
-            top: 12,
-          ),
-          child: SingleChildScrollView(
-            child: MaxWidthContainer(
-              maxWidth: 620,
-              alignment: Alignment.topCenter,
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Top Drag Handle
-                    Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(2),
+      child: BarcodeInterceptor(
+        controllers: _focusMap,
+        barcodeFocus: _fBarcode,
+        nameFocus: _fName,
+        onBarcodeDetected: (code) async {
+          setState(() => _barcode.text = code);
+          _fBarcode.requestFocus();
+          await _handleBarcodeScan(code);
+        },
+        onTextDetected: (text) {
+          setState(() => _name.text = text);
+          if (_activeProduct == null && text.trim().isNotEmpty) {
+            _checkExistingProductByName(text);
+          }
+        },
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            constraints: BoxConstraints(
+              maxHeight: maxHeight,
+            ),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              left: 16,
+              right: 16,
+              top: 12,
+            ),
+            child: SingleChildScrollView(
+              child: MaxWidthContainer(
+                maxWidth: 620,
+                alignment: Alignment.topCenter,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Top Drag Handle
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                    // Sheet Header
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _activeProduct == null
-                                    ? 'Add New Product'
-                                    : 'Edit Product Profile',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                    ),
-                              ),
-                              Text(
-                                _activeProduct == null
-                                    ? 'Fast product creation & initial stock logging'
-                                    : 'Update pricing, UoM, and product info',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
-                              ),
-                            ],
+                      // Sheet Header
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _activeProduct == null
+                                      ? 'Add New Product'
+                                      : 'Edit Product Profile',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                ),
+                                Text(
+                                  _activeProduct == null
+                                      ? 'Fast product creation & initial stock logging'
+                                      : 'Update pricing, UoM, and product info',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                        fontSize: 12,
+                                      ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        if (_activeProduct == null) ...[
-                          IconButton.filledTonal(
-                            onPressed: _fullScan,
-                            icon: const Icon(Icons.qr_code_scanner_rounded,
-                                size: 18),
-                            tooltip: 'Scan Catalog Barcode',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close_rounded, size: 20),
-                          tooltip: 'Close',
+                          if (_activeProduct == null) ...[
+                            IconButton.filledTonal(
+                              onPressed: _fullScan,
+                              icon: const Icon(Icons.qr_code_scanner_rounded,
+                                  size: 18),
+                              tooltip: 'Scan Catalog Barcode',
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          IconButton(
+                            onPressed: _handleClose,
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            tooltip: 'Close',
                           visualDensity: VisualDensity.compact,
                         ),
                       ],
@@ -2003,8 +2101,9 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildCollapsibleCard({
     required String title,

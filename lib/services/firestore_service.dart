@@ -318,6 +318,139 @@ class FirestoreService {
     }
   }
 
+  /// Processes a single line item return or 1-to-1 swap atomically.
+  /// Enforces Firestore's strict Read-Before-Write rule: all reads performed before writes.
+  Future<void> processItemReturn({
+    required String transactionId,
+    String? orderId,
+    required String productId,
+    String? variantId,
+    required String barcode,
+    required int returnQty,
+    required bool isCashRefund,
+    bool isDamagedSwap = false,
+  }) async {
+    try {
+      await _db.runTransaction((transaction) async {
+        final txRef = _transactions.doc(transactionId);
+        final txSnap = await transaction.get(txRef);
+
+        if (!txSnap.exists) {
+          throw Exception('Transaction record not found.');
+        }
+
+        DocumentSnapshot? orderSnap;
+        DocumentReference? orderRef;
+        if (orderId != null && orderId.trim().isNotEmpty) {
+          orderRef = _orders.doc(orderId.trim());
+          final snap = await transaction.get(orderRef);
+          if (snap.exists) {
+            orderSnap = snap;
+          }
+        }
+
+        final productRef = _products.doc(productId);
+        final productSnap = await transaction.get(productRef);
+
+        // --- READ PHASE COMPLETE: ALL TRANSACTION READS ARE ABOVE THIS LINE ---
+
+        // 1. Process items array for Transaction
+        final txData = txSnap.data() as Map<String, dynamic>? ?? {};
+        final rawItems = (txData['items'] as List? ?? []);
+        bool matched = false;
+        final updatedTxItems = rawItems.map((raw) {
+          if (raw is! Map) return raw;
+          final itemMap = Map<String, dynamic>.from(raw);
+          final String itemBarcode = itemMap['barcode']?.toString() ?? '';
+          final String itemPid = itemMap['productId']?.toString() ?? '';
+          final String? itemVid = itemMap['variantId']?.toString();
+
+          final bool matchesBarcode =
+              barcode.isNotEmpty && itemBarcode == barcode;
+          final bool matchesId = (barcode.isEmpty || !matchesBarcode) &&
+              itemPid == productId &&
+              (variantId == null || itemVid == variantId);
+
+          if (!matched && (matchesBarcode || matchesId)) {
+            matched = true;
+            final currentReturned =
+                (itemMap['returnedQty'] as num? ?? 0).toInt();
+            itemMap['returnedQty'] = currentReturned + returnQty;
+          }
+          return itemMap;
+        }).toList();
+
+        if (!matched) {
+          throw Exception(
+              'Selected item was not found on this transaction receipt.');
+        }
+
+        transaction.update(txRef, {'items': updatedTxItems});
+
+        // 2. Process items array for Orders (if linked pre-order)
+        if (orderRef != null && orderSnap != null) {
+          final orderData = orderSnap.data() as Map<String, dynamic>? ?? {};
+          final rawOrderItems = (orderData['items'] as List? ?? []);
+          bool orderMatched = false;
+          final updatedOrderItems = rawOrderItems.map((raw) {
+            if (raw is! Map) return raw;
+            final itemMap = Map<String, dynamic>.from(raw);
+            final String itemBarcode = itemMap['barcode']?.toString() ?? '';
+            final String itemPid = itemMap['productId']?.toString() ?? '';
+            final String? itemVid = itemMap['variantId']?.toString();
+
+            final bool matchesBarcode =
+                barcode.isNotEmpty && itemBarcode == barcode;
+            final bool matchesId = (barcode.isEmpty || !matchesBarcode) &&
+                itemPid == productId &&
+                (variantId == null || itemVid == variantId);
+
+            if (!orderMatched && (matchesBarcode || matchesId)) {
+              orderMatched = true;
+              final currentReturned =
+                  (itemMap['returnedQty'] as num? ?? 0).toInt();
+              itemMap['returnedQty'] = currentReturned + returnQty;
+            }
+            return itemMap;
+          }).toList();
+
+          transaction.update(orderRef, {'items': updatedOrderItems});
+        }
+
+        // 3. Inventory stock adjustment math
+        if (productSnap.exists) {
+          if (isCashRefund) {
+            // Cash refund: Restock +returnQty to sellable shelf
+            if (variantId != null && variantId.isNotEmpty) {
+              transaction.update(productRef, {
+                'variants.$variantId.stock': FieldValue.increment(returnQty),
+              });
+            } else {
+              transaction.update(productRef, {
+                'stock': FieldValue.increment(returnQty),
+              });
+            }
+          } else if (isDamagedSwap) {
+            // 1-to-1 Swap (Damaged write-off): Fresh unit issued, returned unit written off -> -returnQty
+            if (variantId != null && variantId.isNotEmpty) {
+              transaction.update(productRef, {
+                'variants.$variantId.stock': FieldValue.increment(-returnQty),
+              });
+            } else {
+              transaction.update(productRef, {
+                'stock': FieldValue.increment(-returnQty),
+              });
+            }
+          }
+          // Note: 1-to-1 Swap with sellable restock (!isCashRefund && !isDamagedSwap) has net 0 stock change.
+        }
+      });
+    } catch (e) {
+      debugPrint('Error processing item return: $e');
+      rethrow;
+    }
+  }
+
   // ── Suppliers ──────────────────────────────────────────────────────────────
 
   Stream<List<Supplier>> suppliersStream() => _suppliers

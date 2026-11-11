@@ -15,6 +15,7 @@ import '../models/transaction.dart';
 import '../models/restock_inquiry.dart';
 import '../models/product.dart';
 import '../models/supplier.dart';
+import '../models/store_settings.dart';
 import '../utils/format.dart';
 import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/batch_expiration_widget.dart';
@@ -361,6 +362,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               categoryCount,
                             ),
                             const SizedBox(height: 24),
+                            _buildLowStockWarnings(context, data, inventory),
+                            const SizedBox(height: 16),
+                            const BatchExpirationWidget(),
+                            const SizedBox(height: 24),
                             _buildChartSection(
                               context,
                               data.chartMetrics,
@@ -368,7 +373,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               inventory.lossRecords,
                             ),
                             const SizedBox(height: 24),
-                            _buildActionAlertsSection(context, data, inventory),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: _buildFastMovingSection(context, data)),
+                                const SizedBox(width: 16),
+                                Expanded(child: _buildSlowMovingSection(context, data, inventory)),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            _buildRecentTransactionsSection(context, data.todayTx),
                           ],
                         ),
                       ),
@@ -397,9 +411,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       IconData statusIcon;
 
       switch (statusLabel) {
+        case 'MAINTENANCE':
         case 'CLOSED':
           statusColor = errorColor;
-          statusIcon = Icons.storefront_outlined;
+          statusIcon = Icons.warning_amber_rounded;
           break;
         case 'SCHEDULED':
           statusColor = warningColor;
@@ -644,31 +659,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Widget _buildActionAlertsSection(
+  Widget _buildLowStockWarnings(
       BuildContext context, _DashboardData data, InventoryProvider inventory) {
     try {
       final Color errorColor = Theme.of(context).colorScheme.error;
-      final Color warningColor = Colors.orange.shade700;
-      final Color infoColor = Colors.blue.shade700;
+
+      if (data.lowStockProducts.isEmpty) return const SizedBox.shrink();
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Safety Stock Warnings (Low Stock)
-          if (data.lowStockProducts.isNotEmpty) ...[
-            Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, size: 20, color: errorColor),
-                const SizedBox(width: 8),
-                Text(
-                  'Safety Stock Warnings',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold, color: errorColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Card(
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 20, color: errorColor),
+              const SizedBox(width: 8),
+              Text(
+                'Low Stock Warnings',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold, color: errorColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: Card(
               color: errorColor.withValues(alpha: 0.08),
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -677,7 +692,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               child: ListView.separated(
                 shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
                 itemCount: data.lowStockProducts.length,
                 separatorBuilder: (_, __) => const Divider(height: 1),
                 itemBuilder: (context, index) {
@@ -761,14 +775,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               } catch (_) {}
                             }
 
-                            showModalBottomSheet(
+                            ReceiveDeliverySheet.show(
                               context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => ReceiveDeliverySheet(
-                                initialProduct: p,
-                                inquiry: matchingInquiry,
-                              ),
+                              initialProduct: p,
+                              inquiry: matchingInquiry,
                             );
                           },
                           icon:
@@ -792,127 +802,172 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 16),
-          ],
-
-          // 2. FEFO Batch Expiration Warnings (< 30 Days)
-          const BatchExpirationWidget(),
-          const SizedBox(height: 16),
-
-          // 3. Recent Transactions
-          _buildRecentTransactionsSection(context, data.todayTx),
-          const SizedBox(height: 16),
-
-          // 4. Fast Moving Items
-          Row(
-            children: [
-              Icon(Icons.bolt, size: 20, color: warningColor),
-              const SizedBox(width: 8),
-              Text('Fast Moving Items (30d)',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-            ],
           ),
-          const SizedBox(height: 8),
-          if (data.fastMoving.isEmpty)
-            _buildEmptyStateCard(
-              context,
-              icon: Icons.bolt_outlined,
-              message: 'No fast-moving item sales recorded yet.',
-            )
-          else
-            SizedBox(
-              height: 90,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: data.fastMoving.take(10).length,
-                itemBuilder: (context, index) {
-                  final entry = data.fastMoving[index];
-                  return Card(
-                    margin: const EdgeInsets.only(right: 12),
-                    color: Theme.of(context).colorScheme.surfaceContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(entry.key,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                          Text('${entry.value} sold',
-                              style:
-                                  TextStyle(fontSize: 11, color: warningColor)),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-          const SizedBox(height: 16),
-
-          // 4. Slow Moving Items
-          Row(
-            children: [
-              Icon(Icons.hourglass_bottom, size: 20, color: infoColor),
-              const SizedBox(width: 8),
-              Text('Slow Moving Items (30d)',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (data.slowMoving.isEmpty)
-            _buildEmptyStateCard(
-              context,
-              icon: Icons.auto_awesome_rounded,
-              message: 'Everything is moving smoothly!',
-            )
-          else
-            SizedBox(
-              height: 90,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: data.slowMoving.take(10).length,
-                itemBuilder: (context, index) {
-                  final p = data.slowMoving[index];
-                  final sold = inventory.recentMovementCounts[p.name] ?? 0;
-                  return Card(
-                    margin: const EdgeInsets.only(right: 12),
-                    color: Theme.of(context).colorScheme.surfaceContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(p.name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                          Text(sold == 0 ? 'No sales' : '$sold sold',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
         ],
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildFastMovingSection(BuildContext context, _DashboardData data) {
+    try {
+      final Color warningColor = Colors.orange.shade700;
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.bolt, size: 20, color: warningColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Fast Moving (30d)',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (data.fastMoving.isEmpty)
+              _buildEmptyStateCard(
+                context,
+                icon: Icons.bolt_outlined,
+                message: 'No sales yet.',
+              )
+            else
+              Container(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: data.fastMoving.length,
+                  itemBuilder: (context, index) {
+                    final entry = data.fastMoving[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.2)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 14,
+                              backgroundColor: warningColor.withValues(alpha: 0.15),
+                              child: Icon(Icons.bolt_rounded, size: 14, color: warningColor),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(entry.key,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: 8),
+                            Text('${entry.value} sold',
+                                style: TextStyle(fontSize: 11, color: warningColor, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildSlowMovingSection(
+      BuildContext context, _DashboardData data, InventoryProvider inventory) {
+    try {
+      final Color infoColor = Colors.blue.shade700;
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.hourglass_bottom, size: 20, color: infoColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Slow Moving (30d)',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (data.slowMoving.isEmpty)
+              _buildEmptyStateCard(
+                context,
+                icon: Icons.auto_awesome_rounded,
+                message: 'All good!',
+              )
+            else
+              Container(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: data.slowMoving.length,
+                  itemBuilder: (context, index) {
+                    final p = data.slowMoving[index];
+                    final sold = inventory.recentMovementCounts[p.name] ?? 0;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.2)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 14,
+                              backgroundColor: infoColor.withValues(alpha: 0.15),
+                              child: Icon(Icons.hourglass_bottom_rounded, size: 14, color: infoColor),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(p.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(sold == 0 ? 'No sales' : '$sold sold',
+                                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       );
     } catch (_) {
       return const SizedBox.shrink();
@@ -922,49 +977,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildRecentTransactionsSection(
       BuildContext context, List<StoreTransaction> todayTx) {
     try {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Recent Transactions',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          if (todayTx.isEmpty)
-            _buildEmptyStateCard(
-              context,
-              icon: Icons.receipt_long_outlined,
-              message: 'No sales transactions recorded today.',
-            )
-          else
-            ...todayTx.take(5).map((tx) {
-              String timeStr = '';
-              try {
-                timeStr = DateFormat('hh:mm a').format(tx.createdAt);
-              } catch (_) {
-                timeStr = 'Just now';
-              }
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
-                    child: Icon(Icons.receipt,
-                        color: Theme.of(context).colorScheme.primary),
-                  ),
-                  title: Text(formatPeso(tx.total),
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(
-                      '${tx.items.length} item${tx.items.length != 1 ? 's' : ''} · $timeStr'),
-                  trailing: Text(formatPeso(tx.change),
-                      style: Theme.of(context).textTheme.labelSmall),
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  dividerColor: Colors.transparent,
+                  expansionTileTheme: ExpansionTileThemeData(
+                    backgroundColor: Colors.transparent,
+                    collapsedBackgroundColor: Colors.transparent,
+                  )
                 ),
-              );
-            }),
-        ],
+                child: ExpansionTile(
+                initiallyExpanded: false,
+                title: Row(
+                  children: [
+                    Icon(Icons.receipt_long, size: 20, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text('Recent Transactions', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  ]
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: todayTx.isEmpty
+                      ? _buildEmptyStateCard(context, icon: Icons.receipt_long_outlined, message: 'No sales transactions recorded today.')
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: todayTx.take(10).length,
+                          itemBuilder: (context, index) {
+                            final tx = todayTx[index];
+                            String timeStr = '';
+                            try {
+                              timeStr = DateFormat('hh:mm a').format(tx.createdAt);
+                            } catch (_) {
+                              timeStr = 'Just now';
+                            }
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              color: Theme.of(context).colorScheme.surfaceContainerLow,
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                  child: Icon(Icons.receipt, color: Theme.of(context).colorScheme.primary),
+                                ),
+                                title: Text(formatPeso(tx.total), style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Text('${tx.items.length} item${tx.items.length != 1 ? 's' : ''} · $timeStr'),
+                                trailing: Text(formatPeso(tx.change), style: Theme.of(context).textTheme.labelSmall),
+                              ),
+                            );
+                          }
+                        )
+                  )
+                ]
+              )
+            )
+          ));
+        }
       );
     } catch (_) {
       return const SizedBox.shrink();
@@ -1017,36 +1095,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showStatusDialog(BuildContext context, InventoryProvider inventory) {
-    final settings = inventory.settings;
-    final isClosed = settings.isClosed;
-    final controller = TextEditingController(text: settings.closureMessage);
+    final controller =
+        TextEditingController(text: inventory.settings.closureMessage);
+    final reasonCtrl = TextEditingController();
 
-    DateTime? schedClose = settings.scheduledCloseAt;
-    DateTime? schedOpen = settings.scheduledOpenAt;
+    DateTimeRange? selectedDateRange;
+    OverrideType selectedType = OverrideType.customOpenHours;
+    TimeOfDay customStart =
+        const TimeOfDay(hour: 13, minute: 0); // 1:00 PM default
+    TimeOfDay customEnd =
+        const TimeOfDay(hour: 15, minute: 0); // 3:00 PM default
 
-    bool operatingEnabled = settings.operatingHoursEnabled;
     TimeOfDay openTime = _parseTimeOfDay(
-        settings.dailyOpenTime, const TimeOfDay(hour: 8, minute: 0));
+        inventory.settings.dailyOpenTime, const TimeOfDay(hour: 8, minute: 0));
     TimeOfDay closeTime = _parseTimeOfDay(
-        settings.dailyCloseTime, const TimeOfDay(hour: 21, minute: 0));
+        inventory.settings.dailyCloseTime, const TimeOfDay(hour: 21, minute: 0));
 
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
+          final settings = inventory.settings;
+          final isClosed = settings.isClosed;
           final isEffectivelyClosed = settings.effectivelyClosed;
           final closureReason = settings.closureReason;
 
           final Color errColor = Theme.of(context).colorScheme.error;
           final Color succColor = Colors.green.shade700;
 
+          String formatTime(TimeOfDay t) => t.format(context);
+          String formatDate(DateTime d) => DateFormat('MMM d, yyyy').format(d);
+
           return AlertDialog(
-            title: const Text('Store Management'),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text(
+              'Schedule & Holiday Hours',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             content: Container(
-              width: 480,
-              constraints: const BoxConstraints(maxWidth: 480),
-              height: MediaQuery.of(context).size.height * 0.7,
+              width: 520,
+              constraints: const BoxConstraints(maxWidth: 520),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1109,123 +1199,375 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    const Text('Manual Store Control',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: controller,
-                      decoration: const InputDecoration(
-                        labelText: 'Closure Notice',
-                        hintText: 'Optional message for customers when closed',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLines: 2,
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Regular Operating Hours',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isClosed ? succColor : errColor,
-                        foregroundColor: Colors.white,
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Opening Time',
+                                style: TextStyle(fontSize: 12)),
+                            subtitle: Text(_formatTimeOfDayDisplay(openTime),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            trailing: const Icon(Icons.access_time, size: 18),
+                            onTap: () async {
+                              final picked = await showTimePicker(
+                                  context: context, initialTime: openTime);
+                              if (picked != null && context.mounted) {
+                                setDialogState(() => openTime = picked);
+                                await inventory
+                                    .saveStoreSettings(settings.copyWith(
+                                  operatingHoursEnabled: true,
+                                  dailyOpenTime: _formatTimeOfDay(picked),
+                                  dailyCloseTime: _formatTimeOfDay(closeTime),
+                                ));
+                              }
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Closing Time',
+                                style: TextStyle(fontSize: 12)),
+                            subtitle: Text(_formatTimeOfDayDisplay(closeTime),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            trailing: const Icon(Icons.access_time_filled,
+                                size: 18),
+                            onTap: () async {
+                              final picked = await showTimePicker(
+                                  context: context, initialTime: closeTime);
+                              if (picked != null && context.mounted) {
+                                setDialogState(() => closeTime = picked);
+                                await inventory
+                                    .saveStoreSettings(settings.copyWith(
+                                  operatingHoursEnabled: true,
+                                  dailyOpenTime: _formatTimeOfDay(openTime),
+                                  dailyCloseTime: _formatTimeOfDay(picked),
+                                ));
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+
+                    const Text(
+                      'Custom Date / Holiday Schedule',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.calendar_month, size: 18),
+                      label: Text(
+                        selectedDateRange == null
+                            ? 'Select Custom Date Range (e.g. Dec 20 - Dec 23)'
+                            : '${formatDate(selectedDateRange!.start)}  →  ${formatDate(selectedDateRange!.end)}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 44),
+                        alignment: Alignment.centerLeft,
                       ),
                       onPressed: () async {
-                        try {
-                          await inventory.toggleStoreStatus(!isClosed,
-                              message: controller.text.trim());
-                          if (!ctx.mounted) return;
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('Store status updated successfully')),
-                          );
-                        } catch (e) {
-                          if (!ctx.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text('Error: $e'),
-                                backgroundColor: errColor),
-                          );
+                        final now = DateTime.now();
+                        final picked = await showDateRangePicker(
+                          context: context,
+                          firstDate: DateTime(now.year, now.month, 1),
+                          lastDate: DateTime(now.year + 2, 12, 31),
+                          initialDateRange: selectedDateRange,
+                        );
+                        if (picked != null) {
+                          setDialogState(() => selectedDateRange = picked);
                         }
                       },
-                      icon: Icon(isClosed
-                          ? Icons.play_arrow_rounded
-                          : Icons.power_settings_new_rounded),
-                      label:
-                          Text(isClosed ? 'Open Store Now' : 'Close Store Now'),
                     ),
-                    const Divider(height: 36),
-                    Text('Daily Operating Hours',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    Text('Automatically open and close every day.',
-                        style: Theme.of(context).textTheme.labelSmall),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Enable Daily Schedule',
-                          style: TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600)),
-                      value: operatingEnabled,
-                      onChanged: (val) async {
-                        setDialogState(() => operatingEnabled = val);
-                        final openStr = _formatTimeOfDay(openTime);
-                        final closeStr = _formatTimeOfDay(closeTime);
-                        await inventory.saveStoreSettings(settings.copyWith(
-                          operatingHoursEnabled: val,
-                          dailyOpenTime: openStr,
-                          dailyCloseTime: closeStr,
-                        ));
+                    const SizedBox(height: 10),
+
+                    SegmentedButton<OverrideType>(
+                      segments: const [
+                        ButtonSegment(
+                          value: OverrideType.customOpenHours,
+                          label: Text('Custom Hours', style: TextStyle(fontSize: 11)),
+                          icon: Icon(Icons.schedule, size: 15),
+                        ),
+                        ButtonSegment(
+                          value: OverrideType.fullClosure,
+                          label: Text('Closed All Day', style: TextStyle(fontSize: 11)),
+                          icon: Icon(Icons.block, size: 15),
+                        ),
+                        ButtonSegment(
+                          value: OverrideType.maintenanceWindow,
+                          label: Text('Maintenance', style: TextStyle(fontSize: 11)),
+                          icon: Icon(Icons.build, size: 15),
+                        ),
+                      ],
+                      selected: {selectedType},
+                      onSelectionChanged: (val) {
+                        setDialogState(() => selectedType = val.first);
                       },
                     ),
-                    if (operatingEnabled) ...[
+                    const SizedBox(height: 10),
+
+                    if (selectedType != OverrideType.fullClosure) ...[
                       Row(
                         children: [
                           Expanded(
-                            child: ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Opening Time',
-                                  style: TextStyle(fontSize: 12)),
-                              subtitle: Text(_formatTimeOfDayDisplay(openTime),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                              trailing: const Icon(Icons.access_time, size: 18),
+                            child: InkWell(
                               onTap: () async {
-                                final picked = await showTimePicker(
-                                    context: context, initialTime: openTime);
-                                if (picked != null && context.mounted) {
-                                  setDialogState(() => openTime = picked);
-                                  await inventory
-                                      .saveStoreSettings(settings.copyWith(
-                                    dailyOpenTime: _formatTimeOfDay(picked),
-                                    dailyCloseTime: _formatTimeOfDay(closeTime),
-                                  ));
+                                final t = await showTimePicker(
+                                  context: context,
+                                  initialTime: customStart,
+                                );
+                                if (t != null) setDialogState(() => customStart = t);
+                              },
+                              child: InputDecorator(
+                                decoration: InputDecoration(
+                                  labelText: selectedType == OverrideType.maintenanceWindow
+                                      ? 'Maintenance From'
+                                      : 'Available From',
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                child: Text(formatTime(customStart)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final t = await showTimePicker(
+                                  context: context,
+                                  initialTime: customEnd,
+                                );
+                                if (t != null) setDialogState(() => customEnd = t);
+                              },
+                              child: InputDecorator(
+                                decoration: InputDecoration(
+                                  labelText: selectedType == OverrideType.maintenanceWindow
+                                      ? 'Maintenance Until'
+                                      : 'Until Time',
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                child: Text(formatTime(customEnd)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
+                    TextField(
+                      controller: selectedType == OverrideType.maintenanceWindow
+                          ? controller
+                          : reasonCtrl,
+                      decoration: InputDecoration(
+                        labelText: selectedType == OverrideType.maintenanceWindow
+                            ? 'Maintenance Reason / Notice'
+                            : 'Reason / Notice',
+                        hintText: selectedType == OverrideType.fullClosure
+                            ? 'e.g. Holidays'
+                            : selectedType == OverrideType.maintenanceWindow
+                                ? 'Reason displayed to customers during maintenance'
+                                : 'e.g. Preparing for Holidays',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (selectedType == OverrideType.customOpenHours) ...[
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade800,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.event_available_rounded, size: 18),
+                        label: const Text(
+                          'Save Custom Hours',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        onPressed: () async {
+                          if (selectedDateRange == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Please select a date range first.')),
+                            );
+                            return;
+                          }
+                          await _saveOverrideHelper(
+                            context,
+                            inventory,
+                            settings,
+                            selectedDateRange!,
+                            selectedType,
+                            customStart,
+                            customEnd,
+                            reasonCtrl.text,
+                            setDialogState,
+                          );
+                        },
+                      ),
+                    ] else if (selectedType == OverrideType.fullClosure) ...[
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: errColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.block_rounded, size: 18),
+                        label: const Text(
+                          'Close Store',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        onPressed: () async {
+                          if (selectedDateRange == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Please select a date range first.')),
+                            );
+                            return;
+                          }
+                          await _saveOverrideHelper(
+                            context,
+                            inventory,
+                            settings,
+                            selectedDateRange!,
+                            selectedType,
+                            customStart,
+                            customEnd,
+                            reasonCtrl.text,
+                            setDialogState,
+                          );
+                        },
+                      ),
+                    ] else if (selectedType == OverrideType.maintenanceWindow) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.amber.shade800,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.build_rounded, size: 16),
+                              label: const Text('Maintenance',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                if (selectedDateRange == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text('Please select a date range first.')),
+                                  );
+                                  return;
                                 }
+                                await _saveOverrideHelper(
+                                  context,
+                                  inventory,
+                                  settings,
+                                  selectedDateRange!,
+                                  selectedType,
+                                  customStart,
+                                  customEnd,
+                                  controller.text,
+                                  setDialogState,
+                                );
                               },
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Expanded(
-                            child: ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Closing Time',
-                                  style: TextStyle(fontSize: 12)),
-                              subtitle: Text(_formatTimeOfDayDisplay(closeTime),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                              trailing: const Icon(Icons.access_time_filled,
-                                  size: 18),
-                              onTap: () async {
-                                final picked = await showTimePicker(
-                                    context: context, initialTime: closeTime);
-                                if (picked != null && context.mounted) {
-                                  setDialogState(() => closeTime = picked);
-                                  await inventory
-                                      .saveStoreSettings(settings.copyWith(
-                                    dailyOpenTime: _formatTimeOfDay(openTime),
-                                    dailyCloseTime: _formatTimeOfDay(picked),
-                                  ));
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: errColor,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.warning_amber_rounded, size: 16),
+                              label: const Text('Emergency Maint.',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                final bool? confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (confirmCtx) => AlertDialog(
+                                    title: Row(
+                                      children: [
+                                        Icon(Icons.warning_amber_rounded,
+                                            color: errColor, size: 24),
+                                        const SizedBox(width: 8),
+                                        const Text('Confirm Emergency Maintenance'),
+                                      ],
+                                    ),
+                                    content: const Text(
+                                      'Are you sure you want to activate Emergency Maintenance?\n\n'
+                                      'This will immediately close the store and broadcast the emergency notice to all customers.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(confirmCtx, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: errColor,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        onPressed: () => Navigator.pop(confirmCtx, true),
+                                        icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                                        label: const Text('Confirm & Activate'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirm != true) return;
+
+                                try {
+                                  final msg = controller.text.trim().isNotEmpty
+                                      ? controller.text.trim()
+                                      : 'Emergency Maintenance - Will be back to you soon';
+                                  await inventory.toggleStoreStatus(true, message: msg);
+                                  if (!ctx.mounted) return;
+                                  Navigator.pop(ctx);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Emergency Maintenance activated!'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!ctx.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error: $e'),
+                                      backgroundColor: errColor,
+                                    ),
+                                  );
                                 }
                               },
                             ),
@@ -1233,175 +1575,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ],
                       ),
                     ],
-                    const Divider(height: 36),
-                    Text('Scheduled Outing / Vacation',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    Text(
-                        'Temporarily close the store for a specific date range.',
-                        style: Theme.of(context).textTheme.labelSmall),
-                    const SizedBox(height: 12),
-                    Builder(
-                      builder: (context) {
-                        final DateTime? sClose = schedClose;
-                        final DateTime? sOpen = schedOpen;
-
-                        return Column(
-                          children: [
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Starts At',
-                                  style: TextStyle(fontSize: 13)),
-                              subtitle: Text(sClose == null
-                                  ? 'Not set'
-                                  : DateFormat('MMM d, yyyy, h:mm a')
-                                      .format(sClose)),
-                              trailing:
-                                  const Icon(Icons.calendar_today, size: 18),
-                              onTap: () async {
-                                final date = await showDatePicker(
-                                    context: context,
-                                    initialDate: DateTime.now(),
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now()
-                                        .add(const Duration(days: 90)));
-                                if (date != null && context.mounted) {
-                                  final time = await showTimePicker(
-                                      context: context,
-                                      initialTime: TimeOfDay.now());
-                                  if (time != null) {
-                                    setDialogState(() => schedClose = DateTime(
-                                        date.year,
-                                        date.month,
-                                        date.day,
-                                        time.hour,
-                                        time.minute));
-                                  }
-                                }
-                              },
-                            ),
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Reopens At',
-                                  style: TextStyle(fontSize: 13)),
-                              subtitle: Text(sOpen == null
-                                  ? 'Not set'
-                                  : DateFormat('MMM d, yyyy, h:mm a')
-                                      .format(sOpen)),
-                              trailing: const Icon(Icons.restore, size: 18),
-                              onTap: () async {
-                                final date = await showDatePicker(
-                                    context: context,
-                                    initialDate: schedClose ?? DateTime.now(),
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now()
-                                        .add(const Duration(days: 90)));
-                                if (date != null && context.mounted) {
-                                  final time = await showTimePicker(
-                                      context: context,
-                                      initialTime:
-                                          const TimeOfDay(hour: 8, minute: 0));
-                                  if (time != null) {
-                                    setDialogState(() => schedOpen = DateTime(
-                                        date.year,
-                                        date.month,
-                                        date.day,
-                                        time.hour,
-                                        time.minute));
-                                  }
-                                }
-                              },
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    if (schedClose != null && schedOpen != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.save_rounded, size: 18),
-                          label: const Text('Save Schedule'),
-                          onPressed: () async {
-                            final DateTime? sClose = schedClose;
-                            final DateTime? sOpen = schedOpen;
-                            if (sClose == null || sOpen == null) return;
-
-                            try {
-                              await inventory.toggleStoreStatus(
-                                isClosed,
-                                message:
-                                    'Scheduled Outage: ${DateFormat('MMM d').format(sClose)} – ${DateFormat('MMM d').format(sOpen)}',
-                                closeAt: sClose,
-                                openAt: sOpen,
-                              );
-                              if (!ctx.mounted) return;
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text('Schedule saved successfully')),
-                              );
-                            } catch (e) {
-                              if (!ctx.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text('Error: $e'),
-                                    backgroundColor: errColor),
-                              );
-                            }
-                          },
-                        ),
-                      ),
-                    if (settings.scheduledCloseAt != null ||
-                        settings.scheduledOpenAt != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.cleaning_services_rounded,
-                            size: 16),
-                        label: const Text('Clear Outage Schedule'),
-                        onPressed: () async {
-                          await inventory.toggleStoreStatus(isClosed,
-                              closeAt: null, openAt: null);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        },
-                        style: TextButton.styleFrom(
-                            foregroundColor:
-                                Theme.of(context).colorScheme.onSurfaceVariant),
-                      ),
-                    const Divider(height: 36),
-                    Text('Order Expiration Windows',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    Text('Time customers have to pick up their orders.',
-                        style: Theme.of(context).textTheme.labelSmall),
-                    const SizedBox(height: 12),
-                    _WindowInput(
-                      label: 'Perishables Only',
-                      hint: 'e.g. 2 hours',
-                      value: settings.perishableWindowHours,
-                      onChanged: (v) => inventory.saveStoreSettings(
-                          settings.copyWith(perishableWindowHours: v)),
-                    ),
-                    const SizedBox(height: 12),
-                    _WindowInput(
-                      label: 'Mixed Orders',
-                      hint: 'e.g. 24 hours',
-                      value: settings.mixedWindowHours,
-                      onChanged: (v) => inventory.saveStoreSettings(
-                          settings.copyWith(mixedWindowHours: v)),
-                    ),
-                    const SizedBox(height: 12),
-                    _WindowInput(
-                      label: 'Non-Perishables',
-                      hint: 'e.g. 72 hours',
-                      value: settings.standardWindowHours,
-                      onChanged: (v) => inventory.saveStoreSettings(
-                          settings.copyWith(standardWindowHours: v)),
-                    ),
                   ],
                 ),
               ),
@@ -1415,6 +1588,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
         },
       ),
     );
+  }
+
+  static Future<void> _saveOverrideHelper(
+    BuildContext context,
+    InventoryProvider inventory,
+    StoreSettings settings,
+    DateTimeRange dateRange,
+    OverrideType type,
+    TimeOfDay customStart,
+    TimeOfDay customEnd,
+    String reasonText,
+    void Function(void Function()) setDialogState,
+  ) async {
+    final startDay = DateTime(
+      dateRange.start.year,
+      dateRange.start.month,
+      dateRange.start.day,
+    );
+    final endDay = DateTime(
+      dateRange.end.year,
+      dateRange.end.month,
+      dateRange.end.day,
+      23, 59, 59,
+    );
+
+    final newOverride = ScheduleOverride(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      startDate: startDay,
+      endDate: endDay,
+      type: type,
+      startMinutes: type == OverrideType.fullClosure
+          ? null
+          : customStart.hour * 60 + customStart.minute,
+      endMinutes: type == OverrideType.fullClosure
+          ? null
+          : customEnd.hour * 60 + customEnd.minute,
+      reason: reasonText.trim().isEmpty
+          ? (type == OverrideType.fullClosure
+              ? 'Closed All Day'
+              : type == OverrideType.maintenanceWindow
+                  ? 'Scheduled Maintenance'
+                  : 'Special Operating Hours')
+          : reasonText.trim(),
+    );
+
+    final updatedList = List<ScheduleOverride>.from(settings.overrides)
+      ..add(newOverride);
+    await inventory.saveStoreSettings(
+      settings.copyWith(overrides: updatedList),
+    );
+
+    setDialogState(() {});
+
+    if (context.mounted) {
+      final String snackMsg = type == OverrideType.fullClosure
+          ? 'Store closed for selected dates.'
+          : type == OverrideType.customOpenHours
+              ? 'Custom hours saved for selected dates.'
+              : 'Maintenance window scheduled.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(snackMsg)),
+      );
+    }
   }
 
   static TimeOfDay _parseTimeOfDay(String? timeStr, TimeOfDay fallback) {
@@ -1468,6 +1704,7 @@ class _RevenueProfitChart extends StatefulWidget {
 
 class _RevenueProfitChartState extends State<_RevenueProfitChart> {
   ChartPeriod _selectedPeriod = ChartPeriod.thisWeek;
+  bool _isExpanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1618,95 +1855,183 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                'Sales overview',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              PopupMenuButton<ChartPeriod>(
-                initialValue: _selectedPeriod,
-                onSelected: (ChartPeriod period) {
+              InkWell(
+                onTap: () {
                   setState(() {
-                    _selectedPeriod = period;
+                    _isExpanded = !_isExpanded;
                   });
                 },
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                itemBuilder: (BuildContext context) =>
-                    <PopupMenuEntry<ChartPeriod>>[
-                  for (final period in ChartPeriod.values)
-                    PopupMenuItem<ChartPeriod>(
-                      value: period,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (period == _selectedPeriod) ...[
-                            Icon(
-                              Icons.check_rounded,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 8),
-                          ] else ...[
-                            const SizedBox(width: 24),
-                          ],
-                          Text(
-                            period.label,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: period == _selectedPeriod
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outlineVariant
-                          .withValues(alpha: 0.6),
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _selectedPeriod.label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
+                        'Sales Overview',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      if (!_isExpanded) ...[
+                        const SizedBox(width: 12),
+                        Text(
+                          formatPeso(totalGross),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (isPositive ? Colors.green : Colors.red)
+                                .shade500
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isPositive
+                                    ? Icons.north_east_rounded
+                                    : Icons.south_east_rounded,
+                                size: 10,
+                                color: isPositive
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                percentText,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: isPositive
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PopupMenuButton<ChartPeriod>(
+                    initialValue: _selectedPeriod,
+                    onSelected: (ChartPeriod period) {
+                      setState(() {
+                        _selectedPeriod = period;
+                      });
+                    },
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<ChartPeriod>>[
+                      for (final period in ChartPeriod.values)
+                        PopupMenuItem<ChartPeriod>(
+                          value: period,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (period == _selectedPeriod) ...[
+                                Icon(
+                                  Icons.check_rounded,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 8),
+                              ] else ...[
+                                const SizedBox(width: 24),
+                              ],
+                              Text(
+                                period.label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: period == _selectedPeriod
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                    child: Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.6),
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _selectedPeriod.label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _isExpanded = !_isExpanded;
+                      });
+                    },
+                    icon: Icon(
+                      _isExpanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 16,
-            runSpacing: 12,
-            children: [
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _isExpanded
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 16,
+                        runSpacing: 12,
+                        children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1964,6 +2289,10 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
             ),
           ),
         ],
+                    )
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -1979,64 +2308,6 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
         Text(label,
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
       ],
-    );
-  }
-}
-
-class _WindowInput extends StatefulWidget {
-  final String label, hint;
-  final int? value;
-  final ValueChanged<int?> onChanged;
-
-  const _WindowInput({
-    required this.label,
-    required this.hint,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  State<_WindowInput> createState() => _WindowInputState();
-}
-
-class _WindowInputState extends State<_WindowInput> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.value?.toString() ?? '');
-  }
-
-  @override
-  void didUpdateWidget(covariant _WindowInput oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.value != oldWidget.value) {
-      final newText = widget.value?.toString() ?? '';
-      if (_controller.text != newText) {
-        _controller.text = newText;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      keyboardType: TextInputType.number,
-      controller: _controller,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        hintText: widget.hint,
-        border: const OutlineInputBorder(),
-        isDense: true,
-      ),
-      onChanged: (v) => widget.onChanged(int.tryParse(v)),
     );
   }
 }

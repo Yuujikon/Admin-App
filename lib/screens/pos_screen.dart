@@ -126,6 +126,7 @@ class _PosScreenState extends State<PosScreen> {
                 variantId: vid,
                 name: name,
                 variantName: variant?.name,
+                barcode: variant?.barcode ?? p.barcode ?? '',
                 price: price,
                 costPrice: cost,
                 qty: 1,
@@ -176,6 +177,7 @@ class _PosScreenState extends State<PosScreen> {
                   CartItem(
                       productId: p.id,
                       name: p.name,
+                      barcode: p.barcode ?? '',
                       price: p.price,
                       costPrice: p.costPrice,
                       qty: 1,

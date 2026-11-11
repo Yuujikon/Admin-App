@@ -32,14 +32,7 @@ class ProductDetailScreen extends StatefulWidget {
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void _openEditSheet(BuildContext context, Product activeProduct) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => ProductEditSheet(product: activeProduct),
-    );
+    ProductEditSheet.show(context: context, product: activeProduct);
   }
 
   void _openReceiveDeliverySheet(BuildContext context, Product activeProduct) {
@@ -60,14 +53,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       } catch (_) {}
     }
 
-    showModalBottomSheet(
+    ReceiveDeliverySheet.show(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ReceiveDeliverySheet(
-        initialProduct: activeProduct,
-        inquiry: matchingInquiry,
-      ),
+      initialProduct: activeProduct,
+      inquiry: matchingInquiry,
     );
   }
 

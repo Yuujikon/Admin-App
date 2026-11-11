@@ -332,31 +332,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _showAddProductSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const AddProductSheet(),
-    );
+    AddProductSheet.show(context: context);
   }
 
   void _showSheet(BuildContext context, Product? product) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => ProductEditSheet(product: product),
-    );
+    ProductEditSheet.show(context: context, product: product);
   }
 
   void _showReceiveDeliverySheet(BuildContext context, Product? product) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ReceiveDeliverySheet(initialProduct: product),
-    );
+    ReceiveDeliverySheet.show(context: context, initialProduct: product);
   }
 }
 

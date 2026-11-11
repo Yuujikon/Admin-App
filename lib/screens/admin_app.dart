@@ -226,6 +226,7 @@ class _AdminAppState extends State<AdminApp> {
                 ),
                 Expanded(
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Persistent Side Navigation Bar for Tablet/Medium & Desktop/Expanded
                       if (!isCompact)

@@ -204,12 +204,9 @@ class PendingDeliveriesList extends StatelessWidget {
                     ),
                     ElevatedButton.icon(
                       onPressed: () {
-                        showModalBottomSheet(
+                        ReceiveDeliverySheet.show(
                           context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) =>
-                              ReceiveDeliverySheet(inquiry: inquiry),
+                          inquiry: inquiry,
                         );
                       },
                       icon: const Icon(Icons.check_circle_outline_rounded,

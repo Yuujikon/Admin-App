@@ -15,6 +15,27 @@ class AddProductSheet extends StatelessWidget {
     this.product,
   });
 
+  /// Standard launcher for [AddProductSheet] as a bottom sheet with gesture safety & scroll control.
+  static Future<T?> show<T>({
+    required BuildContext context,
+    String? initialBarcode,
+    String? initialSupplierId,
+    Product? product,
+  }) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddProductSheet(
+        initialBarcode: initialBarcode,
+        initialSupplierId: initialSupplierId,
+        product: product,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ProductEditSheet(

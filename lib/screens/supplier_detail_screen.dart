@@ -667,14 +667,9 @@ class _ProductsTabState extends State<_ProductsTab> {
                                   const Icon(Icons.more_vert_rounded, size: 20),
                               onSelected: (val) {
                                 if (val == 'edit') {
-                                  showModalBottomSheet(
+                                  ProductEditSheet.show(
                                     context: context,
-                                    isScrollControlled: true,
-                                    shape: const RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.vertical(
-                                            top: Radius.circular(24))),
-                                    builder: (_) =>
-                                        ProductEditSheet(product: p),
+                                    product: p,
                                   );
                                 } else if (val == 'unlink') {
                                   _confirmUnlinkProduct(
@@ -1035,12 +1030,9 @@ class _LinkExistingProductsModalState
 
 // Helper Sheet Launchers
 void _showAddProductSheet(BuildContext context, String supplierId) {
-  showModalBottomSheet(
+  AddProductSheet.show(
     context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    builder: (_) => AddProductSheet(initialSupplierId: supplierId),
+    initialSupplierId: supplierId,
   );
 }
 
@@ -1785,12 +1777,9 @@ class _InquiryCardState extends State<_InquiryCard> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        showModalBottomSheet(
+                        ReceiveDeliverySheet.show(
                           context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) =>
-                              ReceiveDeliverySheet(inquiry: inquiry),
+                          inquiry: inquiry,
                         );
                       },
                       icon: const Icon(Icons.check_circle_outline_rounded,

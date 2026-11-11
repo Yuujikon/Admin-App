@@ -898,7 +898,11 @@ class InventoryProvider extends BaseProvider {
           final double weightedCostPrice =
               item.qty > 0 ? (lineItemTotalCogs / item.qty) : item.costPrice;
 
+          final String fallbackBarcode =
+              item.barcode.isNotEmpty ? item.barcode : (p.barcode ?? '');
+
           processedItems.add(item.copyWith(
+            barcode: fallbackBarcode,
             costPrice: weightedCostPrice,
             totalCogs: lineItemTotalCogs,
             depletedBatches: depletedBatches,

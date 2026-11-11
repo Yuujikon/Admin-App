@@ -21,6 +21,25 @@ class ReceiveDeliverySheet extends StatefulWidget {
     this.inquiry,
   });
 
+  /// Standard launcher for [ReceiveDeliverySheet] as a bottom sheet with gesture safety & scroll control.
+  static Future<T?> show<T>({
+    required BuildContext context,
+    Product? initialProduct,
+    RestockInquiry? inquiry,
+  }) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ReceiveDeliverySheet(
+        initialProduct: initialProduct,
+        inquiry: inquiry,
+      ),
+    );
+  }
+
   @override
   State<ReceiveDeliverySheet> createState() => _ReceiveDeliverySheetState();
 }
@@ -123,13 +142,85 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (widget.inquiry != null) {
-      return _buildInquiryReceivingForm(context, widget.inquiry!);
+  bool _hasUnsavedChanges() {
+    if (_saving) return false;
+
+    if (_qtyCtrl.text.trim().isNotEmpty ||
+        _costCtrl.text.trim().isNotEmpty ||
+        _extraItemsCtrl.text.trim().isNotEmpty ||
+        _invoiceCtrl.text.trim().isNotEmpty ||
+        _notesCtrl.text.trim().isNotEmpty ||
+        (_selectedProduct != null && _selectedProduct != widget.initialProduct)) {
+      return true;
     }
 
-    return _buildSingleProductReceivingForm(context);
+    for (final c in _inquiryQtyControllers.values) {
+      if (c.text.trim().isNotEmpty) return true;
+    }
+    for (final c in _inquiryCostControllers.values) {
+      if (c.text.trim().isNotEmpty) return true;
+    }
+    for (final c in _inquiryNoteControllers.values) {
+      if (c.text.trim().isNotEmpty) return true;
+    }
+
+    return false;
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges()) return true;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard Unsaved Restock Info?'),
+        content: const Text(
+          'You have entered delivery/restock quantities or notes. Are you sure you want to discard your changes and close?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Discard Changes'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _handleClose() async {
+    final shouldPop = await _confirmDiscardChanges();
+    if (shouldPop && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.90;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _confirmDiscardChanges();
+        if (shouldPop && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: widget.inquiry != null
+          ? _buildInquiryReceivingForm(context, widget.inquiry!, maxHeight)
+          : _buildSingleProductReceivingForm(context, maxHeight),
+    );
   }
 
   void _acceptAllInquiryQty(RestockInquiry inquiry) {
@@ -155,7 +246,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
   }
 
   Widget _buildInquiryReceivingForm(
-      BuildContext context, RestockInquiry inquiry) {
+      BuildContext context, RestockInquiry inquiry, double maxHeight) {
     double calcTotalReceived() {
       double sum = 0.0;
       for (var item in inquiry.items) {
@@ -177,6 +268,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
+          constraints: BoxConstraints(
+            maxHeight: maxHeight,
+          ),
           decoration: BoxDecoration(
             color: Theme.of(context)
                 .colorScheme
@@ -226,25 +320,31 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                       children: [
                         Expanded(
                           child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Verify Delivery #${inquiry.inquiryNumber}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 18),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Verify Delivery #${inquiry.inquiryNumber}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900, fontSize: 18),
+                              ),
+                              Text(
+                                'Supplier: ${inquiry.supplierName}',
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
-                        Text(
-                          'Supplier: ${inquiry.supplierName}',
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.bold),
+                        IconButton(
+                          onPressed: _handleClose,
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          tooltip: 'Close',
+                          visualDensity: VisualDensity.compact,
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
               const Divider(height: 24),
 
               TextFormField(
@@ -642,7 +742,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
     );
   }
 
-  Widget _buildSingleProductReceivingForm(BuildContext context) {
+  Widget _buildSingleProductReceivingForm(BuildContext context, double maxHeight) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final inventory = context.watch<InventoryProvider>();
     final products = inventory.products;
@@ -670,6 +770,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
+          constraints: BoxConstraints(
+            maxHeight: maxHeight,
+          ),
           decoration: BoxDecoration(
             color: Theme.of(context)
                 .colorScheme
@@ -717,21 +820,30 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Receive Stock Delivery',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 18,
-                            color: Theme.of(context).colorScheme.onSurface,
+                        Expanded(
+                          child: Text(
+                            'Receive Stock Delivery',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                           ),
                         ),
-                  IconButton.filledTonal(
-                    icon: const Icon(Icons.qr_code_scanner),
-                    tooltip: 'Scan Barcode',
-                    onPressed: _scanBarcode,
-                  ),
-                ],
-              ),
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.qr_code_scanner),
+                          tooltip: 'Scan Barcode',
+                          onPressed: _scanBarcode,
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          onPressed: _handleClose,
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          tooltip: 'Close',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
               const SizedBox(height: 16),
 
               DropdownButtonFormField<String>(
