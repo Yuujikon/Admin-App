@@ -464,7 +464,7 @@ class OrderProvider extends BaseProvider {
     _processedCancelledOrderIds.add(order.id);
 
     try {
-      final allProducts = await _fs.getProductsOnce();
+      final allProducts = await _fs.productsStream().first;
       final Map<String, Product> productMap = {
         for (final p in allProducts) p.id: p
       };
