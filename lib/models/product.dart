@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/format.dart';
@@ -168,6 +170,20 @@ class Product {
   int get availableStock {
     final avail = stock - reservedStock;
     return avail > 0 ? avail : 0;
+  }
+
+  Uint8List? _cachedImageBytes;
+
+  /// Returns cached decoded bytes of [photoBase64] to prevent image flickering during rebuilds.
+  Uint8List? get imageBytes {
+    if (_cachedImageBytes == null &&
+        photoBase64 != null &&
+        photoBase64!.trim().isNotEmpty) {
+      try {
+        _cachedImageBytes = base64Decode(photoBase64!.trim());
+      } catch (_) {}
+    }
+    return _cachedImageBytes;
   }
 
   // ── UOM CONVERSION HELPERS ──

@@ -432,9 +432,9 @@ class _ProductRow extends StatelessWidget {
                       child: Opacity(
                         opacity:
                             product.status == ProductStatus.draft ? 0.5 : 1.0,
-                        child: product.photoBase64 != null
-                            ? Image.memory(base64Decode(product.photoBase64!),
-                                fit: BoxFit.cover)
+                        child: product.imageBytes != null
+                            ? Image.memory(product.imageBytes!,
+                                fit: BoxFit.cover, gaplessPlayback: true)
                             : Icon(
                                 isExpired
                                     ? Icons.event_busy_rounded
@@ -672,8 +672,8 @@ class _ProductRow extends StatelessWidget {
                       ),
                       const Spacer(),
                       IconButton(
-                        constraints: const BoxConstraints(
-                            minWidth: 40, minHeight: 40),
+                        constraints:
+                            const BoxConstraints(minWidth: 40, minHeight: 40),
                         padding: EdgeInsets.zero,
                         icon: Icon(Icons.qr_code_2_rounded,
                             color: Theme.of(context).colorScheme.primary,
@@ -683,8 +683,8 @@ class _ProductRow extends StatelessWidget {
                             BarcodePrintDialog.show(context, product),
                       ),
                       IconButton(
-                        constraints: const BoxConstraints(
-                            minWidth: 40, minHeight: 40),
+                        constraints:
+                            const BoxConstraints(minWidth: 40, minHeight: 40),
                         padding: EdgeInsets.zero,
                         icon: Icon(Icons.history_toggle_off_rounded,
                             color: Theme.of(context).colorScheme.primary,
@@ -700,8 +700,8 @@ class _ProductRow extends StatelessWidget {
                         },
                       ),
                       IconButton(
-                        constraints: const BoxConstraints(
-                            minWidth: 40, minHeight: 40),
+                        constraints:
+                            const BoxConstraints(minWidth: 40, minHeight: 40),
                         padding: EdgeInsets.zero,
                         icon: const Icon(Icons.edit_note_rounded,
                             size: 22, color: Colors.grey),

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Data model representing a product bundle / combo deal.
@@ -22,6 +24,20 @@ class ProductBundle {
 
   /// Indicates if bundle is currently available for sale.
   final bool isActive;
+
+  Uint8List? _cachedImageBytes;
+
+  /// Returns cached decoded bytes of [photoBase64] to prevent image flickering during rebuilds.
+  Uint8List? get imageBytes {
+    if (_cachedImageBytes == null &&
+        photoBase64 != null &&
+        photoBase64!.trim().isNotEmpty) {
+      try {
+        _cachedImageBytes = base64Decode(photoBase64!.trim());
+      } catch (_) {}
+    }
+    return _cachedImageBytes;
+  }
 
   /// Creates a [ProductBundle] instance.
   const ProductBundle({

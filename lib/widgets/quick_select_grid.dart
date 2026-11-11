@@ -92,9 +92,9 @@ class QuickSelectGrid extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: product.photoBase64 != null
-                          ? Image.memory(base64Decode(product.photoBase64!),
-                              fit: BoxFit.cover)
+                      child: product.imageBytes != null
+                          ? Image.memory(product.imageBytes!,
+                              fit: BoxFit.cover, gaplessPlayback: true)
                           : Center(
                               child: Icon(
                                 Icons.shopping_basket_outlined,

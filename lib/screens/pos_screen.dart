@@ -742,9 +742,9 @@ class _BundleTile extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 color: Colors.white,
-                child: bundle.photoBase64 != null
-                    ? Image.memory(base64Decode(bundle.photoBase64!),
-                        fit: BoxFit.cover)
+                child: bundle.imageBytes != null
+                    ? Image.memory(bundle.imageBytes!,
+                        fit: BoxFit.cover, gaplessPlayback: true)
                     : const Icon(Icons.auto_awesome_motion_rounded,
                         size: 32, color: Colors.grey),
               ),
@@ -805,9 +805,9 @@ class _PosProductTile extends StatelessWidget {
                   child: Container(
                       width: double.infinity,
                       color: Colors.white,
-                      child: p.photoBase64 != null
-                          ? Image.memory(base64Decode(p.photoBase64!),
-                              fit: BoxFit.cover)
+                      child: p.imageBytes != null
+                          ? Image.memory(p.imageBytes!,
+                              fit: BoxFit.cover, gaplessPlayback: true)
                           : const Icon(Icons.inventory_2_outlined, size: 32))),
               Padding(
                   padding: const EdgeInsets.all(8),
