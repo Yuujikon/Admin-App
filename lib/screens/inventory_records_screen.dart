@@ -5,14 +5,16 @@ import 'package:intl/intl.dart';
 import '../models/delivery_log.dart';
 import '../models/product.dart';
 import '../models/loss_record.dart';
+import '../models/shift_session.dart';
 import '../providers/inventory_provider.dart';
+import '../providers/shift_provider.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/premium_components.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
 
-enum _RecordTab { deliveryLogs, batchLots, lossWaste, allTimeline }
+enum _RecordTab { deliveryLogs, batchLots, lossWaste, registerShifts, allTimeline }
 
 enum _DateFilter { all, today, thisWeek, thisMonth }
 
@@ -71,10 +73,33 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final inventory = context.watch<InventoryProvider>();
+    final shiftProvider = context.watch<ShiftProvider>();
 
     final deliveryLogs = inventory.deliveryLogs;
     final products = inventory.products;
     final lossRecords = inventory.lossRecords;
+
+    final currentShift = shiftProvider.currentShift;
+    final pastShifts = shiftProvider.pastShifts;
+    final List<ShiftSession> allShifts = [
+      if (currentShift != null) currentShift,
+      ...pastShifts,
+    ];
+
+    // Filtered Register Shifts
+    final filteredShifts = allShifts.where((shift) {
+      final matchStart = _matchesDateFilter(shift.openedAt);
+      final matchEnd =
+          shift.closedAt != null ? _matchesDateFilter(shift.closedAt!) : false;
+      if (!matchStart && !matchEnd) return false;
+
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      return shift.cashierName.toLowerCase().contains(q) ||
+          shift.status.name.toLowerCase().contains(q) ||
+          'shift'.contains(q) ||
+          'register'.contains(q);
+    }).toList();
 
     // Filtered Delivery Logs
     final filteredLogs = deliveryLogs.where((log) {
@@ -145,6 +170,43 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         type: _TimelineType.loss,
         originalData: loss,
       ));
+    }
+    for (final shift in filteredShifts) {
+      timelineItems.add(_TimelineItem(
+        title: 'Register Shift Started',
+        productName: 'Cashier: ${shift.cashierName}',
+        qtyText: 'Float: ${formatPeso(shift.openingFloat)}',
+        isPositive: true,
+        costText: formatPeso(shift.openingFloat),
+        subText:
+            'Opened: ${DateFormat('h:mm a').format(shift.openedAt)} • Status: ${shift.status == ShiftStatus.active ? "ACTIVE SHIFT" : "Closed"}',
+        timestamp: shift.openedAt,
+        type: _TimelineType.shiftStart,
+        originalData: shift,
+      ));
+
+      if (shift.closedAt != null) {
+        final variance = shift.cashDifference;
+        final varText = variance == 0
+            ? 'No variance'
+            : (variance > 0
+                ? 'Over +${formatPeso(variance)}'
+                : 'Short -${formatPeso(variance.abs())}');
+
+        timelineItems.add(_TimelineItem(
+          title: 'Register Shift Closed',
+          productName: 'Cashier: ${shift.cashierName}',
+          qtyText: 'Drawer: ${formatPeso(shift.actualCashCounted ?? 0)}',
+          isPositive: !shift.isShortage,
+          costText:
+              'Sales: ${formatPeso(shift.cashSales + shift.gcashSales)}',
+          subText:
+              'Closed: ${DateFormat('h:mm a').format(shift.closedAt!)} • Variance: $varText',
+          timestamp: shift.closedAt!,
+          type: _TimelineType.shiftEnd,
+          originalData: shift,
+        ));
+      }
     }
     timelineItems.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
@@ -327,6 +389,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     _buildTabChip('Loss & Spoilage (${filteredLosses.length})',
                         _RecordTab.lossWaste, Icons.delete_outline_rounded),
                     const SizedBox(width: 6),
+                    _buildTabChip('Register Shifts (${filteredShifts.length})',
+                        _RecordTab.registerShifts, Icons.point_of_sale_rounded),
+                    const SizedBox(width: 6),
                     _buildTabChip('Combined Timeline', _RecordTab.allTimeline,
                         Icons.history_rounded),
                   ],
@@ -346,6 +411,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     filteredLogs: filteredLogs,
                     filteredBatches: filteredBatches,
                     filteredLosses: filteredLosses,
+                    filteredShifts: filteredShifts,
                     timelineItems: timelineItems,
                     products: products,
                   ),
@@ -530,6 +596,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     required List<DeliveryLog> filteredLogs,
     required List<_BatchRecordWrapper> filteredBatches,
     required List<LossRecord> filteredLosses,
+    required List<ShiftSession> filteredShifts,
     required List<_TimelineItem> timelineItems,
     required List<Product> products,
   }) {
@@ -580,6 +647,21 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           itemBuilder: (ctx, i) => _buildLossRecordRow(ctx, filteredLosses[i]),
         );
 
+      case _RecordTab.registerShifts:
+        if (filteredShifts.isEmpty) {
+          return const PremiumEmptyState(
+            icon: Icons.point_of_sale_rounded,
+            title: 'No Register Shift Sessions',
+            subtitle:
+                'No cashier register shift sessions match your search or date filter.',
+          );
+        }
+        return ListView.separated(
+          itemCount: filteredShifts.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, i) => _buildShiftRow(ctx, filteredShifts[i]),
+        );
+
       case _RecordTab.allTimeline:
         if (timelineItems.isEmpty) {
           return const PremiumEmptyState(
@@ -591,7 +673,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         return ListView.separated(
           itemCount: timelineItems.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (ctx, i) => _buildTimelineRow(ctx, timelineItems[i]),
+          itemBuilder: (ctx, i) => _buildTimelineRow(ctx, timelineItems[i], products),
         );
     }
   }
@@ -901,8 +983,12 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
-  Widget _buildTimelineRow(BuildContext context, _TimelineItem item) {
+  Widget _buildTimelineRow(
+      BuildContext context, _TimelineItem item, List<Product> products) {
     final theme = Theme.of(context);
+
+    final isShift = item.type == _TimelineType.shiftStart ||
+        item.type == _TimelineType.shiftEnd;
 
     return Container(
       decoration: BoxDecoration(
@@ -912,21 +998,40 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: ListTile(
+        onTap: item.originalData is ShiftSession
+            ? () => _showShiftDetailModal(context, item.originalData as ShiftSession)
+            : (item.originalData is DeliveryLog
+                ? () => _showDeliveryLogDetailModal(
+                    context, item.originalData as DeliveryLog, products)
+                : null),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: item.isPositive
-                ? Colors.green.shade800.withValues(alpha: 0.12)
-                : Colors.red.shade800.withValues(alpha: 0.12),
+            color: item.type == _TimelineType.shiftStart
+                ? Colors.amber.shade800.withValues(alpha: 0.12)
+                : (item.type == _TimelineType.shiftEnd
+                    ? Colors.purple.shade800.withValues(alpha: 0.12)
+                    : (item.isPositive
+                        ? Colors.green.shade800.withValues(alpha: 0.12)
+                        : Colors.red.shade800.withValues(alpha: 0.12))),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(
-            item.isPositive
-                ? Icons.add_shopping_cart_rounded
-                : Icons.remove_shopping_cart_rounded,
-            color:
-                item.isPositive ? Colors.green.shade800 : Colors.red.shade800,
+            item.type == _TimelineType.shiftStart
+                ? Icons.point_of_sale_rounded
+                : (item.type == _TimelineType.shiftEnd
+                    ? Icons.lock_clock_rounded
+                    : (item.isPositive
+                        ? Icons.add_shopping_cart_rounded
+                        : Icons.remove_shopping_cart_rounded)),
+            color: item.type == _TimelineType.shiftStart
+                ? Colors.amber.shade800
+                : (item.type == _TimelineType.shiftEnd
+                    ? Colors.purple.shade800
+                    : (item.isPositive
+                        ? Colors.green.shade800
+                        : Colors.red.shade800)),
             size: 24,
           ),
         ),
@@ -943,11 +1048,150 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
               item.qtyText,
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: item.isPositive
-                    ? Colors.green.shade800
-                    : Colors.red.shade800,
+                color: isShift
+                    ? (item.type == _TimelineType.shiftStart
+                        ? Colors.amber.shade800
+                        : Colors.purple.shade800)
+                    : (item.isPositive
+                        ? Colors.green.shade800
+                        : Colors.red.shade800),
                 fontSize: 14,
               ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${item.title} • ${item.costText}',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Expanded(
+                      child: Text(item.subText,
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis)),
+                  Text(formatTimeAgo(item.timestamp),
+                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+      ),
+    );
+  }
+
+  Widget _buildShiftRow(BuildContext context, ShiftSession shift) {
+    final theme = Theme.of(context);
+    final isActive = shift.status == ShiftStatus.active;
+    final isShort = shift.isShortage;
+    final isOver = shift.isOverage;
+
+    final totalSales = shift.cashSales + shift.gcashSales;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: ListTile(
+        onTap: () => _showShiftDetailModal(context, shift),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isActive
+                ? Colors.amber.shade800.withValues(alpha: 0.12)
+                : Colors.purple.shade800.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(
+            isActive ? Icons.point_of_sale_rounded : Icons.lock_clock_rounded,
+            color: isActive ? Colors.amber.shade800 : Colors.purple.shade800,
+            size: 24,
+          ),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Shift: ${shift.cashierName}',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Colors.amber.shade800
+                    : (isShort
+                        ? Colors.red.shade700
+                        : (isOver ? Colors.blue.shade700 : Colors.green.shade800)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                isActive
+                    ? 'ACTIVE'
+                    : (isShort ? 'SHORT' : (isOver ? 'OVER' : 'BALANCED')),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 10),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Float: ${formatPeso(shift.openingFloat)} • Sales: ${formatPeso(totalSales)}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Wrap(
+                spacing: 8,
+                runSpacing: 2,
+                children: [
+                  Text(
+                    'Opened: ${DateFormat('MMM d, h:mm a').format(shift.openedAt)}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  if (shift.closedAt != null)
+                    Text(
+                      '• Closed: ${DateFormat('MMM d, h:mm a').format(shift.closedAt!)}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+      ),
+    );
+  }
             ),
           ],
         ),
@@ -1083,6 +1327,107 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
+  void _showShiftDetailModal(BuildContext context, ShiftSession shift) {
+    final isActive = shift.status == ShiftStatus.active;
+    final totalSales = shift.cashSales + shift.gcashSales;
+    final variance = shift.cashDifference;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? Colors.amber.shade800.withValues(alpha: 0.12)
+                        : Colors.purple.shade800.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    isActive
+                        ? Icons.point_of_sale_rounded
+                        : Icons.lock_clock_rounded,
+                    color:
+                        isActive ? Colors.amber.shade800 : Colors.purple.shade800,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Shift: ${shift.cashierName}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 18)),
+                      Text(
+                        isActive
+                            ? 'Active Cashier Register Shift'
+                            : 'Closed Register Shift Session',
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 32),
+            _detailRow('Cashier Name', shift.cashierName, isBold: true),
+            _detailRow('Session Status', isActive ? 'ACTIVE SHIFT' : 'CLOSED',
+                color: isActive ? Colors.amber.shade800 : Colors.purple.shade800),
+            _detailRow('Opened At', DateFormat('MMM d, yyyy • h:mm a').format(shift.openedAt)),
+            if (shift.closedAt != null)
+              _detailRow('Closed At', DateFormat('MMM d, yyyy • h:mm a').format(shift.closedAt!)),
+            _detailRow('Opening Float', formatPeso(shift.openingFloat)),
+            _detailRow('Cash Sales', formatPeso(shift.cashSales)),
+            _detailRow('GCash / E-Wallet Sales', formatPeso(shift.gcashSales)),
+            _detailRow('Total Shift Sales', formatPeso(totalSales), isBold: true),
+            if (shift.totalCashDrops > 0)
+              _detailRow('Mid-Shift Cash Drops', '-${formatPeso(shift.totalCashDrops)}', color: Colors.orange.shade800),
+            _detailRow('Expected Cash Drawer', formatPeso(shift.expectedCash)),
+            if (shift.actualCashCounted != null)
+              _detailRow('Actual Cash Counted', formatPeso(shift.actualCashCounted!), isBold: true),
+            if (!isActive && shift.actualCashCounted != null)
+              _detailRow(
+                'Drawer Variance',
+                variance == 0
+                    ? '₱0.00 (Balanced)'
+                    : (variance > 0
+                        ? '+${formatPeso(variance)} (Overage)'
+                        : '-${formatPeso(variance.abs())} (Shortage)'),
+                isBold: true,
+                color: variance == 0
+                    ? Colors.green.shade800
+                    : (variance > 0 ? Colors.blue.shade800 : Colors.red.shade800),
+              ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _detailRow(String label, String value,
       {bool isBold = false, Color? color}) {
     return Padding(
@@ -1119,7 +1464,7 @@ class _BatchRecordWrapper {
   _BatchRecordWrapper({required this.product, required this.batch});
 }
 
-enum _TimelineType { delivery, loss }
+enum _TimelineType { delivery, loss, shiftStart, shiftEnd }
 
 class _TimelineItem {
   final String title;

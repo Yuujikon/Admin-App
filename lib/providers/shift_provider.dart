@@ -44,7 +44,7 @@ class ShiftProvider extends BaseProvider {
     registerSubscription(_shifts
         .where('status', isEqualTo: 'closed')
         .orderBy('closedAt', descending: true)
-        .limit(20)
+        .limit(100)
         .snapshots()
         .listen((snap) {
       _pastShifts =
