@@ -87,7 +87,8 @@ class OrderProvider extends BaseProvider {
               !_processedCancelledOrderIds.contains(newOrder.id)) {
             _processOrderRestockAndLoss(
               newOrder,
-              reason: newOrder.rejectionReason ?? 'Cancelled by customer via app',
+              reason:
+                  newOrder.rejectionReason ?? 'Cancelled by customer via app',
               processedBy: newOrder.customerName,
             );
           }
@@ -286,10 +287,8 @@ class OrderProvider extends BaseProvider {
     if (order.status == OrderStatus.collected ||
         order.status == OrderStatus.cancelled) return;
 
-    // 1. Ensure stock is deducted if not already done (done at 'staging' phase)
-    if (order.status == OrderStatus.pending) {
-      await _fs.decrementStockBatch(order.items);
-    }
+    // 1. Deduct main stock and clear the reservation when an order is completed.
+    await _fs.fulfillOrderStockBatch(order.items);
 
     // 2. Set final status
     final updatedOrder = order.copyWith(
@@ -325,12 +324,10 @@ class OrderProvider extends BaseProvider {
   }) async {
     final order = _orders.firstWhere((o) => o.id == orderId);
 
-    // 1. Ensure stock is deducted for pre-order items if pending
-    if (order.status == OrderStatus.pending) {
-      await _fs.decrementStockBatch(order.items);
-    }
+    // 1. Deduct main stock and clear the reservation for pre-order items
+    await _fs.fulfillOrderStockBatch(order.items);
 
-    // 2. Deduct stock for additional walk-in items
+    // 2. Deduct main stock ONLY for additional walk-in items
     if (walkInItems.isNotEmpty) {
       await _fs.decrementStockBatch(walkInItems);
     }
@@ -366,7 +363,6 @@ class OrderProvider extends BaseProvider {
     return tx;
   }
 
-
   Future<void> advanceStatus(String orderId) async {
     if (_processingOrders.contains(orderId)) return;
     _processingOrders.add(orderId);
@@ -391,10 +387,9 @@ class OrderProvider extends BaseProvider {
     };
     if (next == null) return false;
 
-    // Deduct stock when admin starts packing (moves to staging)
-    if (next == OrderStatus.staging) {
-      await _fs.decrementStockBatch(order.items);
-    }
+    // DO NOT deduct any stock when advancing from pending -> staging -> ready.
+    // The item is still physically in the store. The Customer App's reservedStock
+    // prevents other customers from buying it. We just update the order document status.
 
     final updatedOrder = order.copyWith(
       status: next,
@@ -469,7 +464,6 @@ class OrderProvider extends BaseProvider {
         for (final p in allProducts) p.id: p
       };
 
-      final List<CartItem> itemsToRestock = [];
       final now = DateTime.now();
       final String adminUser = processedBy ?? _adminName;
 
@@ -502,11 +496,9 @@ class OrderProvider extends BaseProvider {
           unfitReason = 'Cancellation reason: $reason';
         }
 
-        if (isFitToRestock) {
-          // Fit for restock: create negative qty cart item for decrementStockBatch (which increments stock)
-          itemsToRestock.add(item.copyWith(qty: -item.qty));
-        } else {
+        if (!isFitToRestock) {
           // Unfit for restock: log as an Inventory Loss / Spoilage Record
+          // (This will also deduct it from main stock in FirestoreService)
           final lossRecord = LossRecord(
             id: const Uuid().v4(),
             productId: item.productId,
@@ -526,10 +518,9 @@ class OrderProvider extends BaseProvider {
         }
       }
 
-      // Restock fit items back into active product inventory
-      if (itemsToRestock.isNotEmpty) {
-        await _fs.decrementStockBatch(itemsToRestock);
-      }
+      // 3. For any cancellation on Admin side, ALWAYS clear the reservedStock for all items.
+      // We do not touch main stock unless it was logged as a LossRecord above.
+      await _fs.clearReservedStockBatch(order.items);
     } catch (e) {
       debugPrint('Error processing restock/loss for order ${order.id}: $e');
     }

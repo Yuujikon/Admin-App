@@ -183,6 +183,49 @@ class FirestoreService {
     await batch.commit();
   }
 
+  /// Deduct main stock and clear the reservedStock for a fulfilled order
+  Future<void> fulfillOrderStockBatch(List<CartItem> items) async {
+    final batch = _db.batch();
+    for (final item in items) {
+      final docRef = _products.doc(item.productId);
+      if (item.variantId != null && item.variantId!.isNotEmpty) {
+        batch.update(docRef, {
+          'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
+          'variants.${item.variantId}.reservedStock':
+              FieldValue.increment(-item.qty),
+          'stock': FieldValue.increment(-item.qty),
+          'reservedStock': FieldValue.increment(-item.qty),
+        });
+      } else {
+        batch.update(docRef, {
+          'stock': FieldValue.increment(-item.qty),
+          'reservedStock': FieldValue.increment(-item.qty),
+        });
+      }
+    }
+    await batch.commit();
+  }
+
+  /// Just clear the reservedStock without affecting main stock (e.g. for cancelled orders)
+  Future<void> clearReservedStockBatch(List<CartItem> items) async {
+    final batch = _db.batch();
+    for (final item in items) {
+      final docRef = _products.doc(item.productId);
+      if (item.variantId != null && item.variantId!.isNotEmpty) {
+        batch.update(docRef, {
+          'variants.${item.variantId}.reservedStock':
+              FieldValue.increment(-item.qty),
+          'reservedStock': FieldValue.increment(-item.qty),
+        });
+      } else {
+        batch.update(docRef, {
+          'reservedStock': FieldValue.increment(-item.qty),
+        });
+      }
+    }
+    await batch.commit();
+  }
+
   // ── Catalog ────────────────────────────────────────────────────────────────
 
   Stream<List<CatalogProduct>> catalogStream() =>
