@@ -1263,6 +1263,233 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
+  Widget _buildInquiryRow(BuildContext context, RestockInquiry inquiry) {
+    final theme = Theme.of(context);
+    final statusColor = switch (inquiry.status) {
+      RestockInquiryStatus.draft => Colors.grey,
+      RestockInquiryStatus.pending => Colors.orange.shade800,
+      RestockInquiryStatus.sent => Colors.blue.shade700,
+      RestockInquiryStatus.acknowledged => Colors.cyan.shade700,
+      RestockInquiryStatus.partiallyFulfilled => Colors.purple.shade700,
+      RestockInquiryStatus.fulfilled => Colors.green.shade800,
+      RestockInquiryStatus.cancelled => Colors.red.shade700,
+    };
+
+    final itemsSummary = inquiry.items
+        .map((i) => '${i.productName} (${i.requestedQty} ${i.unit})')
+        .join(', ');
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: ListTile(
+        onTap: () => _showInquiryDetailModal(context, inquiry),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: statusColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(
+            Icons.mark_email_read_outlined,
+            color: statusColor,
+            size: 24,
+          ),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Supplier: ${inquiry.supplierName}',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: statusColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                inquiry.status.name.toUpperCase(),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 10),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Inquiry #${inquiry.inquiryNumber} • Est. Value: ${formatPeso(inquiry.totalOrderedValue)}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Items (${inquiry.items.length}): $itemsSummary',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Sent/Created: ${DateFormat('MMM d, yyyy • h:mm a').format(inquiry.sentAt ?? inquiry.createdAt)}',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+      ),
+    );
+  }
+
+  void _showInquiryDetailModal(BuildContext context, RestockInquiry inquiry) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade800.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.mark_email_read_outlined,
+                    color: Colors.blue.shade800,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Supplier: ${inquiry.supplierName}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 18)),
+                      Text('Restock Inquiry #${inquiry.inquiryNumber}',
+                          style: TextStyle(
+                              color: Colors.grey.shade600, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            _detailRow('Inquiry Status', inquiry.status.name.toUpperCase(),
+                isBold: true, color: Colors.blue.shade800),
+            _detailRow('Supplier Name', inquiry.supplierName),
+            if (inquiry.supplierContact != null &&
+                inquiry.supplierContact!.isNotEmpty)
+              _detailRow('Supplier Contact', inquiry.supplierContact!),
+            _detailRow('Date Created',
+                DateFormat('MMM d, yyyy • h:mm a').format(inquiry.createdAt)),
+            if (inquiry.sentAt != null)
+              _detailRow('Date Sent',
+                  DateFormat('MMM d, yyyy • h:mm a').format(inquiry.sentAt!)),
+            _detailRow('Total Items Requested',
+                '${inquiry.totalRequestedQty} units',
+                isBold: true),
+            _detailRow(
+                'Total Estimated Value', formatPeso(inquiry.totalOrderedValue),
+                isBold: true, color: GdcColors.primaryGreen),
+            const SizedBox(height: 16),
+            const Text('Requested Items Breakdown',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const SizedBox(height: 8),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 200),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withValues(alpha: 0.3)),
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(12),
+                itemCount: inquiry.items.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (ctx, i) {
+                  final item = inquiry.items[i];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item.productName,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              Text('Unit Cost: ${formatPeso(item.costPrice)}',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '${item.requestedQty} ${item.unit}',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.primary),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showDeliveryLogDetailModal(
       BuildContext context, DeliveryLog log, List<Product> products) {
     Product? matchedProduct;
