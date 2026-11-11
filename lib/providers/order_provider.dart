@@ -5,6 +5,7 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/loss_record.dart';
 import '../models/transaction.dart';
+import '../models/store_settings.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../utils/pricing_engine.dart';
