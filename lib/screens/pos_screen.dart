@@ -14,6 +14,8 @@ import '../utils/format.dart';
 import '../models/customer.dart';
 import '../providers/printer_provider.dart';
 import '../providers/order_provider.dart';
+import '../providers/shift_provider.dart';
+import '../config/theme.dart';
 import '../utils/pricing_engine.dart';
 import '../utils/barcode_generator.dart';
 import '../widgets/order_qr_scanner.dart';
