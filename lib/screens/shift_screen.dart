@@ -305,8 +305,16 @@ class _ActiveShiftView extends StatelessWidget {
                     _row('Shift Started:',
                         DateFormat('MMM d, yyyy • hh:mm a').format(shift.openedAt)),
                     _row('Opening Float:', formatPeso(shift.openingFloat)),
-                    _row('Cash Sales:', formatPeso(shift.cashSales),
+                    _row('Sales Completed:', '${shift.transactionCount} transaction${shift.transactionCount == 1 ? '' : 's'}'),
+                    _row('Total Items Sold:', '${shift.itemsSoldCount} unit${shift.itemsSoldCount == 1 ? '' : 's'}'),
+                    if (shift.totalCashReceived > 0) ...[
+                      _row('Cash Received:', formatPeso(shift.totalCashReceived)),
+                      _row('Change Given:', '-${formatPeso(shift.totalChangeGiven)}'),
+                    ],
+                    _row('Net Cash Sales:', formatPeso(shift.cashSales),
                         Colors.green.shade800),
+                    if (shift.totalCashDrops > 0)
+                      _row('Mid-Shift Cash Drops:', '-${formatPeso(shift.totalCashDrops)}', Colors.orange.shade800),
                     const Divider(height: 24),
                     _row(
                         'Expected Cash in Register:',
@@ -452,7 +460,12 @@ class _ActiveShiftView extends StatelessWidget {
                         _dialogRow('Cashier:', shift.cashierName),
                         _dialogRow(
                             'Opening Float:', formatPeso(shift.openingFloat)),
-                        _dialogRow('Cash Sales:', formatPeso(shift.cashSales)),
+                        _dialogRow('Completed Sales:', '${shift.transactionCount} sale${shift.transactionCount == 1 ? '' : 's'} (${shift.itemsSoldCount} units)'),
+                        _dialogRow('Cash Received:', formatPeso(shift.totalCashReceived)),
+                        _dialogRow('Change Returned:', '-${formatPeso(shift.totalChangeGiven)}'),
+                        _dialogRow('Net Cash Sales:', formatPeso(shift.cashSales), color: Colors.green.shade800),
+                        if (shift.totalCashDrops > 0)
+                          _dialogRow('Mid-Shift Drops:', '-${formatPeso(shift.totalCashDrops)}', color: Colors.orange.shade800),
                         const Divider(height: 16),
                         _dialogRow(
                           'Expected Cash in Register:',

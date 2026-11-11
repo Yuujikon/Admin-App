@@ -98,22 +98,39 @@ class ShiftProvider extends BaseProvider {
     notifyListeners();
   }
 
-  /// Updates cumulative shift sales totals when a sale is completed.
-  Future<void> updateShiftSales(
-      {required double cashAmount, required double gcashAmount}) async {
+  /// Updates cumulative shift sales, items sold, cash received, and change given when a sale is completed.
+  Future<void> updateShiftSales({
+    required double cashAmount,
+    required double gcashAmount,
+    int itemsSold = 0,
+    double cashReceived = 0.0,
+    double changeGiven = 0.0,
+  }) async {
     if (_currentShift == null) return;
 
     final updatedCashSales = _currentShift!.cashSales + cashAmount;
     final updatedGcashSales = _currentShift!.gcashSales + gcashAmount;
+    final updatedItemsSold = _currentShift!.itemsSoldCount + itemsSold;
+    final updatedCashReceived = _currentShift!.totalCashReceived + cashReceived;
+    final updatedChangeGiven = _currentShift!.totalChangeGiven + changeGiven;
+    final updatedTxCount = _currentShift!.transactionCount + 1;
 
     await _shifts.doc(_currentShift!.id).update({
       'cashSales': updatedCashSales,
       'gcashSales': updatedGcashSales,
+      'itemsSoldCount': updatedItemsSold,
+      'totalCashReceived': updatedCashReceived,
+      'totalChangeGiven': updatedChangeGiven,
+      'transactionCount': updatedTxCount,
     });
 
     _currentShift = _currentShift!.copyWith(
       cashSales: updatedCashSales,
       gcashSales: updatedGcashSales,
+      itemsSoldCount: updatedItemsSold,
+      totalCashReceived: updatedCashReceived,
+      totalChangeGiven: updatedChangeGiven,
+      transactionCount: updatedTxCount,
     );
     notifyListeners();
   }

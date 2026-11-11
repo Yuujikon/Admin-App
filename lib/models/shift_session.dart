@@ -50,6 +50,10 @@ class ShiftSession {
   final double openingFloat;
   final double cashSales;
   final double gcashSales;
+  final int itemsSoldCount;
+  final double totalCashReceived;
+  final double totalChangeGiven;
+  final int transactionCount;
   final List<CashDrop> cashDrops;
   final double? actualCashCounted;
   final ShiftStatus status;
@@ -64,6 +68,10 @@ class ShiftSession {
     required this.openingFloat,
     this.cashSales = 0.0,
     this.gcashSales = 0.0,
+    this.itemsSoldCount = 0,
+    this.totalCashReceived = 0.0,
+    this.totalChangeGiven = 0.0,
+    this.transactionCount = 0,
     this.cashDrops = const [],
     this.actualCashCounted,
     this.status = ShiftStatus.active,
@@ -97,6 +105,10 @@ class ShiftSession {
       openingFloat: (d['openingFloat'] as num? ?? 0.0).toDouble(),
       cashSales: (d['cashSales'] as num? ?? 0.0).toDouble(),
       gcashSales: (d['gcashSales'] as num? ?? 0.0).toDouble(),
+      itemsSoldCount: (d['itemsSoldCount'] as num? ?? 0).toInt(),
+      totalCashReceived: (d['totalCashReceived'] as num? ?? 0.0).toDouble(),
+      totalChangeGiven: (d['totalChangeGiven'] as num? ?? 0.0).toDouble(),
+      transactionCount: (d['transactionCount'] as num? ?? 0).toInt(),
       cashDrops: (d['cashDrops'] as List? ?? [])
           .map((e) => CashDrop.fromMap(e))
           .toList(),
@@ -119,6 +131,10 @@ class ShiftSession {
         'openingFloat': openingFloat,
         'cashSales': cashSales,
         'gcashSales': gcashSales,
+        'itemsSoldCount': itemsSoldCount,
+        'totalCashReceived': totalCashReceived,
+        'totalChangeGiven': totalChangeGiven,
+        'transactionCount': transactionCount,
         'cashDrops': cashDrops.map((d) => d.toMap()).toList(),
         'actualCashCounted': actualCashCounted,
         'status': status.name,
@@ -129,6 +145,10 @@ class ShiftSession {
   ShiftSession copyWith({
     double? cashSales,
     double? gcashSales,
+    int? itemsSoldCount,
+    double? totalCashReceived,
+    double? totalChangeGiven,
+    int? transactionCount,
     List<CashDrop>? cashDrops,
     double? actualCashCounted,
     DateTime? closedAt,
@@ -143,6 +163,10 @@ class ShiftSession {
         openingFloat: openingFloat,
         cashSales: cashSales ?? this.cashSales,
         gcashSales: gcashSales ?? this.gcashSales,
+        itemsSoldCount: itemsSoldCount ?? this.itemsSoldCount,
+        totalCashReceived: totalCashReceived ?? this.totalCashReceived,
+        totalChangeGiven: totalChangeGiven ?? this.totalChangeGiven,
+        transactionCount: transactionCount ?? this.transactionCount,
         cashDrops: cashDrops ?? this.cashDrops,
         actualCashCounted: actualCashCounted ?? this.actualCashCounted,
         status: status ?? this.status,

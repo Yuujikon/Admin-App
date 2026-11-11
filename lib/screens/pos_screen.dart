@@ -312,6 +312,7 @@ class _PosScreenState extends State<PosScreen> {
       final total = breakdown.total;
       final cash = _cashNum;
       final change = _change;
+      final itemsCount = items.fold<int>(0, (sum, i) => sum + i.qty);
 
       final tx = await inventory.completeSale(
         items,
@@ -320,6 +321,18 @@ class _PosScreenState extends State<PosScreen> {
         customerId: _selectedCustomer?.id,
         customerEmail: _selectedCustomer?.email,
       );
+
+      // Automatically record sale metrics into active register shift session
+      final shiftProvider = context.read<ShiftProvider>();
+      if (shiftProvider.hasActiveShift) {
+        await shiftProvider.updateShiftSales(
+          cashAmount: total,
+          gcashAmount: 0.0,
+          itemsSold: itemsCount,
+          cashReceived: cash,
+          changeGiven: change,
+        );
+      }
 
       if (printer.connected) {
         try {
@@ -1283,6 +1296,42 @@ class _SuccessView extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 36),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 16,
+                runSpacing: 12,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onNewSale,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('BACK TO POS',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 28, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: onNewSale,
+                    icon: const Icon(Icons.add_shopping_cart_rounded),
+                    label: const Text('NEW SALE',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: GdcColors.primaryGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
