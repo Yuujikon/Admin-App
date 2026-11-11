@@ -414,11 +414,20 @@ class _PosScreenState extends State<PosScreen> {
 
     final query = _barcodeCtrl.text.toLowerCase();
     final filtered = products
-        .where((p) => p.totalStock > 0 && p.status == ProductStatus.published)
+        .where((p) => p.status == ProductStatus.published)
         .where((p) =>
             p.name.toLowerCase().contains(query) ||
             (p.barcode?.contains(query) ?? false))
         .toList();
+
+    // Automatically push out-of-stock / zero available stock items to the end (last) of the POS list
+    filtered.sort((a, b) {
+      final aHasStock = a.totalAvailableStock > 0;
+      final bHasStock = b.totalAvailableStock > 0;
+      if (aHasStock && !bHasStock) return -1;
+      if (!aHasStock && bHasStock) return 1;
+      return 0;
+    });
 
     return BarcodeInterceptor(
       controllers: _focusMap,
