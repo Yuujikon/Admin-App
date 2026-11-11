@@ -1192,37 +1192,6 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       ),
     );
   }
-            ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${item.title} • ${item.costText}',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  Expanded(
-                      child: Text(item.subText,
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.onSurfaceVariant),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis)),
-                  Text(formatTimeAgo(item.timestamp),
-                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   void _showDeliveryLogDetailModal(
       BuildContext context, DeliveryLog log, List<Product> products) {
