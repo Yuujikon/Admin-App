@@ -43,12 +43,16 @@ class ShiftProvider extends BaseProvider {
 
     registerSubscription(_shifts
         .where('status', isEqualTo: 'closed')
-        .orderBy('closedAt', descending: true)
-        .limit(100)
         .snapshots()
         .listen((snap) {
-      _pastShifts =
+      final list =
           snap.docs.map((doc) => ShiftSession.fromFirestore(doc)).toList();
+      list.sort((a, b) {
+        final dateA = a.closedAt ?? a.openedAt;
+        final dateB = b.closedAt ?? b.openedAt;
+        return dateB.compareTo(dateA);
+      });
+      _pastShifts = list;
       notifyListeners();
     }, onError: (e) => debugPrint('PastShifts Error: $e')));
   }
