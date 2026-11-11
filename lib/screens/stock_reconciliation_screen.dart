@@ -108,31 +108,143 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                             fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        value: products.any((p) => p.id == _selectedProduct?.id)
-                            ? _selectedProduct?.id
-                            : null,
-                        decoration: const InputDecoration(
-                          hintText: 'Search or choose product...',
-                          prefixIcon: Icon(Icons.inventory_2_outlined),
-                        ),
-                        items: products
-                            .map((p) => DropdownMenuItem(
-                                  value: p.id,
-                                  child: Text(
-                                      '${p.name} (${p.totalStock} ${p.unit} in System)'),
-                                ))
-                            .toList(),
-                        onChanged: (id) {
-                          if (id != null) {
-                            final p =
-                                products.firstWhere((prod) => prod.id == id);
-                            setState(() {
-                              _selectedProduct = p;
-                              _initControllersForProduct(p);
-                            });
-                          }
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Autocomplete<Product>(
+                            displayStringForOption: (Product p) => p.name,
+                            optionsBuilder:
+                                (TextEditingValue textEditingValue) {
+                              if (textEditingValue.text.isEmpty) {
+                                return products;
+                              }
+                              final q = textEditingValue.text.toLowerCase();
+                              return products.where((p) =>
+                                  p.name.toLowerCase().contains(q) ||
+                                  (p.barcode?.toLowerCase().contains(q) ??
+                                      false) ||
+                                  p.category.toLowerCase().contains(q));
+                            },
+                            onSelected: (Product p) {
+                              setState(() {
+                                _selectedProduct = p;
+                                _initControllersForProduct(p);
+                              });
+                            },
+                            fieldViewBuilder: (context, textController,
+                                focusNode, onFieldSubmitted) {
+                              if (_selectedProduct != null &&
+                                  !focusNode.hasFocus &&
+                                  (textController.text.isEmpty ||
+                                      textController.text !=
+                                          _selectedProduct!.name)) {
+                                textController.text = _selectedProduct!.name;
+                              }
+                              return TextFormField(
+                                controller: textController,
+                                focusNode: focusNode,
+                                decoration: InputDecoration(
+                                  hintText: 'Search or choose product...',
+                                  prefixIcon:
+                                      const Icon(Icons.inventory_2_outlined),
+                                  suffixIcon: _selectedProduct != null ||
+                                          textController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon:
+                                              const Icon(Icons.clear, size: 18),
+                                          onPressed: () {
+                                            textController.clear();
+                                            setState(() {
+                                              _selectedProduct = null;
+                                            });
+                                          },
+                                        )
+                                      : const Icon(Icons.arrow_drop_down),
+                                ),
+                                onChanged: (val) {
+                                  if (_selectedProduct != null &&
+                                      val != _selectedProduct!.name) {
+                                    setState(() {
+                                      _selectedProduct = null;
+                                    });
+                                  }
+                                },
+                              );
+                            },
+                            optionsViewBuilder: (context, onSelected, options) {
+                              return Align(
+                                alignment: Alignment.topLeft,
+                                child: Material(
+                                  elevation: 8,
+                                  borderRadius: BorderRadius.circular(16),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Container(
+                                    width: constraints.maxWidth,
+                                    constraints:
+                                        const BoxConstraints(maxHeight: 280),
+                                    color:
+                                        Theme.of(context).colorScheme.surface,
+                                    child: ListView.separated(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 4),
+                                      shrinkWrap: true,
+                                      itemCount: options.length,
+                                      separatorBuilder: (_, __) =>
+                                          const Divider(
+                                              height: 1,
+                                              indent: 12,
+                                              endIndent: 12),
+                                      itemBuilder:
+                                          (BuildContext context, int index) {
+                                        final Product option =
+                                            options.elementAt(index);
+                                        final bool isSelected =
+                                            option.id == _selectedProduct?.id;
+                                        return ListTile(
+                                          dense: true,
+                                          selected: isSelected,
+                                          selectedTileColor: Theme.of(context)
+                                              .colorScheme
+                                              .primaryContainer
+                                              .withValues(alpha: 0.2),
+                                          leading: Icon(
+                                            Icons.inventory_2_outlined,
+                                            size: 20,
+                                            color: isSelected
+                                                ? Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                : Colors.grey.shade600,
+                                          ),
+                                          title: Text(
+                                            option.name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13),
+                                          ),
+                                          subtitle: Text(
+                                            '${option.category} • Stock: ${option.totalStock} ${option.unit}${option.barcode != null ? " • Barcode: ${option.barcode}" : ""}',
+                                            style:
+                                                const TextStyle(fontSize: 11),
+                                          ),
+                                          trailing: Text(
+                                            formatPeso(option.price),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                          ),
+                                          onTap: () => onSelected(option),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
                         },
                       ),
                     ],
