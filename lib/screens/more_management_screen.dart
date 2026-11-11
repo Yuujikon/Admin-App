@@ -98,7 +98,8 @@ class MoreManagementScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerLow,
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: Theme.of(context)
@@ -213,8 +214,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconBg: GdcColors.creamActiveBackground,
                     iconColor: GdcColors.darkEmerald,
                     title: 'Inventory Records & Logs',
-                    subtitle:
-                        'Delivery logs, batch expiry & stock adjustments',
+                    subtitle: 'Delivery logs, batch expiry & stock adjustments',
                     onTap: () {
                       if (onNavigateToTab != null) {
                         onNavigateToTab!(AppTab.inventoryRecords);
@@ -754,7 +754,8 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
                       Expanded(
                         flex: 3,
                         child: ElevatedButton.icon(
-                          onPressed: () => _launchAuthenticatorApp(context, auth),
+                          onPressed: () =>
+                              _launchAuthenticatorApp(context, auth),
                           icon: const Icon(Icons.open_in_new_rounded, size: 16),
                           label: const FittedBox(
                             fit: BoxFit.scaleDown,
@@ -886,7 +887,8 @@ class _MyStaffAccountSection extends StatelessWidget {
                 title: Text(
                   auth.userFullName != null && auth.userFullName!.isNotEmpty
                       ? auth.userFullName!
-                      : (user?.displayName != null && user!.displayName!.isNotEmpty
+                      : (user?.displayName != null &&
+                              user!.displayName!.isNotEmpty
                           ? user.displayName!
                           : (user?.email?.split('@').first ?? 'Staff Account')),
                   style: const TextStyle(
@@ -923,8 +925,7 @@ class _MyStaffAccountSection extends StatelessWidget {
                     color: Colors.purple.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.pin_rounded,
-                      color: Colors.purple),
+                  child: const Icon(Icons.pin_rounded, color: Colors.purple),
                 ),
                 title: const Text('Change 6-Digit Security PIN',
                     style:
@@ -946,8 +947,8 @@ class _MyStaffAccountSection extends StatelessWidget {
                     child: const Icon(Icons.key_rounded, color: Colors.blue),
                   ),
                   title: const Text('Admin Backup Recovery Codes',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 13)),
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   subtitle: const Text(
                       'View or generate 8-character codes for emergency PIN recovery',
                       style: TextStyle(fontSize: 11)),
@@ -1475,7 +1476,8 @@ class _RecoveryCodesDialogState extends State<_RecoveryCodesDialog> {
                 )
               else if (codes.isEmpty)
                 const Center(
-                  child: Text('No recovery codes available. Tap below to generate.',
+                  child: Text(
+                      'No recovery codes available. Tap below to generate.',
                       style: TextStyle(fontSize: 12, color: Colors.grey)),
                 )
               else
@@ -1830,117 +1832,401 @@ void _showOrderExpirationModal(BuildContext context) {
 
   showDialog(
     context: context,
-    builder: (ctx) {
-      return Consumer<InventoryProvider>(
-        builder: (context, inventory, child) {
-          final settings = inventory.settings;
-          return AlertDialog(
-            title: const Text('Order Expiration Windows'),
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Time customers have to pick up their orders before auto-cancellation.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 16),
-                  _WindowInput(
-                    label: 'Perishables Only (Hours)',
-                    hint: 'e.g. 2',
-                    value: settings.perishableWindowHours,
-                    onChanged: (v) => inventory.saveStoreSettings(
-                        settings.copyWith(perishableWindowHours: v)),
-                  ),
-                  const SizedBox(height: 12),
-                  _WindowInput(
-                    label: 'Mixed Orders (Hours)',
-                    hint: 'e.g. 24',
-                    value: settings.mixedWindowHours,
-                    onChanged: (v) => inventory.saveStoreSettings(
-                        settings.copyWith(mixedWindowHours: v)),
-                  ),
-                  const SizedBox(height: 12),
-                  _WindowInput(
-                    label: 'Non-Perishables (Hours)',
-                    hint: 'e.g. 72',
-                    value: settings.standardWindowHours,
-                    onChanged: (v) => inventory.saveStoreSettings(
-                        settings.copyWith(standardWindowHours: v)),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Done'),
-              ),
-            ],
-          );
-        },
-      );
-    },
+    builder: (ctx) => const _OrderExpirationDialog(),
   );
 }
 
-class _WindowInput extends StatefulWidget {
-  final String label, hint;
-  final int? value;
-  final ValueChanged<int?> onChanged;
-
-  const _WindowInput({
-    required this.label,
-    required this.hint,
-    required this.value,
-    required this.onChanged,
-  });
+class _OrderExpirationDialog extends StatefulWidget {
+  const _OrderExpirationDialog();
 
   @override
-  State<_WindowInput> createState() => _WindowInputState();
+  State<_OrderExpirationDialog> createState() => _OrderExpirationDialogState();
 }
 
-class _WindowInputState extends State<_WindowInput> {
-  late final TextEditingController _controller;
+class _OrderExpirationDialogState extends State<_OrderExpirationDialog> {
+  late int _perishableHours;
+  late int _mixedHours;
+  late int _standardHours;
+
+  late TextEditingController _perishableCtrl;
+  late TextEditingController _mixedCtrl;
+  late TextEditingController _standardCtrl;
+
+  bool _initialized = false;
+  bool _isSaving = false;
 
   @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.value?.toString() ?? '');
-  }
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final settings = context.read<InventoryProvider>().settings;
+      _perishableHours = settings.perishableWindowHours;
+      _mixedHours = settings.mixedWindowHours;
+      _standardHours = settings.standardWindowHours;
 
-  @override
-  void didUpdateWidget(covariant _WindowInput oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.value != oldWidget.value) {
-      final newText = widget.value?.toString() ?? '';
-      if (_controller.text != newText) {
-        _controller.text = newText;
-      }
+      _perishableCtrl = TextEditingController(text: '$_perishableHours');
+      _mixedCtrl = TextEditingController(text: '$_mixedHours');
+      _standardCtrl = TextEditingController(text: '$_standardHours');
+
+      _initialized = true;
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _perishableCtrl.dispose();
+    _mixedCtrl.dispose();
+    _standardCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    try {
+      final inventory = context.read<InventoryProvider>();
+      final updatedSettings = inventory.settings.copyWith(
+        perishableWindowHours: _perishableHours,
+        mixedWindowHours: _mixedHours,
+        standardWindowHours: _standardHours,
+      );
+      await inventory.saveStoreSettings(updatedSettings);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order expiration windows updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to save settings: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      keyboardType: TextInputType.number,
-      controller: _controller,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        hintText: widget.hint,
-        border: const OutlineInputBorder(),
-        isDense: true,
+    return Dialog(
+      backgroundColor: const Color(0xFFF7F4EC),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: Container(
+        width: 480,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: Title and Close button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Order Expiration Windows',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded,
+                      size: 24, color: Color(0xFF1E1E1E)),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Set the time customers have to pick up their orders before they are automatically canceled.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFF6E6D6A),
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Card 1: Perishables Only
+            _ExpirationCard(
+              label: 'Perishables Only (Hours)',
+              subtitle: 'Hours\ne.g., fast spoil items',
+              iconWidget: const Icon(Icons.timer_outlined,
+                  size: 24, color: Color(0xFF4A4A48)),
+              controller: _perishableCtrl,
+              value: _perishableHours,
+              onDecrement: () {
+                if (_perishableHours > 1) {
+                  setState(() {
+                    _perishableHours--;
+                    _perishableCtrl.text = '$_perishableHours';
+                  });
+                }
+              },
+              onIncrement: () {
+                setState(() {
+                  _perishableHours++;
+                  _perishableCtrl.text = '$_perishableHours';
+                });
+              },
+              onChanged: (val) {
+                final n = int.tryParse(val);
+                if (n != null && n > 0) {
+                  _perishableHours = n;
+                }
+              },
+            ),
+            const SizedBox(height: 14),
+
+            // Card 2: Mixed Orders
+            _ExpirationCard(
+              label: 'Mixed Orders (Hours)',
+              subtitle: null,
+              iconWidget: const Icon(Icons.shopping_bag_outlined,
+                  size: 24, color: Color(0xFF4A4A48)),
+              controller: _mixedCtrl,
+              value: _mixedHours,
+              onDecrement: () {
+                if (_mixedHours > 1) {
+                  setState(() {
+                    _mixedHours--;
+                    _mixedCtrl.text = '$_mixedHours';
+                  });
+                }
+              },
+              onIncrement: () {
+                setState(() {
+                  _mixedHours++;
+                  _mixedCtrl.text = '$_mixedHours';
+                });
+              },
+              onChanged: (val) {
+                final n = int.tryParse(val);
+                if (n != null && n > 0) {
+                  _mixedHours = n;
+                }
+              },
+            ),
+            const SizedBox(height: 14),
+
+            // Card 3: Non-Perishables
+            _ExpirationCard(
+              label: 'Non-Perishables (Hours)',
+              subtitle: null,
+              iconWidget: const Icon(Icons.inventory_2_outlined,
+                  size: 24, color: Color(0xFF4A4A48)),
+              controller: _standardCtrl,
+              value: _standardHours,
+              onDecrement: () {
+                if (_standardHours > 1) {
+                  setState(() {
+                    _standardHours--;
+                    _standardCtrl.text = '$_standardHours';
+                  });
+                }
+              },
+              onIncrement: () {
+                setState(() {
+                  _standardHours++;
+                  _standardCtrl.text = '$_standardHours';
+                });
+              },
+              onChanged: (val) {
+                final n = int.tryParse(val);
+                if (n != null && n > 0) {
+                  _standardHours = n;
+                }
+              },
+            ),
+            const SizedBox(height: 24),
+
+            // Footer Actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _isSaving ? null : () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF1E1E1E),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _isSaving ? null : _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF9622A),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 14),
+                  ),
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text(
+                          'Save Changes',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
-      onChanged: (v) => widget.onChanged(int.tryParse(v)),
     );
   }
 }
 
+class _ExpirationCard extends StatelessWidget {
+  final String label;
+  final String? subtitle;
+  final Widget iconWidget;
+  final TextEditingController controller;
+  final int value;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+  final ValueChanged<String> onChanged;
+
+  const _ExpirationCard({
+    required this.label,
+    this.subtitle,
+    required this.iconWidget,
+    required this.controller,
+    required this.value,
+    required this.onDecrement,
+    required this.onIncrement,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE8E5DD)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF4A4A48),
+                ),
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle!,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF8A8882),
+                    height: 1.1,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              iconWidget,
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                  ),
+                  onChanged: onChanged,
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F3EC),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: onDecrement,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(10),
+                        bottomLeft: Radius.circular(10),
+                      ),
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        child: Text('—',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    ),
+                    const Text('/',
+                        style:
+                            TextStyle(color: Color(0xFF8A8882), fontSize: 16)),
+                    InkWell(
+                      onTap: onIncrement,
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(10),
+                        bottomRight: Radius.circular(10),
+                      ),
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        child: Text('+',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

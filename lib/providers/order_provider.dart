@@ -210,6 +210,7 @@ class OrderProvider extends BaseProvider {
     required String location,
     required String pickupSlot,
     required List<Product> allProducts,
+    StoreSettings? settings,
   }) async {
     final orderCount = _orders.length + 45;
     // Determine expiration based on items
@@ -218,13 +219,17 @@ class OrderProvider extends BaseProvider {
     final onlyPerishables = _preCart.every(
         (ci) => allProducts.any((p) => p.id == ci.productId && p.isPerishable));
 
+    final pWindow = settings?.perishableWindowHours ?? 2;
+    final mWindow = settings?.mixedWindowHours ?? 24;
+    final sWindow = settings?.standardWindowHours ?? 72;
+
     DateTime expiresAt;
     if (onlyPerishables) {
-      expiresAt = DateTime.now().add(const Duration(hours: 2));
+      expiresAt = DateTime.now().add(Duration(hours: pWindow));
     } else if (hasPerishables) {
-      expiresAt = DateTime.now().add(const Duration(days: 1));
+      expiresAt = DateTime.now().add(Duration(hours: mWindow));
     } else {
-      expiresAt = DateTime.now().add(const Duration(days: 3));
+      expiresAt = DateTime.now().add(Duration(hours: sWindow));
     }
 
     // Calculate breakdown using PricingEngine
