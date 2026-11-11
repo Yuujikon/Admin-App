@@ -35,11 +35,6 @@ class UserManagementScreen extends StatelessWidget {
           )
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddEmployeeDialog(context),
-        icon: const Icon(Icons.person_add_outlined),
-        label: const Text('Add New Staff'),
-      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -94,7 +89,7 @@ class UserManagementScreen extends StatelessWidget {
               activeStaff.isEmpty &&
               inactiveStaff.isEmpty) {
             return const Center(
-                child: Text('No staff records found. Click "Add New Staff" below.'));
+                child: Text('No staff records found. Staff can register via the app login screen.'));
           }
 
           final semantic = Theme.of(context).semantic;
