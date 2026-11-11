@@ -216,7 +216,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           qtyText: 'Drawer: ${formatPeso(shift.actualCashCounted ?? 0)}',
           isPositive: !shift.isShortage,
           costText:
-              'Sales: ${formatPeso(shift.cashSales + shift.gcashSales)}',
+              'Sales: ${formatPeso(shift.cashSales)}',
           subText:
               'Closed: ${DateFormat('h:mm a').format(shift.closedAt!)} • Variance: $varText',
           timestamp: shift.closedAt!,
@@ -1174,7 +1174,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final isShort = shift.isShortage;
     final isOver = shift.isOverage;
 
-    final totalSales = shift.cashSales + shift.gcashSales;
+    final totalSales = shift.cashSales;
 
     return Container(
       decoration: BoxDecoration(
@@ -1608,7 +1608,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
 
   void _showShiftDetailModal(BuildContext context, ShiftSession shift) {
     final isActive = shift.status == ShiftStatus.active;
-    final totalSales = shift.cashSales + shift.gcashSales;
+    final totalSales = shift.cashSales;
     final variance = shift.cashDifference;
 
     showModalBottomSheet(
@@ -1680,7 +1680,6 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
               _detailRow('Closed At', DateFormat('MMM d, yyyy • h:mm a').format(shift.closedAt!)),
             _detailRow('Opening Float', formatPeso(shift.openingFloat)),
             _detailRow('Cash Sales', formatPeso(shift.cashSales)),
-            _detailRow('GCash / E-Wallet Sales', formatPeso(shift.gcashSales)),
             _detailRow('Total Shift Sales', formatPeso(totalSales), isBold: true),
             if (shift.totalCashDrops > 0)
               _detailRow('Mid-Shift Cash Drops', '-${formatPeso(shift.totalCashDrops)}', color: Colors.orange.shade800),
