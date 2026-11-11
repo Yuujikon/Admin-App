@@ -6,15 +6,17 @@ import '../models/delivery_log.dart';
 import '../models/product.dart';
 import '../models/loss_record.dart';
 import '../models/shift_session.dart';
+import '../models/restock_inquiry.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/shift_provider.dart';
+import '../providers/restock_provider.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/premium_components.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
 
-enum _RecordTab { deliveryLogs, batchLots, lossWaste, registerShifts, allTimeline }
+enum _RecordTab { deliveryLogs, batchLots, lossWaste, registerShifts, supplierInquiries, allTimeline }
 
 enum _DateFilter { all, today, thisWeek, thisMonth }
 
@@ -74,10 +76,12 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final colorScheme = theme.colorScheme;
     final inventory = context.watch<InventoryProvider>();
     final shiftProvider = context.watch<ShiftProvider>();
+    final restockProvider = context.watch<RestockProvider>();
 
     final deliveryLogs = inventory.deliveryLogs;
     final products = inventory.products;
     final lossRecords = inventory.lossRecords;
+    final inquiries = restockProvider.inquiries;
 
     final currentShift = shiftProvider.currentShift;
     final pastShifts = shiftProvider.pastShifts;
@@ -85,6 +89,24 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       if (currentShift != null) currentShift,
       ...pastShifts,
     ];
+
+    // Filtered Supplier Restock Inquiries
+    final filteredInquiries = inquiries.where((inquiry) {
+      final date = inquiry.sentAt ?? inquiry.createdAt;
+      if (!_matchesDateFilter(date)) return false;
+
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      return inquiry.supplierName.toLowerCase().contains(q) ||
+          inquiry.inquiryNumber.toLowerCase().contains(q) ||
+          inquiry.items.any((i) => i.productName.toLowerCase().contains(q));
+    }).toList();
+
+    filteredInquiries.sort((a, b) {
+      final dateA = a.sentAt ?? a.createdAt;
+      final dateB = b.sentAt ?? b.createdAt;
+      return dateB.compareTo(dateA);
+    });
 
     // Filtered Register Shifts
     final filteredShifts = allShifts.where((shift) {
@@ -207,6 +229,25 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           originalData: shift,
         ));
       }
+    }
+    for (final inquiry in filteredInquiries) {
+      final date = inquiry.sentAt ?? inquiry.createdAt;
+      final itemsSummary = inquiry.items
+          .map((i) => '${i.productName} (${i.requestedQty} ${i.unit})')
+          .join(', ');
+
+      timelineItems.add(_TimelineItem(
+        title: 'Supplier Restock Inquiry Sent',
+        productName: 'Supplier: ${inquiry.supplierName}',
+        qtyText: '${inquiry.totalRequestedQty} requested',
+        isPositive: true,
+        costText: formatPeso(inquiry.totalOrderedValue),
+        subText:
+            'Inquiry #${inquiry.inquiryNumber} • Items: ${inquiry.items.length} ($itemsSummary)',
+        timestamp: date,
+        type: _TimelineType.supplierInquiry,
+        originalData: inquiry,
+      ));
     }
     timelineItems.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
@@ -392,6 +433,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     _buildTabChip('Register Shifts (${filteredShifts.length})',
                         _RecordTab.registerShifts, Icons.point_of_sale_rounded),
                     const SizedBox(width: 6),
+                    _buildTabChip('Supplier Inquiries (${filteredInquiries.length})',
+                        _RecordTab.supplierInquiries, Icons.mark_email_read_outlined),
+                    const SizedBox(width: 6),
                     _buildTabChip('Combined Timeline', _RecordTab.allTimeline,
                         Icons.history_rounded),
                   ],
@@ -412,6 +456,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     filteredBatches: filteredBatches,
                     filteredLosses: filteredLosses,
                     filteredShifts: filteredShifts,
+                    filteredInquiries: filteredInquiries,
                     timelineItems: timelineItems,
                     products: products,
                   ),
@@ -597,6 +642,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     required List<_BatchRecordWrapper> filteredBatches,
     required List<LossRecord> filteredLosses,
     required List<ShiftSession> filteredShifts,
+    required List<RestockInquiry> filteredInquiries,
     required List<_TimelineItem> timelineItems,
     required List<Product> products,
   }) {
@@ -660,6 +706,21 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           itemCount: filteredShifts.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (ctx, i) => _buildShiftRow(ctx, filteredShifts[i]),
+        );
+
+      case _RecordTab.supplierInquiries:
+        if (filteredInquiries.isEmpty) {
+          return const PremiumEmptyState(
+            icon: Icons.mark_email_read_outlined,
+            title: 'No Supplier Inquiries Recorded',
+            subtitle:
+                'No supplier restock order inquiries match your search or date filter.',
+          );
+        }
+        return ListView.separated(
+          itemCount: filteredInquiries.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, i) => _buildInquiryRow(ctx, filteredInquiries[i]),
         );
 
       case _RecordTab.allTimeline:
@@ -989,6 +1050,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
 
     final isShift = item.type == _TimelineType.shiftStart ||
         item.type == _TimelineType.shiftEnd;
+    final isInquiry = item.type == _TimelineType.supplierInquiry;
 
     return Container(
       decoration: BoxDecoration(
@@ -998,40 +1060,48 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: ListTile(
-        onTap: item.originalData is ShiftSession
-            ? () => _showShiftDetailModal(context, item.originalData as ShiftSession)
-            : (item.originalData is DeliveryLog
-                ? () => _showDeliveryLogDetailModal(
-                    context, item.originalData as DeliveryLog, products)
-                : null),
+        onTap: item.originalData is RestockInquiry
+            ? () => _showInquiryDetailModal(context, item.originalData as RestockInquiry)
+            : (item.originalData is ShiftSession
+                ? () => _showShiftDetailModal(context, item.originalData as ShiftSession)
+                : (item.originalData is DeliveryLog
+                    ? () => _showDeliveryLogDetailModal(
+                        context, item.originalData as DeliveryLog, products)
+                    : null)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: item.type == _TimelineType.shiftStart
-                ? Colors.amber.shade800.withValues(alpha: 0.12)
-                : (item.type == _TimelineType.shiftEnd
-                    ? Colors.purple.shade800.withValues(alpha: 0.12)
-                    : (item.isPositive
-                        ? Colors.green.shade800.withValues(alpha: 0.12)
-                        : Colors.red.shade800.withValues(alpha: 0.12))),
+            color: isInquiry
+                ? Colors.blue.shade800.withValues(alpha: 0.12)
+                : (item.type == _TimelineType.shiftStart
+                    ? Colors.amber.shade800.withValues(alpha: 0.12)
+                    : (item.type == _TimelineType.shiftEnd
+                        ? Colors.purple.shade800.withValues(alpha: 0.12)
+                        : (item.isPositive
+                            ? Colors.green.shade800.withValues(alpha: 0.12)
+                            : Colors.red.shade800.withValues(alpha: 0.12)))),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(
-            item.type == _TimelineType.shiftStart
-                ? Icons.point_of_sale_rounded
-                : (item.type == _TimelineType.shiftEnd
-                    ? Icons.lock_clock_rounded
-                    : (item.isPositive
-                        ? Icons.add_shopping_cart_rounded
-                        : Icons.remove_shopping_cart_rounded)),
-            color: item.type == _TimelineType.shiftStart
-                ? Colors.amber.shade800
-                : (item.type == _TimelineType.shiftEnd
-                    ? Colors.purple.shade800
-                    : (item.isPositive
-                        ? Colors.green.shade800
-                        : Colors.red.shade800)),
+            isInquiry
+                ? Icons.mark_email_read_outlined
+                : (item.type == _TimelineType.shiftStart
+                    ? Icons.point_of_sale_rounded
+                    : (item.type == _TimelineType.shiftEnd
+                        ? Icons.lock_clock_rounded
+                        : (item.isPositive
+                            ? Icons.add_shopping_cart_rounded
+                            : Icons.remove_shopping_cart_rounded))),
+            color: isInquiry
+                ? Colors.blue.shade800
+                : (item.type == _TimelineType.shiftStart
+                    ? Colors.amber.shade800
+                    : (item.type == _TimelineType.shiftEnd
+                        ? Colors.purple.shade800
+                        : (item.isPositive
+                            ? Colors.green.shade800
+                            : Colors.red.shade800))),
             size: 24,
           ),
         ),
@@ -1433,7 +1503,7 @@ class _BatchRecordWrapper {
   _BatchRecordWrapper({required this.product, required this.batch});
 }
 
-enum _TimelineType { delivery, loss, shiftStart, shiftEnd }
+enum _TimelineType { delivery, loss, shiftStart, shiftEnd, supplierInquiry }
 
 class _TimelineItem {
   final String title;
