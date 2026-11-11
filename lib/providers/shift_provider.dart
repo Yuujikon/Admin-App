@@ -24,37 +24,37 @@ class ShiftProvider extends BaseProvider {
   /// Historical list of closed shift sessions.
   List<ShiftSession> get pastShifts => _pastShifts;
 
+  List<ShiftSession> _allShifts = [];
+
+  /// Full historical list of all shift sessions (active & closed).
+  List<ShiftSession> get allShifts => _allShifts;
+
   /// Initializes shift listeners.
   ShiftProvider() {
     _initShiftListener();
   }
 
-  /// Sets up real-time Firestore listeners for active and closed shifts.
+  /// Sets up real-time Firestore listeners for all shift sessions.
   void _initShiftListener() {
-    registerSubscription(
-        _shifts.where('status', isEqualTo: 'active').snapshots().listen((snap) {
-      if (snap.docs.isNotEmpty) {
-        _currentShift = ShiftSession.fromFirestore(snap.docs.first);
-      } else {
-        _currentShift = null;
-      }
-      notifyListeners();
-    }, onError: (e) => debugPrint('ShiftListener Error: $e')));
-
-    registerSubscription(_shifts
-        .where('status', isEqualTo: 'closed')
-        .snapshots()
-        .listen((snap) {
+    registerSubscription(_shifts.snapshots().listen((snap) {
       final list =
           snap.docs.map((doc) => ShiftSession.fromFirestore(doc)).toList();
-      list.sort((a, b) {
-        final dateA = a.closedAt ?? a.openedAt;
-        final dateB = b.closedAt ?? b.openedAt;
-        return dateB.compareTo(dateA);
-      });
-      _pastShifts = list;
+
+      // Sort all shifts by openedAt date descending (newest first)
+      list.sort((a, b) => b.openedAt.compareTo(a.openedAt));
+
+      _allShifts = list;
+
+      try {
+        _currentShift = list.firstWhere((s) => s.status == ShiftStatus.active);
+      } catch (_) {
+        _currentShift = null;
+      }
+
+      _pastShifts = list.where((s) => s.status == ShiftStatus.closed).toList();
+
       notifyListeners();
-    }, onError: (e) => debugPrint('PastShifts Error: $e')));
+    }, onError: (e) => debugPrint('Shifts Listener Error: $e')));
   }
 
   /// Opens a new cashier shift session with an initial cash drawer float.

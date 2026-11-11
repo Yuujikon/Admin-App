@@ -83,12 +83,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final lossRecords = inventory.lossRecords;
     final inquiries = restockProvider.inquiries;
 
-    final currentShift = shiftProvider.currentShift;
-    final pastShifts = shiftProvider.pastShifts;
-    final List<ShiftSession> allShifts = [
-      if (currentShift != null) currentShift,
-      ...pastShifts,
-    ];
+    final allShifts = shiftProvider.allShifts;
 
     // Filtered Supplier Restock Inquiries
     final filteredInquiries = inquiries.where((inquiry) {
