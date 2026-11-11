@@ -25,18 +25,20 @@ class ProductBundle {
   /// Indicates if bundle is currently available for sale.
   final bool isActive;
 
-  Uint8List? _cachedImageBytes;
+  static final Map<String, Uint8List> _imageCache = {};
 
   /// Returns cached decoded bytes of [photoBase64] to prevent image flickering during rebuilds.
   Uint8List? get imageBytes {
-    if (_cachedImageBytes == null &&
-        photoBase64 != null &&
-        photoBase64!.trim().isNotEmpty) {
+    if (photoBase64 == null || photoBase64!.trim().isEmpty) return null;
+    final key = photoBase64!.trim();
+    if (!_imageCache.containsKey(key)) {
       try {
-        _cachedImageBytes = base64Decode(photoBase64!.trim());
-      } catch (_) {}
+        _imageCache[key] = base64Decode(key);
+      } catch (_) {
+        return null;
+      }
     }
-    return _cachedImageBytes;
+    return _imageCache[key];
   }
 
   /// Creates a [ProductBundle] instance.
