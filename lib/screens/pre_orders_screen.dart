@@ -1350,53 +1350,54 @@ class _OrderCard extends StatelessWidget {
       elevation: 0,
       color: Theme.of(context).colorScheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: isSelected
               ? GdcColors.emeraldPrimary
               : Theme.of(context)
                   .colorScheme
                   .outlineVariant
-                  .withValues(alpha: 0.4),
+                  .withValues(alpha: 0.35),
           width: isSelected ? 2 : 1,
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Row 1: Checkbox, Avatar, Customer Name, Order ID & Status Badge
             Row(
               children: [
                 if (canAdvance) ...[
                   SizedBox(
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     child: Checkbox(
                       value: isSelected,
                       onChanged: (_) => onSelectToggle(),
                       activeColor: GdcColors.emeraldPrimary,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6)),
+                          borderRadius: BorderRadius.circular(5)),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                 ],
                 CircleAvatar(
-                  radius: 18,
+                  radius: 16,
                   backgroundColor:
                       Theme.of(context).colorScheme.primaryContainer,
                   child: Text(
                     initials,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 12,
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1405,21 +1406,22 @@ class _OrderCard extends StatelessWidget {
                       Text(
                         order.customerName,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                            fontWeight: FontWeight.bold, fontSize: 13),
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        '#${order.orderId}',
+                        '#${order.orderId} • $dateStr',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Flexible(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -1428,90 +1430,53 @@ class _OrderCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-
-            // Timestamp (e.g. "Ordered 8 min ago")
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time_rounded,
-                  size: 14,
-                  color: Colors.amber.shade800,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  dateStr,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.amber.shade900,
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 10),
 
-            // Gray Order Summary Box
+            // Compact Order Summary Box with Total Amount integrated
             GestureDetector(
               onTap: onTap,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: Theme.of(context)
                       .colorScheme
                       .surfaceContainerHigh
                       .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text(
-                      'Order summary',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    Expanded(
+                      child: Text(
+                        summaryText,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(width: 8),
                     Text(
-                      summaryText,
+                      formatPeso(order.total),
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-
-            // Total Amount Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Text(
-                  formatPeso(order.total),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w900, fontSize: 16),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             // Primary Card Action Button
             SizedBox(
               width: double.infinity,
+              height: 38,
               child: _CardActionButton(order: order, canAdvance: canAdvance),
             ),
           ],
@@ -1524,13 +1489,13 @@ class _OrderCard extends StatelessWidget {
     final now = DateTime.now();
     final diff = now.difference(dateTime);
     if (diff.inMinutes < 1) {
-      return 'Ordered just now';
+      return 'Just now';
     } else if (diff.inMinutes < 60) {
-      return 'Ordered ${diff.inMinutes} min ago';
+      return '${diff.inMinutes}m ago';
     } else if (diff.inHours < 24) {
-      return 'Ordered ${diff.inHours} ${diff.inHours == 1 ? "hr" : "hrs"} ago';
+      return '${diff.inHours}h ago';
     } else {
-      return 'Ordered ${diff.inDays} ${diff.inDays == 1 ? "day" : "days"} ago';
+      return '${diff.inDays}d ago';
     }
   }
 }
@@ -1584,7 +1549,7 @@ class _OrderListRow extends StatelessWidget {
         order.status == OrderStatus.ready;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: theme.colorScheme.surface,
         shape: RoundedRectangleBorder(
@@ -1592,7 +1557,7 @@ class _OrderListRow extends StatelessWidget {
           side: BorderSide(
             color: isSelected
                 ? GdcColors.emeraldPrimary
-                : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -1669,6 +1634,7 @@ class _OrderListRow extends StatelessWidget {
                       const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,
+                        height: 36,
                         child: _CardActionButton(
                             order: order, canAdvance: canAdvance),
                       ),
@@ -1681,14 +1647,14 @@ class _OrderListRow extends StatelessWidget {
                     // Checkbox
                     if (canAdvance) ...[
                       SizedBox(
-                        width: 22,
-                        height: 22,
+                        width: 20,
+                        height: 20,
                         child: Checkbox(
                           value: isSelected,
                           onChanged: (_) => onSelectToggle(),
                           activeColor: GdcColors.emeraldPrimary,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(5)),
+                              borderRadius: BorderRadius.circular(4)),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1696,7 +1662,7 @@ class _OrderListRow extends StatelessWidget {
 
                     // Avatar
                     CircleAvatar(
-                      radius: 16,
+                      radius: 15,
                       backgroundColor: theme.colorScheme.primaryContainer,
                       child: Text(
                         initials,
@@ -1711,7 +1677,7 @@ class _OrderListRow extends StatelessWidget {
 
                     // Customer Name & Order ID
                     SizedBox(
-                      width: 150,
+                      width: 160,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1741,6 +1707,17 @@ class _OrderListRow extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          Text(
+                            summaryText,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
                           Row(
                             children: [
                               Icon(
@@ -1752,23 +1729,12 @@ class _OrderListRow extends StatelessWidget {
                               Text(
                                 dateStr,
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.amber.shade900,
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            summaryText,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -1776,23 +1742,36 @@ class _OrderListRow extends StatelessWidget {
                     const SizedBox(width: 12),
 
                     // Total Amount
-                    Text(
-                      formatPeso(order.total),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
+                    SizedBox(
+                      width: 85,
+                      child: Text(
+                        formatPeso(order.total),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
 
-                    // Action Button & Status Badge
+                    // Action Button
                     SizedBox(
-                      width: 160,
+                      width: 150,
+                      height: 36,
                       child: _CardActionButton(
                           order: order, canAdvance: canAdvance),
                     ),
-                    const SizedBox(width: 10),
-                    StatusBadge(order.status),
+                    const SizedBox(width: 12),
+
+                    // Status Badge
+                    SizedBox(
+                      width: 90,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: StatusBadge(order.status),
+                      ),
+                    ),
                   ],
                 );
               },
