@@ -1366,7 +1366,7 @@ class _OrderCard extends StatelessWidget {
       elevation: 0,
       color: Theme.of(context).colorScheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: isSelected
               ? GdcColors.emeraldPrimary
@@ -1378,55 +1378,54 @@ class _OrderCard extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Row 1: Checkbox, Avatar, Customer Name & ID, and Status Badge
+            // Row 1: Checkbox, Avatar, Customer Name, #ID, and Status Badge
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 if (canAdvance) ...[
                   SizedBox(
-                    width: 22,
-                    height: 22,
+                    width: 18,
+                    height: 18,
                     child: Checkbox(
                       value: isSelected,
                       onChanged: (_) => onSelectToggle(),
                       activeColor: GdcColors.emeraldPrimary,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(5)),
+                          borderRadius: BorderRadius.circular(4)),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                 ],
                 CircleAvatar(
-                  radius: 18,
+                  radius: 14,
                   backgroundColor:
                       Theme.of(context).colorScheme.primaryContainer,
                   child: Text(
                     initials,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 11,
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                  child: Row(
                     children: [
-                      Text(
-                        order.customerName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
-                        overflow: TextOverflow.ellipsis,
+                      Flexible(
+                        child: Text(
+                          order.customerName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      const SizedBox(height: 1),
+                      const SizedBox(width: 6),
                       Text(
                         '#${order.orderId}',
                         style: TextStyle(
@@ -1438,110 +1437,76 @@ class _OrderCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 StatusBadge(order.status),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
 
-            // Row 2: Relative Timestamp
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time_rounded,
-                  size: 13,
-                  color: Colors.amber.shade800,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  dateStr,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.amber.shade900,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Row 3: Order Summary Box
+            // Row 2: Order Summary + Price + Time Tag
             GestureDetector(
               onTap: onTap,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: Theme.of(context)
                       .colorScheme
                       .surfaceContainerHigh
-                      .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
+                      .withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text(
-                      'Order summary',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    Expanded(
+                      child: Text(
+                        '$summaryText • $dateStr',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(width: 6),
                     Text(
-                      summaryText,
+                      formatPeso(order.total),
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
 
-            // Row 4: Total Amount Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Text(
-                  formatPeso(order.total),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w900, fontSize: 16),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Row 5: Action Button & Print Icon
+            // Row 3: Action Buttons (Print + Primary Action)
             Row(
               children: [
-                IconButton.outlined(
-                  icon: const Icon(Icons.print_outlined, size: 18),
-                  tooltip: 'Print Packing Slip',
-                  onPressed: () => PackingSlipPrinter.printPackingSlip(order),
-                  style: IconButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.all(10),
+                SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: IconButton.outlined(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.print_outlined, size: 16),
+                    tooltip: 'Print Packing Slip',
+                    onPressed: () => PackingSlipPrinter.printPackingSlip(order),
+                    style: IconButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: SizedBox(
-                    height: 40,
-                    child:
-                        _CardActionButton(order: order, canAdvance: canAdvance),
+                    height: 34,
+                    child: _CardActionButton(
+                        order: order, canAdvance: canAdvance),
                   ),
                 ),
               ],
@@ -1616,15 +1581,15 @@ class _OrderListRow extends StatelessWidget {
         order.status == OrderStatus.ready;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 4),
       child: Material(
         color: theme.colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           side: BorderSide(
             color: isSelected
                 ? GdcColors.emeraldPrimary
-                : theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -1632,7 +1597,7 @@ class _OrderListRow extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final bool isCompactWidth = constraints.maxWidth < 650;
@@ -1645,8 +1610,8 @@ class _OrderListRow extends StatelessWidget {
                         children: [
                           if (canAdvance) ...[
                             SizedBox(
-                              width: 20,
-                              height: 20,
+                              width: 18,
+                              height: 18,
                               child: Checkbox(
                                 value: isSelected,
                                 onChanged: (_) => onSelectToggle(),
@@ -1655,38 +1620,38 @@ class _OrderListRow extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(4)),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                           ],
                           CircleAvatar(
-                            radius: 14,
+                            radius: 12,
                             backgroundColor: theme.colorScheme.primaryContainer,
                             child: Text(
                               initials,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                fontSize: 11,
+                                fontSize: 10,
                                 color: theme.colorScheme.primary,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               '${order.customerName} (#${order.orderId})',
                               style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13),
+                                  fontWeight: FontWeight.bold, fontSize: 12),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           StatusBadge(order.status),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            summaryText,
+                            '$summaryText • $dateStr',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: theme.colorScheme.onSurfaceVariant),
@@ -1694,23 +1659,28 @@ class _OrderListRow extends StatelessWidget {
                           Text(
                             formatPeso(order.total),
                             style: const TextStyle(
-                                fontWeight: FontWeight.w900, fontSize: 14),
+                                fontWeight: FontWeight.w900, fontSize: 13),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          IconButton.outlined(
-                            icon: const Icon(Icons.print_outlined, size: 16),
-                            tooltip: 'Print Packing Slip',
-                            onPressed: () =>
-                                PackingSlipPrinter.printPackingSlip(order),
+                          SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: IconButton.outlined(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(Icons.print_outlined, size: 16),
+                              tooltip: 'Print Packing Slip',
+                              onPressed: () =>
+                                  PackingSlipPrinter.printPackingSlip(order),
+                            ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: SizedBox(
-                              height: 36,
+                              height: 32,
                               child: _CardActionButton(
                                   order: order, canAdvance: canAdvance),
                             ),
@@ -1726,8 +1696,8 @@ class _OrderListRow extends StatelessWidget {
                     // Checkbox
                     if (canAdvance) ...[
                       SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 18,
+                        height: 18,
                         child: Checkbox(
                           value: isSelected,
                           onChanged: (_) => onSelectToggle(),
@@ -1736,129 +1706,89 @@ class _OrderListRow extends StatelessWidget {
                               borderRadius: BorderRadius.circular(4)),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                     ],
 
                     // Avatar
                     CircleAvatar(
-                      radius: 15,
+                      radius: 12,
                       backgroundColor: theme.colorScheme.primaryContainer,
                       child: Text(
                         initials,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                          fontSize: 10,
                           color: theme.colorScheme.primary,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
 
                     // Customer Name & Order ID
                     SizedBox(
-                      width: 160,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            order.customerName,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 13),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            '#${order.orderId}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      width: 150,
+                      child: Text(
+                        '${order.customerName} (#${order.orderId})',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
 
                     // Order Summary & Timestamp
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            summaryText,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.access_time_rounded,
-                                size: 12,
-                                color: Colors.amber.shade800,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                dateStr,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber.shade900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                      child: Text(
+                        '$summaryText • $dateStr',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
 
                     // Total Amount
                     SizedBox(
-                      width: 85,
+                      width: 80,
                       child: Text(
                         formatPeso(order.total),
                         textAlign: TextAlign.right,
                         style: const TextStyle(
                           fontWeight: FontWeight.w900,
-                          fontSize: 15,
+                          fontSize: 13,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 10),
 
                     // Print Slip Icon Button
-                    IconButton(
-                      icon: const Icon(Icons.print_outlined, size: 18),
-                      tooltip: 'Print Packing Slip',
-                      onPressed: () => PackingSlipPrinter.printPackingSlip(order),
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.print_outlined, size: 16),
+                        tooltip: 'Print Packing Slip',
+                        onPressed: () => PackingSlipPrinter.printPackingSlip(order),
+                      ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
 
                     // Action Button
                     SizedBox(
-                      width: 150,
-                      height: 36,
+                      width: 140,
+                      height: 30,
                       child: _CardActionButton(
                           order: order, canAdvance: canAdvance),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
 
                     // Status Badge
-                    SizedBox(
-                      width: 90,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: StatusBadge(order.status),
-                      ),
-                    ),
+                    StatusBadge(order.status),
                   ],
                 );
               },
