@@ -119,12 +119,7 @@ class OrderProvider extends BaseProvider {
       _checkExpirations(list);
     }, onError: (e) {
       setLoading(false);
-      debugPrint('Orders Stream Error: $e. Reconnecting in 3 seconds...');
-      Timer(const Duration(seconds: 3), () {
-        if (!isDisposed) {
-          initialize();
-        }
-      });
+      debugPrint('Orders Stream Error: $e');
     }));
 
     // Start a timer to check expirations every minute
