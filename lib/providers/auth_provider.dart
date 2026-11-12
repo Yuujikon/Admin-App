@@ -11,7 +11,7 @@ import '../utils/format.dart';
 import '../utils/totp.dart';
 
 /// User role authorization levels.
-enum UserRole { admin, inventoryManager, cashier, none }
+enum UserRole { admin, trustedPartner, none }
 
 /// Authentication provider managing Firebase Auth state, user roles, phone numbers, and TOTP 2FA.
 class AppAuthProvider extends ChangeNotifier {
@@ -166,10 +166,15 @@ class AppAuthProvider extends ChangeNotifier {
           _status = 'pending';
         } else {
           _status = 'approved';
-          _role = UserRole.values.firstWhere(
-            (e) => e.name == roleStr,
-            orElse: () => UserRole.none,
-          );
+          if (roleStr == 'admin') {
+            _role = UserRole.admin;
+          } else if (roleStr == 'trustedPartner' ||
+              roleStr == 'cashier' ||
+              roleStr == 'inventoryManager') {
+            _role = UserRole.trustedPartner;
+          } else {
+            _role = UserRole.none;
+          }
         }
       } else {
         _totpSecret = TotpUtils.generateSecret();
@@ -299,7 +304,7 @@ class AppAuthProvider extends ChangeNotifier {
   /// Completes registration details for a first-time Google Sign-In user.
   Future<void> completeGoogleRegistration({
     required String name,
-    required String requestedRole,
+    String requestedRole = 'trustedPartner',
   }) async {
     final user = currentUser;
     if (user == null) return;

@@ -22,7 +22,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   final _fullName = TextEditingController();
   final _phone = TextEditingController();
 
-  String _requestedRole = 'cashier';
   bool _isRegistering = false;
   bool _obscurePass = true;
   bool _obscureConfirm = true;
@@ -114,7 +113,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Registration requires a valid email and Store Admin approval before system access is granted.',
+                            'Registration requires Store Admin review & approval. Once accepted by the Store Admin, your account will be granted access as a Trusted Partner.',
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(context).colorScheme.onSurface,
@@ -218,41 +217,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                               () => _obscureConfirm = !_obscureConfirm),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Requested Role
-                  SizedBox(
-                    width: double.infinity,
-                    child: DropdownButtonFormField<String>(
-                      value: _requestedRole,
-                      decoration: const InputDecoration(
-                        labelText: 'Requested Position',
-                        prefixIcon: Icon(Icons.work_outline),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'cashier',
-                          child: Text('Cashier (POS & Pre-Orders)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'inventoryManager',
-                          child: Text('Inventory Manager (Stock & Suppliers)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'admin',
-                          child: Text('Store Admin (Full Management)'),
-                        ),
-                      ],
-                      onChanged: _loading
-                          ? null
-                          : (v) {
-                              if (v != null) {
-                                setState(() => _requestedRole = v);
-                              }
-                            },
                     ),
                   ),
                 ],
@@ -486,7 +450,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             email: email,
             password: pass,
             phoneNumber: phone,
-            requestedRole: _requestedRole,
+            requestedRole: 'trustedPartner',
           );
         } on FirebaseAuthException catch (e) {
           setState(() {
@@ -539,84 +503,55 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     final googleUser = auth.currentUser;
     final nameCtrl =
         TextEditingController(text: googleUser?.displayName ?? '');
-    String selectedRole = 'cashier';
 
     await showDialog(
       context: context,
       barrierDismissible: false,
       useRootNavigator: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSt) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.person_pin_rounded),
-              SizedBox(width: 8),
-              Text('Complete Profile',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Please confirm your details and requested position for Store Admin approval.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.person_pin_rounded),
+            SizedBox(width: 8),
+            Text('Complete Profile',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Please confirm your details for Store Admin approval.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameCtrl,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Full Name',
+                prefixIcon: Icon(Icons.person_outline),
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameCtrl,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  prefixIcon: Icon(Icons.person_outline),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: selectedRole,
-                decoration: const InputDecoration(
-                  labelText: 'Requested Position',
-                  prefixIcon: Icon(Icons.work_outline),
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'cashier',
-                    child: Text('Cashier (POS & Pre-Orders)'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'inventoryManager',
-                    child: Text('Inventory Manager (Stock & Suppliers)'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'admin',
-                    child: Text('Store Admin (Full Management)'),
-                  ),
-                ],
-                onChanged: (v) {
-                  if (v != null) setSt(() => selectedRole = v);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () async {
-                final name = nameCtrl.text.trim();
-                if (name.isEmpty) return;
-                Navigator.pop(ctx);
-                setState(() => _loading = true);
-                await auth.completeGoogleRegistration(
-                  name: name,
-                  requestedRole: selectedRole,
-                );
-              },
-              child: const Text('SUBMIT REQUEST'),
             ),
           ],
         ),
+        actions: [
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(ctx);
+              setState(() => _loading = true);
+              await auth.completeGoogleRegistration(
+                name: name,
+                requestedRole: 'trustedPartner',
+              );
+            },
+            child: const Text('SUBMIT REQUEST'),
+          ),
+        ],
       ),
     );
   }

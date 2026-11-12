@@ -574,8 +574,7 @@ class _AdminTopBar extends StatelessWidget {
 
   String _getRoleLabel(UserRole role) => switch (role) {
         UserRole.admin => 'Administrator',
-        UserRole.inventoryManager => 'Inventory Manager',
-        UserRole.cashier => 'Cashier Staff',
+        UserRole.trustedPartner => 'Trusted Partner',
         UserRole.none => 'Access Denied',
       };
 }

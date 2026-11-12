@@ -571,16 +571,14 @@ class UserManagementScreen extends StatelessWidget {
 
   String _getRoleLabel(String role) => switch (role) {
         'admin' => 'Admin',
-        'inventoryManager' => 'Inventory Manager',
-        'cashier' => 'Cashier',
+        'trustedPartner' || 'cashier' || 'inventoryManager' => 'Trusted Partner',
         _ => role.toUpperCase(),
       };
 
   Color _getRoleBadgeColor(String role) {
     return switch (role) {
       'admin' => const Color(0xFF7E57C2), // Purple
-      'cashier' => const Color(0xFF4CAF50), // Green
-      'inventoryManager' => const Color(0xFF2196F3), // Blue
+      'trustedPartner' || 'cashier' || 'inventoryManager' => const Color(0xFFC07038), // Copper
       _ => Colors.grey,
     };
   }
@@ -588,9 +586,9 @@ class UserManagementScreen extends StatelessWidget {
   void _showApproveDialog(
       BuildContext context, String id, String name, String email, String initialRequestedRole) {
     String selectedRole =
-        ['admin', 'inventoryManager', 'cashier'].contains(initialRequestedRole)
+        ['admin', 'trustedPartner'].contains(initialRequestedRole)
             ? initialRequestedRole
-            : 'cashier';
+            : 'trustedPartner';
 
     showDialog(
       context: context,
@@ -627,12 +625,9 @@ class UserManagementScreen extends StatelessWidget {
                     border: OutlineInputBorder()),
                 items: const [
                   DropdownMenuItem(
+                      value: 'trustedPartner', child: Text('Trusted Partner (Copper Badge)')),
+                  DropdownMenuItem(
                       value: 'admin', child: Text('Admin (Purple Badge)')),
-                  DropdownMenuItem(
-                      value: 'cashier', child: Text('Cashier (Green Badge)')),
-                  DropdownMenuItem(
-                      value: 'inventoryManager',
-                      child: Text('Inventory Manager (Blue Badge)')),
                 ],
                 onChanged: (v) {
                   if (v != null) setSt(() => selectedRole = v);
@@ -735,19 +730,16 @@ class UserManagementScreen extends StatelessWidget {
                         color: Colors.grey)),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: ['admin', 'cashier', 'inventoryManager'].contains(selected)
+                  value: ['admin', 'trustedPartner'].contains(selected)
                       ? selected
-                      : 'cashier',
+                      : 'trustedPartner',
                   decoration: const InputDecoration(
                       labelText: 'Assigned Role', border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(
+                        value: 'trustedPartner', child: Text('Trusted Partner (Copper Badge)')),
+                    DropdownMenuItem(
                         value: 'admin', child: Text('Admin (Purple Badge)')),
-                    DropdownMenuItem(
-                        value: 'cashier', child: Text('Cashier (Green Badge)')),
-                    DropdownMenuItem(
-                        value: 'inventoryManager',
-                        child: Text('Inventory Manager (Blue Badge)')),
                   ],
                   onChanged: (v) {
                     if (v != null) setSt(() => selected = v);
@@ -1026,17 +1018,14 @@ class UserManagementScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-                '• Admin (Purple Badge): Full access to POS, Inventory, Reports, and Staff Settings.',
+            const Text(
+                '• Admin (Purple Badge): Full access to POS, Inventory, Reports, System & Staff Settings.',
                 style: TextStyle(fontSize: 13)),
-            SizedBox(height: 6),
-            Text(
-                '• Inventory Manager (Blue Badge): Manage Stock, Suppliers, Bundles, and Loss Logs.',
+            const SizedBox(height: 6),
+            const Text(
+                '• Trusted Partner (Copper Badge): Full operational access to POS, Pre-Orders, Stock, Inventory Records, Reports & Suppliers.',
                 style: TextStyle(fontSize: 13)),
-            SizedBox(height: 6),
-            Text('• Cashier (Green Badge): Access to POS and Pre-Orders only.',
-                style: TextStyle(fontSize: 13)),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text(
                 '• Admin Retirement: To disable your own admin account, ensure another active Admin exists first.',
                 style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -1211,10 +1200,9 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: ['admin', 'cashier', 'inventoryManager']
-                        .contains(_selectedRole)
+                value: ['admin', 'trustedPartner'].contains(_selectedRole)
                     ? _selectedRole
-                    : 'cashier',
+                    : 'trustedPartner',
                 decoration: const InputDecoration(
                   labelText: 'Assigned Role',
                   prefixIcon: Icon(Icons.admin_panel_settings_outlined, size: 20),
@@ -1223,12 +1211,9 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                 ),
                 items: const [
                   DropdownMenuItem(
+                      value: 'trustedPartner', child: Text('Trusted Partner (Copper Badge)')),
+                  DropdownMenuItem(
                       value: 'admin', child: Text('Admin (Purple Badge)')),
-                  DropdownMenuItem(
-                      value: 'cashier', child: Text('Cashier (Green Badge)')),
-                  DropdownMenuItem(
-                      value: 'inventoryManager',
-                      child: Text('Inventory Manager (Blue Badge)')),
                 ],
                 onChanged: _loading
                     ? null

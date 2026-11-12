@@ -360,10 +360,9 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
       } else {
         // REGISTRATION PENDING APPROVAL SCREEN
         final requestedStr = switch (auth.requestedRole) {
-          'cashier' => 'Cashier',
-          'inventoryManager' => 'Inventory Manager',
           'admin' => 'Store Admin',
-          _ => 'Staff Role',
+          'trustedPartner' || 'cashier' || 'inventoryManager' => 'Trusted Partner',
+          _ => 'Trusted Partner',
         };
 
         return Scaffold(
@@ -423,14 +422,14 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                         ],
                         Text('Email: ${user.email}', style: const TextStyle(fontSize: 12)),
                         const SizedBox(height: 4),
-                        Text('Requested Position: $requestedStr',
+                        Text('Requested Access: $requestedStr',
                             style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Your registration request has been submitted successfully. A Store Admin must review your details and assign your authorized role before you can access the system.',
+                    'Your registration request has been submitted successfully. A Store Admin must review your details and accept your application before your Trusted Partner access is activated.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),

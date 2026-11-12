@@ -41,8 +41,7 @@ class MoreManagementScreen extends StatelessWidget {
         : (name.isNotEmpty ? name[0].toUpperCase() : 'MR');
 
     final bool isAdmin = auth.role == UserRole.admin;
-    final bool isInv = auth.role == UserRole.inventoryManager;
-    final bool isCashier = auth.role == UserRole.cashier;
+    final bool isTrusted = auth.role == UserRole.trustedPartner;
 
     final semantic = Theme.of(context).semantic;
 
@@ -179,7 +178,7 @@ class MoreManagementScreen extends StatelessWidget {
                     }
                   },
                 ),
-                if (isAdmin || isCashier) ...[
+                if (isAdmin || isTrusted) ...[
                   _menuItemCard(
                     context,
                     icon: Icons.access_time_rounded,
@@ -465,17 +464,15 @@ class MoreManagementScreen extends StatelessWidget {
   }
 
   String _getRoleLabel(UserRole role) => switch (role) {
-        UserRole.admin => 'Admin',
-        UserRole.inventoryManager => 'Inv Manager',
-        UserRole.cashier => 'Cashier',
+        UserRole.admin => 'Administrator',
+        UserRole.trustedPartner => 'Trusted Partner',
         UserRole.none => 'Guest',
       };
 
   Color _getRoleColor(UserRole role, BuildContext context) {
     return switch (role) {
       UserRole.admin => GdcColors.violetAccent,
-      UserRole.inventoryManager => Colors.blue.shade600,
-      UserRole.cashier => GdcColors.emeraldPrimary,
+      UserRole.trustedPartner => const Color(0xFFC07038),
       UserRole.none => Theme.of(context).disabledColor,
     };
   }
