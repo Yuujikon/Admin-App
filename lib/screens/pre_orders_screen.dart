@@ -1864,52 +1864,6 @@ class _OrderListRow extends StatelessWidget {
               },
             ),
           ),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // Total Amount
-                    SizedBox(
-                      width: 80,
-                      child: Text(
-                        formatPeso(order.total),
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-
-                    // Print Slip Icon Button
-                    SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.print_outlined, size: 16),
-                        tooltip: 'Print Packing Slip',
-                        onPressed: () => PackingSlipPrinter.printPackingSlip(order),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-
-                    // Action Button
-                    SizedBox(
-                      width: 140,
-                      height: 30,
-                      child: _CardActionButton(
-                          order: order, canAdvance: canAdvance),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // Status Badge
-                    StatusBadge(order.status),
-                  ],
-                );
-              },
-            ),
-          ),
         ),
       ),
     );
