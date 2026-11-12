@@ -83,8 +83,7 @@ class SplitPaneLayout extends StatelessWidget {
 }
 
 /// Tablet-Optimized Responsive Card Grid Container.
-/// Enforces card width constraints (320px - 400px), multi-column flow on tablet screens (>768px),
-/// natural vertical card height (no vertical stretching), and centers leftover horizontal space.
+/// Enforces fluid multi-column grid layout spanning 100% of available width without wasting horizontal space.
 class ResponsiveCardGrid extends StatelessWidget {
   final List<Widget> children;
   final double minCardWidth;
@@ -97,7 +96,7 @@ class ResponsiveCardGrid extends StatelessWidget {
     super.key,
     required this.children,
     this.minCardWidth = 320.0,
-    this.maxCardWidth = 400.0,
+    this.maxCardWidth = double.infinity,
     this.spacing = 16.0,
     this.runSpacing = 16.0,
     this.padding = EdgeInsets.zero,
@@ -116,44 +115,33 @@ class ResponsiveCardGrid extends StatelessWidget {
           final double availableWidth = constraints.maxWidth;
 
           int columns;
-          double cardWidth;
-
-          if (availableWidth > 768) {
-            // Tablet & Desktop (> 768px): Flow automatically into 2 or 3 (up to 4) columns
-            columns = ((availableWidth + spacing) / (minCardWidth + spacing))
-                .floor()
-                .clamp(2, 4);
-            final double gridItemWidth =
-                (availableWidth - (spacing * (columns - 1))) / columns;
-            cardWidth = gridItemWidth.clamp(minCardWidth, maxCardWidth);
+          if (availableWidth >= 1200) {
+            columns = 3;
+          } else if (availableWidth >= 640) {
+            columns = 2;
           } else {
-            // Mobile (<= 768px): 1 column bounded by maxCardWidth
             columns = 1;
-            cardWidth = availableWidth.clamp(0.0, maxCardWidth);
           }
 
-          final double gridTotalWidth =
-              (columns * cardWidth) + ((columns - 1) * spacing);
+          final double rawWidth =
+              (availableWidth - (spacing * (columns - 1))) / columns;
+          final double cardWidth = maxCardWidth.isFinite
+              ? rawWidth.clamp(minCardWidth, maxCardWidth)
+              : rawWidth;
 
-          return Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              width: gridTotalWidth,
-              child: Wrap(
-                spacing: spacing,
-                runSpacing: runSpacing,
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.start,
-                children: children.map((child) {
-                  return SizedBox(
-                    width: cardWidth,
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: child,
-                    ),
-                  );
-                }).toList(),
-              ),
+          return SizedBox(
+            width: availableWidth,
+            child: Wrap(
+              spacing: spacing,
+              runSpacing: runSpacing,
+              alignment: WrapAlignment.start,
+              crossAxisAlignment: WrapCrossAlignment.start,
+              children: children.map((child) {
+                return SizedBox(
+                  width: cardWidth,
+                  child: child,
+                );
+              }).toList(),
             ),
           );
         },
