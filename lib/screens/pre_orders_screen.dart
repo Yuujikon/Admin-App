@@ -1579,7 +1579,6 @@ class _OrderListRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
