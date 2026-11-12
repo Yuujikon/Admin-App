@@ -146,17 +146,18 @@ class ExpensesScreen extends StatelessWidget {
             ),
           ),
 
-        ...expenses.map((e) => Container(
+        ...expenses.map((e) => Card(
               margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
+                side: BorderSide(
                     color: Theme.of(context)
                         .colorScheme
                         .outline
                         .withValues(alpha: 0.5)),
               ),
+              clipBehavior: Clip.antiAlias,
               child: ListTile(
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

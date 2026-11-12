@@ -740,16 +740,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final isExpired = log.isExpired;
     final isNearExpiry = log.isNearExpiration;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+        side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
           onTap: () => _showDeliveryLogDetailModal(context, log, products),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(
@@ -872,16 +873,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final isNearExpiry = batch.isNearExpiration;
     final hasStock = batch.quantityRemaining > 0;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+        side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(
             padding: const EdgeInsets.all(10),
@@ -989,16 +991,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
   Widget _buildLossRecordRow(BuildContext context, LossRecord loss) {
     final theme = Theme.of(context);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+        side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(
             padding: const EdgeInsets.all(10),
@@ -1056,16 +1059,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         item.type == _TimelineType.shiftEnd;
     final isInquiry = item.type == _TimelineType.supplierInquiry;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+        side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
           onTap: item.originalData is RestockInquiry
               ? () => _showInquiryDetailModal(context, item.originalData as RestockInquiry)
               : (item.originalData is ShiftSession
@@ -1176,16 +1180,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
 
     final totalSales = shift.cashSales;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+        side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
           onTap: () => _showShiftDetailModal(context, shift),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(
@@ -1289,16 +1294,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         .map((i) => '${i.productName} (${i.requestedQty} ${i.unit})')
         .join(', ');
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+        side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
           onTap: () => _showInquiryDetailModal(context, inquiry),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(

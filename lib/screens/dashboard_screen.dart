@@ -980,23 +980,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return StatefulBuilder(
         builder: (context, setState) {
           return Material(
-            color: Colors.transparent,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Theme(
-                data: Theme.of(context).copyWith(
-                  dividerColor: Colors.transparent,
-                  expansionTileTheme: ExpansionTileThemeData(
-                    backgroundColor: Colors.transparent,
-                    collapsedBackgroundColor: Colors.transparent,
-                  )
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.4)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                expansionTileTheme: const ExpansionTileThemeData(
+                  backgroundColor: Colors.transparent,
+                  collapsedBackgroundColor: Colors.transparent,
                 ),
-                child: ExpansionTile(
+              ),
+              child: ExpansionTile(
                 initiallyExpanded: false,
                 title: Row(
                   children: [
