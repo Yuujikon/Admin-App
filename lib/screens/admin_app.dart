@@ -46,7 +46,6 @@ class AdminApp extends StatefulWidget {
 class _AdminAppState extends State<AdminApp> {
   String _activeDestinationId = AdminDestination.dashboardId;
   String? _inventoryCategory;
-  StreamSubscription<PreOrder>? _newOrderSub;
 
   void _navigateToDestination(String destinationId, {String? category}) {
     setState(() {
@@ -71,53 +70,6 @@ class _AdminAppState extends State<AdminApp> {
       _ => AdminDestination.moreId,
     };
     _navigateToDestination(destId, category: category);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _newOrderSub =
-          context.read<OrderProvider>().onNewOrderReceived.listen((newOrder) {
-        if (!mounted) return;
-        HapticFeedback.vibrate();
-
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.shopping_bag_rounded, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '🛍️ New Pre-Order #${newOrder.orderId} from ${newOrder.customerName} (${formatPeso(newOrder.total)})',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: GdcColors.primaryGreen,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 6),
-            action: SnackBarAction(
-              label: 'VIEW',
-              textColor: Colors.white,
-              onPressed: () {
-                _navigateToDestination(AdminDestination.preOrdersId);
-              },
-            ),
-          ),
-        );
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _newOrderSub?.cancel();
-    super.dispose();
   }
 
   String formatPeso(double amount) {
