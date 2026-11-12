@@ -640,7 +640,7 @@ class _SideLogoutButton extends StatelessWidget {
   }
 }
 
-Future<void> _confirmLogout(BuildContext context, AuthProvider auth) async {
+Future<void> _confirmLogout(BuildContext context, AppAuthProvider auth) async {
   final confirm = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
