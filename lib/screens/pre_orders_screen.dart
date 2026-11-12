@@ -1477,36 +1477,11 @@ class _OrderCard extends StatelessWidget {
             Divider(height: 1, thickness: 1, color: outlineColor),
             const SizedBox(height: 12),
 
-            // Section 3: Action Buttons (Primary Action Button on Left, Print Icon on Right)
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 40,
-                    child: _CardActionButton(
-                        order: order, canAdvance: canAdvance),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: OutlinedButton(
-                    onPressed: () => PackingSlipPrinter.printPackingSlip(order),
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      side: BorderSide(color: outlineColor),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                    child: Icon(
-                      Icons.print_outlined,
-                      size: 18,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
+            // Section 3: Action Button
+            SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: _CardActionButton(order: order, canAdvance: canAdvance),
             ),
           ],
         ),
@@ -1661,23 +1636,11 @@ class _OrderListRow extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          IconButton.outlined(
-                            icon: const Icon(Icons.print_outlined, size: 16),
-                            tooltip: 'Print Packing Slip',
-                            onPressed: () =>
-                                PackingSlipPrinter.printPackingSlip(order),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: SizedBox(
-                              height: 36,
-                              child: _CardActionButton(
-                                  order: order, canAdvance: canAdvance),
-                            ),
-                          ),
-                        ],
+                      SizedBox(
+                        width: double.infinity,
+                        height: 36,
+                        child: _CardActionButton(
+                            order: order, canAdvance: canAdvance),
                       ),
                     ],
                   );
@@ -1796,17 +1759,9 @@ class _OrderListRow extends StatelessWidget {
                     ),
                     const SizedBox(width: 14),
 
-                    // Print Slip Icon Button
-                    IconButton(
-                      icon: const Icon(Icons.print_outlined, size: 18),
-                      tooltip: 'Print Packing Slip',
-                      onPressed: () => PackingSlipPrinter.printPackingSlip(order),
-                    ),
-                    const SizedBox(width: 4),
-
                     // Action Button
                     SizedBox(
-                      width: 150,
+                      width: 160,
                       height: 36,
                       child: _CardActionButton(
                           order: order, canAdvance: canAdvance),
