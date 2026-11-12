@@ -1362,18 +1362,16 @@ class _OrderCard extends StatelessWidget {
         order.status == OrderStatus.staging ||
         order.status == OrderStatus.ready;
 
+    final theme = Theme.of(context);
+    final outlineColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.35);
+
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.surface,
+      color: theme.colorScheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: isSelected
-              ? GdcColors.emeraldPrimary
-              : Theme.of(context)
-                  .colorScheme
-                  .outlineVariant
-                  .withValues(alpha: 0.35),
+          color: isSelected ? GdcColors.emeraldPrimary : outlineColor,
           width: isSelected ? 2 : 1,
         ),
       ),
@@ -1383,7 +1381,7 @@ class _OrderCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Row 1: Checkbox, Avatar, Customer Name & ID, and Status Badge
+            // Section 1: Checkbox, Avatar, Customer Name & ID + Timestamp, Status Badge
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -1399,18 +1397,17 @@ class _OrderCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(5)),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                 ],
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.primaryContainer,
+                  backgroundColor: theme.colorScheme.primaryContainer,
                   child: Text(
                     initials,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: theme.colorScheme.primary,
                     ),
                   ),
                 ),
@@ -1426,14 +1423,15 @@ class _OrderCard extends StatelessWidget {
                             fontWeight: FontWeight.bold, fontSize: 14),
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 1),
+                      const SizedBox(height: 2),
                       Text(
-                        '#${order.orderId}',
+                        '#${order.orderId} • $dateStr',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -1443,105 +1441,69 @@ class _OrderCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            Divider(height: 1, thickness: 1, color: outlineColor),
+            const SizedBox(height: 12),
 
-            // Row 2: Relative Timestamp
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time_rounded,
-                  size: 13,
-                  color: Colors.amber.shade800,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  dateStr,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.amber.shade900,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Row 3: Order Summary Box
+            // Section 2: Order Summary Text & Total Amount (Clean Divider Layout)
             GestureDetector(
               onTap: onTap,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHigh
-                      .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Order summary',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
                       summaryText,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 12),
-                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    formatPeso(order.total),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
-
-            // Row 4: Total Amount Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Text(
-                  formatPeso(order.total),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w900, fontSize: 16),
-                ),
-              ],
-            ),
+            Divider(height: 1, thickness: 1, color: outlineColor),
             const SizedBox(height: 12),
 
-            // Row 5: Action Button & Print Icon
+            // Section 3: Action Buttons (Primary Action Button on Left, Print Icon on Right)
             Row(
               children: [
-                IconButton.outlined(
-                  icon: const Icon(Icons.print_outlined, size: 18),
-                  tooltip: 'Print Packing Slip',
-                  onPressed: () => PackingSlipPrinter.printPackingSlip(order),
-                  style: IconButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.all(10),
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Expanded(
                   child: SizedBox(
                     height: 40,
-                    child:
-                        _CardActionButton(order: order, canAdvance: canAdvance),
+                    child: _CardActionButton(
+                        order: order, canAdvance: canAdvance),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: OutlinedButton(
+                    onPressed: () => PackingSlipPrinter.printPackingSlip(order),
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      side: BorderSide(color: outlineColor),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Icon(
+                      Icons.print_outlined,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
