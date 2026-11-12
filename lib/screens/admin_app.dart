@@ -245,30 +245,53 @@ class _AdminAppState extends State<AdminApp> {
                             ),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: destinations.map((d) {
-                                final isSelected = d.id == _activeDestinationId;
-                                final badgeCount =
-                                    d.id == AdminDestination.preOrdersId
-                                        ? toProcessCount
-                                        : 0;
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: destinations.map((d) {
+                                      final isSelected =
+                                          d.id == _activeDestinationId;
+                                      final badgeCount =
+                                          d.id == AdminDestination.preOrdersId
+                                              ? toProcessCount
+                                              : 0;
 
-                                return _SideNavItem(
-                                  destination: d,
-                                  isSelected: isSelected,
+                                      return _SideNavItem(
+                                        destination: d,
+                                        isSelected: isSelected,
+                                        isExpanded: isExpanded,
+                                        badgeCount: badgeCount,
+                                        onTap: () {
+                                          setState(() {
+                                            _activeDestinationId = d.id;
+                                          });
+                                        },
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ),
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant
+                                    .withValues(alpha: 0.3),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: _SideLogoutButton(
                                   isExpanded: isExpanded,
-                                  badgeCount: badgeCount,
-                                  onTap: () {
-                                    setState(() {
-                                      _activeDestinationId = d.id;
-                                    });
-                                  },
-                                );
-                              }).toList(),
-                            ),
+                                  onTap: () => _confirmLogout(context, auth),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
 
@@ -501,72 +524,53 @@ class _AdminTopBar extends StatelessWidget {
             ],
           ),
           const Spacer(),
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outlineVariant
-                      .withValues(alpha: 0.5),
+          // Dark Mode Toggle Button (Relocated cleanly in top right)
+          Tooltip(
+            message: context.watch<ThemeProvider>().isDarkMode
+                ? 'Switch to Light Mode'
+                : 'Switch to Dark Mode',
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => context
+                    .read<ThemeProvider>()
+                    .toggleTheme(!context.read<ThemeProvider>().isDarkMode),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.6),
+                    ),
+                  ),
+                  child: Icon(
+                    context.watch<ThemeProvider>().isDarkMode
+                        ? Icons.light_mode_rounded
+                        : Icons.dark_mode_outlined,
+                    size: isCompact ? 18 : 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
               ),
-              child: Icon(
-                context.watch<ThemeProvider>().isDarkMode
-                    ? Icons.light_mode_rounded
-                    : Icons.dark_mode_outlined,
-                size: isCompact ? 18 : 20,
-              ),
             ),
-            onPressed: () => context
-                .read<ThemeProvider>()
-                .toggleTheme(!context.read<ThemeProvider>().isDarkMode),
-            tooltip: 'Toggle Theme',
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: GdcColors.creamActiveBackground,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
+          if (isCompact) ...[
+            const SizedBox(width: 8),
+            IconButton(
+              icon: Icon(
                 Icons.logout_rounded,
-                size: 18,
-                color: GdcColors.darkEmerald,
+                size: 20,
+                color: Theme.of(context).colorScheme.error,
               ),
+              tooltip: 'Log Out',
+              onPressed: () => _confirmLogout(context, auth),
             ),
-            tooltip: 'Logout',
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Confirm Logout'),
-                  content: const Text(
-                      'Are you sure you want to log out of your account?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(false),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                      ),
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      child: const Text('Log Out'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await auth.logout();
-              }
-            },
-          ),
+          ],
         ],
       ),
     );
@@ -577,5 +581,89 @@ class _AdminTopBar extends StatelessWidget {
         UserRole.trustedPartner => 'Trusted Partner',
         UserRole.none => 'Access Denied',
       };
+}
+
+// ── SIDEBAR LOGOUT BUTTON WIDGET ──────────────────────────────────────────────
+
+class _SideLogoutButton extends StatelessWidget {
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _SideLogoutButton({
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final errorColor = theme.colorScheme.error;
+
+    if (!isExpanded) {
+      return IconButton(
+        icon: Icon(Icons.logout_rounded, color: errorColor, size: 20),
+        tooltip: 'Log Out',
+        onPressed: onTap,
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: errorColor.withValues(alpha: 0.12),
+        highlightColor: errorColor.withValues(alpha: 0.05),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.logout_rounded, color: errorColor, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Log Out',
+                style: TextStyle(
+                  color: errorColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _confirmLogout(BuildContext context, AuthProvider auth) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Confirm Logout'),
+      content:
+          const Text('Are you sure you want to log out of your account?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Log Out'),
+        ),
+      ],
+    ),
+  );
+  if (confirm == true) {
+    await auth.logout();
+  }
 }
 

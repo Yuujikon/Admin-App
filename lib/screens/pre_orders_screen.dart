@@ -1400,6 +1400,7 @@ class _OrderCard extends StatelessWidget {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         order.customerName,
@@ -1418,7 +1419,13 @@ class _OrderCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                StatusBadge(order.status),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: StatusBadge(order.status),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
