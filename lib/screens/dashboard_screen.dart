@@ -89,7 +89,9 @@ class _IsolateComputationParams {
 
 _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
 
+  // Filter today's transactions for the recent transaction list
   final todayTx = params.transactions.where((t) {
     try {
       return DateFormat('yyyy-MM-dd').format(t.createdAt) == today;
@@ -98,14 +100,23 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
     }
   }).toList();
 
-  final double gross = todayTx.fold(0.0, (sum, t) {
+  // Filter current month transactions for monthly metric aggregation
+  final monthTx = params.transactions.where((t) {
+    try {
+      return DateFormat('yyyy-MM').format(t.createdAt) == currentMonth;
+    } catch (_) {
+      return false;
+    }
+  }).toList();
+
+  final double gross = monthTx.fold(0.0, (sum, t) {
     final val = t.total;
     return sum + ((val.isNaN || val.isInfinite) ? 0.0 : val);
   });
 
   final double loss = params.lossRecords.where((l) {
     try {
-      return DateFormat('yyyy-MM-dd').format(l.createdAt) == today;
+      return DateFormat('yyyy-MM').format(l.createdAt) == currentMonth;
     } catch (_) {
       return false;
     }
@@ -115,7 +126,7 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
     return sum + (safeUnit * l.qty);
   });
 
-  final double cogs = todayTx.fold(0.0, (sum, t) {
+  final double cogs = monthTx.fold(0.0, (sum, t) {
     return sum +
         t.items.fold(0.0, (itemSum, item) {
           final cost = item.costPrice;
@@ -130,7 +141,7 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
 
   final double exp = params.expenses.where((e) {
     try {
-      return DateFormat('yyyy-MM-dd').format(e.createdAt) == today;
+      return DateFormat('yyyy-MM').format(e.createdAt) == currentMonth;
     } catch (_) {
       return false;
     }
@@ -498,14 +509,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Color infoColor = Colors.blue.shade700;
       final Color errorColor = Theme.of(context).colorScheme.error;
 
+      final currentMonthName = DateFormat('MMMM').format(DateTime.now());
       final bool isAdmin = role == UserRole.admin;
       final items = isAdmin
           ? [
-              _StatCard("Gross Sales", formatPeso(data.todayGrossSales),
+              _StatCard("Gross Sales ($currentMonthName)", formatPeso(data.todayGrossSales),
                   Icons.auto_graph_rounded, successColor),
-              _StatCard("Net Profit", formatPeso(data.todayNetProfit),
+              _StatCard("Net Profit ($currentMonthName)", formatPeso(data.todayNetProfit),
                   Icons.monetization_on_rounded, infoColor),
-              _StatCard("Loss / Waste", formatPeso(data.todayLoss),
+              _StatCard("Loss / Waste ($currentMonthName)", formatPeso(data.todayLoss),
                   Icons.delete_sweep_rounded, errorColor),
               _StatCard("Pre-Orders", "${data.toProcessOrders}",
                   Icons.pending_actions_rounded, warningColor,
