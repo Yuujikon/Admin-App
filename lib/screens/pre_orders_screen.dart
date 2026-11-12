@@ -138,27 +138,95 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── 1. Header Title ──────────────────────────────────────────
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // ── 1. Header Title & View Toggle ────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      'ORDER FULFILLMENT PIPELINE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Customer Pre-orders',
-                      style:
-                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ORDER FULFILLMENT PIPELINE',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.2,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Customer Pre-orders',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 24,
                               ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              Icons.grid_view_rounded,
+                              size: 20,
+                              color: !_isListView
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant
+                                      .withValues(alpha: 0.5),
+                            ),
+                            tooltip: 'Grid View',
+                            onPressed: () =>
+                                setState(() => _isListView = false),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 24,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outlineVariant
+                                .withValues(alpha: 0.4),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.view_list_rounded,
+                              size: 20,
+                              color: _isListView
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant
+                                      .withValues(alpha: 0.5),
+                            ),
+                            tooltip: 'Compact List View',
+                            onPressed: () =>
+                                setState(() => _isListView = true),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -217,96 +285,29 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Search Field & View Mode Toggle (Grid / List)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                focusNode: _searchFocus,
-                                decoration: InputDecoration(
-                                  hintText: _activeStage == PreOrderStage.refunds
-                                      ? 'Search refunds by ID, Customer Name, Email, Reason...'
-                                      : 'Search orders by ID, Customer Name, or Email...',
-                                  prefixIcon:
-                                      const Icon(Icons.search_rounded, size: 20),
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                  suffixIcon: _search.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, size: 18),
-                                          onPressed: () =>
-                                              setState(() => _search = ''),
-                                        )
-                                      : null,
-                                ),
-                                onChanged: (v) => setState(() => _search = v),
-                              ),
-                            ),
-                            if (_activeStage != PreOrderStage.refunds) ...[
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest
-                                      .withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .outlineVariant
-                                        .withValues(alpha: 0.6),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.grid_view_rounded,
-                                        size: 20,
-                                        color: !_isListView
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant
-                                                .withValues(alpha: 0.5),
-                                      ),
-                                      tooltip: 'Grid View',
-                                      onPressed: () =>
-                                          setState(() => _isListView = false),
-                                    ),
-                                    Container(
-                                      width: 1,
-                                      height: 24,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .outlineVariant
-                                          .withValues(alpha: 0.4),
-                                    ),
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.view_list_rounded,
-                                        size: 20,
-                                        color: _isListView
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant
-                                                .withValues(alpha: 0.5),
-                                      ),
-                                      tooltip: 'Compact List View',
-                                      onPressed: () =>
-                                          setState(() => _isListView = true),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
+                        // Search Field
+                        TextField(
+                          focusNode: _searchFocus,
+                          decoration: InputDecoration(
+                            hintText: _activeStage == PreOrderStage.refunds
+                                ? 'Search refunds by ID, Customer Name, Email, Reason...'
+                                : 'Search orders by ID, Customer Name, or Email...',
+                            prefixIcon:
+                                const Icon(Icons.search_rounded, size: 20),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            suffixIcon: _search.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () =>
+                                        setState(() => _search = ''),
+                                  )
+                                : null,
+                          ),
+                          onChanged: (v) => setState(() => _search = v),
                         ),
                         const SizedBox(height: 16),
 
