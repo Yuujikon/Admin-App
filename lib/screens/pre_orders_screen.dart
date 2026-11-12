@@ -48,6 +48,17 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       if (_selectedOrderIds.contains(id)) {
         _selectedOrderIds.remove(id);
       } else {
+        if (_selectedOrderIds.length >= 5) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Bulk processing is capped at 5 orders per batch to protect thermal paper rolls. 🖨️'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
         _selectedOrderIds.add(id);
       }
     });
@@ -55,14 +66,15 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
   void _selectAll(List<PreOrder> orders) {
     setState(() {
-      _selectedOrderIds.addAll(
-        orders
-            .where((o) =>
-                o.status == OrderStatus.pending ||
-                o.status == OrderStatus.staging ||
-                o.status == OrderStatus.ready)
-            .map((o) => o.id),
-      );
+      final eligible = orders
+          .where((o) =>
+              o.status == OrderStatus.pending ||
+              o.status == OrderStatus.staging ||
+              o.status == OrderStatus.ready)
+          .map((o) => o.id)
+          .take(5);
+      _selectedOrderIds.clear();
+      _selectedOrderIds.addAll(eligible);
     });
   }
 
@@ -636,13 +648,13 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$selectedCount Selected',
+                  '$selectedCount Selected (Max 5)',
                   style: const TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Select multiple orders to update them together',
+                  'Batch size is capped at 5 to protect thermal paper rolls',
                   style: TextStyle(
                     fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -661,7 +673,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
               }
             },
             child: Text(
-              allAdvanceableSelected ? 'Deselect all' : 'Select all',
+              allAdvanceableSelected ? 'Deselect all' : 'Select 5 (max)',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
