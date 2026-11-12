@@ -775,12 +775,11 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
   }
 
   String _getStageTitle(PreOrderStage stage) => switch (stage) {
-        PreOrderStage.pending => 'Pending orders',
-        PreOrderStage.packing => 'Packing orders',
-        PreOrderStage.ready => 'Ready orders',
-        PreOrderStage.completed => 'Completed orders',
-        PreOrderStage.refunds => 'Pending refund requests',
-        PreOrderStage.all => 'All orders',
+        PreOrderStage.toPack => 'Orders To Pack',
+        PreOrderStage.ready => 'Ready for Pickup',
+        PreOrderStage.completed => 'Completed Orders',
+        PreOrderStage.refunds => 'Pending Refund Claims',
+        PreOrderStage.all => 'All Orders',
       };
 
   void _showOrderDetails(BuildContext context, PreOrder order) {

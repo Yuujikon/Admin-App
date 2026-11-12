@@ -90,13 +90,13 @@ class PackingSlipPrinter {
                     pw.Text(order.customerName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
                   ],
                 ),
-                if (order.customerPhone.isNotEmpty) ...[
+                if (order.customerPhone != null && order.customerPhone!.isNotEmpty) ...[
                   pw.SizedBox(height: 2),
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text('PHONE:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                      pw.Text(order.customerPhone, style: pw.TextStyle(fontSize: 9)),
+                      pw.Text(order.customerPhone!, style: pw.TextStyle(fontSize: 9)),
                     ],
                   ),
                 ],
