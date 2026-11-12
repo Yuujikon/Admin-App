@@ -452,8 +452,8 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
       }
     }
 
-    // Role-based destination: require 6-digit TOTP/PIN verification for all staff roles when 2FA is enabled
-    if (auth.role != UserRole.none && auth.totpEnabled && !auth.adminVerified) {
+    // Role-based destination: require 6-digit PIN/TOTP verification for all staff roles prior to session grant
+    if (auth.role != UserRole.none && !auth.adminVerified) {
       return const AdminPinScreen();
     } else {
       return const AdminApp();

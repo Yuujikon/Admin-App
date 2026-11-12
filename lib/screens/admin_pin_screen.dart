@@ -531,11 +531,25 @@ class _AdminPinScreenState extends State<AdminPinScreen>
 
                   // Pill mode toggle button
                   OutlinedButton.icon(
-                    onPressed: () => setState(() {
-                      _useStaticPin = !_useStaticPin;
-                      _pin = '';
-                      _errorMessage = null;
-                    }),
+                    onPressed: () {
+                      if (!auth.totpEnabled && _useStaticPin) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Google Authenticator 2FA is turned off in Account Security.',
+                            ),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() {
+                        _useStaticPin = !_useStaticPin;
+                        _pin = '';
+                        _errorMessage = null;
+                      });
+                    },
                     icon: Icon(
                       _useStaticPin
                           ? Icons.security_rounded

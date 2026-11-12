@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/otp_method_bottom_sheet.dart';
 import '../providers/theme_provider.dart';
 import '../providers/printer_provider.dart';
 import '../providers/inventory_provider.dart';
@@ -672,7 +673,28 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
               children: [
                 SwitchListTile(
                   value: auth.totpEnabled,
-                  onChanged: (val) => auth.setTotpEnabled(val),
+                  onChanged: (val) {
+                    if (!val) {
+                      // Turning 2FA OFF requires verification first
+                      OtpMethodBottomSheet.show(
+                        context,
+                        defaultEmail: auth.currentUser?.email,
+                        defaultPhone: auth.phoneNumber ?? '09558297358',
+                        onVerified: () async {
+                          await auth.setTotpEnabled(false);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Google Authenticator 2FA turned off.'),
+                              ),
+                            );
+                          }
+                        },
+                      );
+                    } else {
+                      auth.setTotpEnabled(true);
+                    }
+                  },
                   title: const Text('Require 6-Digit Code on Login',
                       style:
                           TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
