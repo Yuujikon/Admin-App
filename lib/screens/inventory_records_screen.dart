@@ -1270,9 +1270,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           trailing:
               Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildInquiryRow(BuildContext context, RestockInquiry inquiry) {
     final theme = Theme.of(context);
