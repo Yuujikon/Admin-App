@@ -451,7 +451,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
   }) {
     final stages = [
       (PreOrderStage.toPack, 'To Pack', toPackCount),
-      (PreOrderStage.ready, 'Ready', readyCount),
+      (PreOrderStage.ready, 'Packaged & Ready', readyCount),
       (PreOrderStage.completed, 'Completed', completedCount),
       (PreOrderStage.refunds, 'Pending Refunds', pendingRefundsCount),
       (PreOrderStage.all, 'All', totalCount),
@@ -788,7 +788,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
   String _getStageTitle(PreOrderStage stage) => switch (stage) {
         PreOrderStage.toPack => 'Orders To Pack',
-        PreOrderStage.ready => 'Ready for Pickup',
+        PreOrderStage.ready => 'Packaged & Ready for Pickup!',
         PreOrderStage.completed => 'Completed Orders',
         PreOrderStage.refunds => 'Pending Refund Claims',
         PreOrderStage.all => 'All Orders',

@@ -25,7 +25,7 @@ class StatusBadge extends StatelessWidget {
           semantic.info
         ),
       OrderStatus.ready => (
-          'Ready',
+          'Packaged & Ready',
           semantic.success.withValues(alpha: 0.1),
           semantic.success
         ),
