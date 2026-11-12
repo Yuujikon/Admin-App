@@ -1886,20 +1886,6 @@ class _CardActionButtonState extends State<_CardActionButton> {
                 }
               }
             },
-                if (mounted) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Failed to update order: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              } finally {
-                if (mounted) {
-                  setState(() => _loading = false);
-                }
-              }
-            },
       style: ElevatedButton.styleFrom(
         backgroundColor: _buttonBgColor(context, order.status),
         foregroundColor: widget.canAdvance
