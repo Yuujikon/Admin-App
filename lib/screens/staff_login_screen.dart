@@ -19,6 +19,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   final _pass = TextEditingController();
   final _confirmPass = TextEditingController();
   final _fullName = TextEditingController();
+  final _phone = TextEditingController();
 
   String _requestedRole = 'cashier';
   bool _isRegistering = false;
@@ -33,6 +34,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     _pass.dispose();
     _confirmPass.dispose();
     _fullName.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
@@ -133,6 +135,23 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                         labelText: 'Full Name',
                         prefixIcon: Icon(Icons.person_outline),
                         border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Phone Number
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextField(
+                      controller: _phone,
+                      enabled: !_loading,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Contact Phone Number (SMS OTP)',
+                        prefixIcon: Icon(Icons.phone_android_outlined),
+                        border: OutlineInputBorder(),
+                        hintText: '09123456789',
                       ),
                     ),
                   ),
@@ -417,12 +436,18 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
   Future<void> _register() async {
     final name = _fullName.text.trim();
+    final phone = _phone.text.trim();
     final email = _email.text.trim();
     final pass = _pass.text.trim();
     final confirm = _confirmPass.text.trim();
 
     if (name.isEmpty) {
       setState(() => _error = 'Please enter your full name.');
+      return;
+    }
+
+    if (phone.isEmpty) {
+      setState(() => _error = 'Please enter your contact phone number.');
       return;
     }
 
@@ -450,6 +475,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     await OtpMethodBottomSheet.show(
       context,
       defaultEmail: email,
+      defaultPhone: phone,
       onVerified: () async {
         setState(() => _loading = true);
         try {
@@ -458,6 +484,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             name: name,
             email: email,
             password: pass,
+            phoneNumber: phone,
             requestedRole: _requestedRole,
           );
         } on FirebaseAuthException catch (e) {

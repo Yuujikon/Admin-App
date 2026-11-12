@@ -217,6 +217,7 @@ class AppAuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     required String requestedRole,
+    String? phoneNumber,
   }) async {
     final emailErr = EmailValidator.validate(email);
     if (emailErr != null) {
@@ -237,10 +238,17 @@ class AppAuthProvider extends ChangeNotifier {
         debugPrint('Error sending verification email: $e');
       });
 
+      final sanitizedPhone = phoneNumber != null && phoneNumber.trim().isNotEmpty
+          ? formatPhoneNumber(phoneNumber.trim())
+          : null;
+
       _totpSecret = TotpUtils.generateSecret();
+      _phoneNumber = sanitizedPhone;
+
       await _db.collection('users').doc(user.uid).set({
         'name': name.trim(),
         'email': email.trim(),
+        if (sanitizedPhone != null) 'phoneNumber': sanitizedPhone,
         'role': 'none',
         'requestedRole': requestedRole,
         'status': 'pending',

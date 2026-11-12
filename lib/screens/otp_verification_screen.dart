@@ -109,32 +109,46 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       _errorMessage = null;
     });
 
-    final res = await _messagingService.verifyAdminOtp(
-      contactMethod: widget.contactMethod,
-      enteredCode: code,
-    );
-
-    if (!mounted) return;
-
-    if (res['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res['message'] as String? ?? 'OTP Verified!'),
-          backgroundColor: Colors.green.shade700,
-        ),
+    try {
+      final res = await _messagingService.verifyAdminOtp(
+        contactMethod: widget.contactMethod,
+        enteredCode: code,
       );
 
-      if (widget.onVerified != null) {
-        await widget.onVerified!();
+      if (!mounted) return;
+
+      if (res['success'] == true) {
+        final navigator = Navigator.of(context);
+        final messenger = ScaffoldMessenger.of(context);
+
+        // Pop OtpVerificationScreen FIRST so caller screen receives focus
+        navigator.pop(true);
+
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(res['message'] as String? ?? 'OTP Verified!'),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+
+        if (widget.onVerified != null) {
+          await widget.onVerified!();
+        }
       } else {
-        Navigator.of(context).pop(true);
+        setState(() {
+          _isVerifying = false;
+          _errorMessage = res['message'] as String? ?? 'Invalid verification code.';
+          _pinController.clear();
+        });
       }
-    } else {
-      setState(() {
-        _isVerifying = false;
-        _errorMessage = res['message'] as String? ?? 'Invalid verification code.';
-        _pinController.clear();
-      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isVerifying = false;
+          _errorMessage = 'Verification error: ${e.toString()}';
+          _pinController.clear();
+        });
+      }
     }
   }
 
