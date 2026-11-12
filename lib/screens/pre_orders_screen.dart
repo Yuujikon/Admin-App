@@ -608,7 +608,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
         advanceableOrders.every((o) => _selectedOrderIds.contains(o.id));
 
     final String bulkActionText = switch (_activeStage) {
-      PreOrderStage.toPack => 'Mark ready ($selectedCount)',
+      PreOrderStage.toPack => 'Print & Move to Ready ($selectedCount)',
       PreOrderStage.ready => 'Complete pickup ($selectedCount)',
       _ => 'Advance selected ($selectedCount)',
     };
@@ -1814,7 +1814,7 @@ class _CardActionButtonState extends State<_CardActionButton> {
 
   String _buttonText(OrderStatus s) => switch (s) {
         OrderStatus.pending => '🖨️ Print Packing Slip',
-        OrderStatus.staging => 'Mark Ready for Pickup',
+        OrderStatus.staging => '🖨️ Print Packing Slip',
         OrderStatus.ready => 'Complete Pickup',
         _ => 'View Order Details',
       };
@@ -1824,7 +1824,7 @@ class _CardActionButtonState extends State<_CardActionButton> {
       return Theme.of(context).colorScheme.surfaceContainerHighest;
     }
     return switch (s) {
-      OrderStatus.pending => Colors.blue.shade800,
+      OrderStatus.pending => Colors.orange.shade800,
       OrderStatus.staging => Colors.orange.shade800,
       OrderStatus.ready => GdcColors.emeraldPrimary,
       _ => Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -1848,38 +1848,44 @@ class _CardActionButtonState extends State<_CardActionButton> {
               final messenger = ScaffoldMessenger.of(context);
               try {
                 final orderProvider = context.read<OrderProvider>();
-                if (order.status == OrderStatus.pending) {
-                  // Step 1: Print packing slip and move to Packing/Staging
+                if (order.status == OrderStatus.ready) {
+                  // Step 3: Complete pickup checkout
+                  await PosCheckoutModal.show(context, order);
+                } else {
+                  // Step 1: Print 80mm packing slip + advance directly to Ready for Pickup
                   await PackingSlipPrinter.printPackingSlip(order);
-                  await orderProvider.advanceStatus(order.id);
-                  if (mounted) {
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text(
-                            'Order #${order.orderId} slip printed! Moving to packing... 🖨️'),
-                        backgroundColor: Colors.blue.shade700,
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
+                  if (order.status == OrderStatus.pending) {
+                    await orderProvider.advanceStatus(order.id);
+                    await orderProvider.advanceStatus(order.id);
+                  } else {
+                    await orderProvider.advanceStatus(order.id);
                   }
-                } else if (order.status == OrderStatus.staging) {
-                  // Step 2: Items packed from shelf -> Mark Ready for Pickup
-                  await orderProvider.advanceStatus(order.id);
                   if (mounted) {
                     messenger.showSnackBar(
                       SnackBar(
                         content: Text(
-                            'Order #${order.orderId} items packed & marked ready! ✅'),
+                            'Order #${order.orderId} slip printed & moved to Ready for Pickup! 🖨️✅'),
                         backgroundColor: Colors.green,
                         duration: const Duration(seconds: 2),
                       ),
                     );
                   }
-                } else if (order.status == OrderStatus.ready) {
-                  // Step 3: Complete pickup checkout
-                  await PosCheckoutModal.show(context, order);
                 }
               } catch (e) {
+                if (mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to update order: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } finally {
+                if (mounted) {
+                  setState(() => _loading = false);
+                }
+              }
+            },
                 if (mounted) {
                   messenger.showSnackBar(
                     SnackBar(
