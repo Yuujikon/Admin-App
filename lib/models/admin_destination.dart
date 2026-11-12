@@ -137,25 +137,5 @@ class AdminDestination {
     } else {
       return const [];
     }
-          priority: 3,
-        ),
-        AdminDestination(
-          id: shiftId,
-          label: 'Shift & Cash',
-          icon: Icons.access_time_outlined,
-          selectedIcon: Icons.access_time_filled,
-          route: '/shift',
-          priority: 4,
-        ),
-        AdminDestination(
-          id: moreId,
-          label: 'More',
-          icon: Icons.more_horiz_rounded,
-          selectedIcon: Icons.more_horiz_rounded,
-          route: '/more',
-          priority: 5,
-        ),
-      ];
-    }
   }
 }

@@ -153,7 +153,7 @@ class _AdminAppState extends State<AdminApp> {
         );
 
         // Ensure active destination is fallback-safe for the role
-        if (role == UserRole.cashier &&
+        if (role == UserRole.none &&
             _activeDestinationId == AdminDestination.dashboardId) {
           _activeDestinationId = AdminDestination.posId;
         }

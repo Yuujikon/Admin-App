@@ -201,7 +201,7 @@ class MoreManagementScreen extends StatelessWidget {
                 const SizedBox(height: 24),
 
                 // 2. Inventory & Supply Chain
-                if (isAdmin || isInv) ...[
+                if (isAdmin || isTrusted) ...[
                   _sectionHeader(
                     context,
                     title: 'Inventory & supply chain',
