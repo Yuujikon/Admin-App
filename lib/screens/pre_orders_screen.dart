@@ -16,8 +16,9 @@ import '../utils/barcode_routing.dart';
 import '../widgets/pos_checkout_modal.dart';
 import '../widgets/order_qr_scanner.dart';
 import '../widgets/responsive_layout.dart';
+import '../utils/packing_slip_printer.dart';
 
-enum PreOrderStage { pending, packing, ready, completed, refunds, all }
+enum PreOrderStage { toPack, ready, completed, refunds, all }
 
 class PreOrdersScreen extends StatefulWidget {
   const PreOrdersScreen({super.key});
@@ -27,7 +28,7 @@ class PreOrdersScreen extends StatefulWidget {
 }
 
 class _PreOrdersScreenState extends State<PreOrdersScreen> {
-  PreOrderStage _activeStage = PreOrderStage.pending;
+  PreOrderStage _activeStage = PreOrderStage.toPack;
   String _search = '';
   bool _isListView = false;
   final FocusNode _searchFocus = FocusNode();
@@ -82,10 +83,9 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
     }
 
     // Categorize orders by pipeline stage
-    final pendingOrders =
-        orders.where((o) => o.status == OrderStatus.pending).toList();
-    final packingOrders =
-        orders.where((o) => o.status == OrderStatus.staging).toList();
+    final toPackOrders = orders
+        .where((o) => o.status == OrderStatus.pending || o.status == OrderStatus.staging)
+        .toList();
     final readyOrders =
         orders.where((o) => o.status == OrderStatus.ready).toList();
     final completedOrders =
@@ -97,12 +97,11 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
         .toList();
 
     final filteredByStage = switch (_activeStage) {
-      PreOrderStage.pending => pendingOrders,
-      PreOrderStage.packing => packingOrders,
+      PreOrderStage.toPack => toPackOrders,
       PreOrderStage.ready => readyOrders,
       PreOrderStage.completed => completedOrders,
       PreOrderStage.refunds => <PreOrder>[],
-      PreOrderStage.all => orders,
+      PreOrderStage.all => orders.where((o) => o.status != OrderStatus.cancelled).toList(),
     };
 
     final visibleOrders = filteredByStage.where((o) {
@@ -234,8 +233,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
                 // ── 2. Pipeline Navigation Stage Tabs ────────────────────────
                 _buildStageTabs(
-                  pendingCount: pendingOrders.length,
-                  packingCount: packingOrders.length,
+                  toPackCount: toPackOrders.length,
                   readyCount: readyOrders.length,
                   completedCount: completedOrders.length,
                   pendingRefundsCount: pendingRefunds.length,
@@ -433,16 +431,14 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
   // ── Stage Tabs Bar ─────────────────────────────────────────────────────────
 
   Widget _buildStageTabs({
-    required int pendingCount,
-    required int packingCount,
+    required int toPackCount,
     required int readyCount,
     required int completedCount,
     required int pendingRefundsCount,
     required int totalCount,
   }) {
     final stages = [
-      (PreOrderStage.pending, 'Pending', pendingCount),
-      (PreOrderStage.packing, 'Packing', packingCount),
+      (PreOrderStage.toPack, 'To Pack', toPackCount),
       (PreOrderStage.ready, 'Ready', readyCount),
       (PreOrderStage.completed, 'Completed', completedCount),
       (PreOrderStage.refunds, 'Pending Refunds', pendingRefundsCount),
@@ -600,8 +596,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
         advanceableOrders.every((o) => _selectedOrderIds.contains(o.id));
 
     final String bulkActionText = switch (_activeStage) {
-      PreOrderStage.pending => 'Start packing ($selectedCount)',
-      PreOrderStage.packing => 'Mark ready ($selectedCount)',
+      PreOrderStage.toPack => 'Mark ready ($selectedCount)',
       PreOrderStage.ready => 'Complete pickup ($selectedCount)',
       _ => 'Advance selected ($selectedCount)',
     };
@@ -674,6 +669,28 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
               ),
             ),
           ),
+          if (selectedCount > 0) ...[
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () {
+                final selectedOrders = visibleOrders
+                    .where((o) => _selectedOrderIds.contains(o.id))
+                    .toList();
+                PackingSlipPrinter.printBulkPackingSlips(selectedOrders);
+              },
+              icon: const Icon(Icons.print_rounded, size: 16),
+              label: Text(
+                'Print Slips ($selectedCount)',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           ElevatedButton.icon(
             onPressed: (selectedCount == 0 || _isProcessing)
@@ -1473,11 +1490,27 @@ class _OrderCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
 
-            // Primary Card Action Button
-            SizedBox(
-              width: double.infinity,
-              height: 38,
-              child: _CardActionButton(order: order, canAdvance: canAdvance),
+            // Primary Card Action Button Row (Print Slip + Advance Button)
+            Row(
+              children: [
+                IconButton.outlined(
+                  icon: const Icon(Icons.print_outlined, size: 18),
+                  tooltip: 'Print Packing Slip',
+                  onPressed: () => PackingSlipPrinter.printPackingSlip(order),
+                  style: IconButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 38,
+                    child:
+                        _CardActionButton(order: order, canAdvance: canAdvance),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1632,11 +1665,23 @@ class _OrderListRow extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 36,
-                        child: _CardActionButton(
-                            order: order, canAdvance: canAdvance),
+                      Row(
+                        children: [
+                          IconButton.outlined(
+                            icon: const Icon(Icons.print_outlined, size: 16),
+                            tooltip: 'Print Packing Slip',
+                            onPressed: () =>
+                                PackingSlipPrinter.printPackingSlip(order),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SizedBox(
+                              height: 36,
+                              child: _CardActionButton(
+                                  order: order, canAdvance: canAdvance),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   );
@@ -1753,7 +1798,15 @@ class _OrderListRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
+
+                    // Print Slip Icon Button
+                    IconButton(
+                      icon: const Icon(Icons.print_outlined, size: 18),
+                      tooltip: 'Print Packing Slip',
+                      onPressed: () => PackingSlipPrinter.printPackingSlip(order),
+                    ),
+                    const SizedBox(width: 4),
 
                     // Action Button
                     SizedBox(
@@ -1797,7 +1850,7 @@ class _CardActionButtonState extends State<_CardActionButton> {
   bool _loading = false;
 
   String _buttonText(OrderStatus s) => switch (s) {
-        OrderStatus.pending => 'Start packing',
+        OrderStatus.pending => 'Mark ready for pickup',
         OrderStatus.staging => 'Mark ready for pickup',
         OrderStatus.ready => 'Complete pickup',
         _ => 'View order details',
