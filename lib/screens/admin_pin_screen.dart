@@ -664,6 +664,9 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                           final isSetup = k == 'SETUP';
                           final isBackspace = k == '⌫';
                           if (isSetup) {
+                            if (_useStaticPin) {
+                              return const SizedBox();
+                            }
                             return GestureDetector(
                               onTap: () => _showSetupDialog(context),
                               child: Container(
