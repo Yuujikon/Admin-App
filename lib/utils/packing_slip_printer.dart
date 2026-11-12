@@ -136,7 +136,7 @@ class PackingSlipPrinter {
                           ),
                         ),
                         pw.Text(
-                          formatPeso(item.unitPrice * item.qty),
+                          formatPeso(item.price * item.qty),
                           style: const pw.TextStyle(fontSize: 9),
                         ),
                       ],
