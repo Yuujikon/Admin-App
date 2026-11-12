@@ -246,6 +246,53 @@ class AdminMessagingService {
     }
   }
 
+  /// Sends a custom branded Password Reset email via Brevo.
+  Future<bool> sendBrandedPasswordResetEmail({
+    required String toEmail,
+  }) async {
+    final sanitizedEmail = toEmail.trim();
+    if (sanitizedEmail.isEmpty) return false;
+
+    final html = '''
+<div style="font-family: Arial, sans-serif; padding: 32px; background-color: #f8fafc;">
+  <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #C07038; margin: 0; font-size: 24px; font-weight: bold; letter-spacing: 1px;">GDC SARI-SARI STORE</h2>
+      <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Staff & Admin Account Management</p>
+    </div>
+    
+    <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+
+    <p style="color: #1e293b; font-size: 15px; line-height: 1.6;">Hello,</p>
+    <p style="color: #334155; font-size: 15px; line-height: 1.6;">
+      We received a request to reset the password for your GDC Store staff account (<strong>$sanitizedEmail</strong>).
+    </p>
+
+    <div style="background-color: #fbf8f2; border: 1px solid #f3d7c3; border-radius: 10px; padding: 20px; margin: 24px 0; text-align: center;">
+      <p style="margin: 0 0 8px 0; color: #C07038; font-size: 14px; font-weight: bold;">Password Reset Requested</p>
+      <p style="margin: 0; color: #475569; font-size: 13px;">Check your inbox for the official reset authorization email, or use your 6-digit OTP verification option on the login portal.</p>
+    </div>
+
+    <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin-top: 24px;">
+      If you did not request a password reset, you can safely ignore this email. Your password will remain secure and unchanged.
+    </p>
+
+    <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+
+    <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+      GDC Sari-Sari Store Management System
+    </p>
+  </div>
+</div>
+''';
+
+    return await sendBrevoEmail(
+      toEmail: sanitizedEmail,
+      subject: 'GDC Store - Password Reset Request',
+      htmlContent: html,
+    );
+  }
+
   /// Validates OTP code against Firestore `otp_requests/{contactMethod}`, checks expiration and max attempts (5),
   /// and deletes the record on success.
   Future<Map<String, dynamic>> verifyAdminOtp({

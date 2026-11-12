@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../shared/services/admin_messaging_service.dart';
 import '../utils/email_validator.dart';
 import '../widgets/premium_components.dart';
 import '../widgets/otp_method_bottom_sheet.dart';
@@ -626,17 +627,38 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       setState(() => _error = 'Please enter your email address first.');
       return;
     }
+
+    final emailErr = EmailValidator.validate(email);
+    if (emailErr != null) {
+      setState(() => _error = emailErr);
+      return;
+    }
+
+    setState(() => _loading = true);
+
     try {
+      // Send Firebase password reset email
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+      // Dispatch branded HTML email via Brevo
+      await AdminMessagingService().sendBrandedPasswordResetEmail(toEmail: email);
+
       if (mounted) {
+        setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password reset email sent! Check your inbox.'),
+          SnackBar(
+            content: Text('Password reset email sent to $email! Check your inbox.'),
+            backgroundColor: Colors.green.shade700,
           ),
         );
       }
     } catch (e) {
-      setState(() => _error = 'Could not send password reset email.');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Could not send password reset email.';
+        });
+      }
     }
   }
 }
