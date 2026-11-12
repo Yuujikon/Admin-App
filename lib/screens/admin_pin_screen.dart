@@ -456,10 +456,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
+        automaticallyImplyLeading: false,
         actions: [
           TextButton.icon(
             onPressed: () => auth.logout(),
