@@ -115,9 +115,9 @@ class ResponsiveCardGrid extends StatelessWidget {
           final double availableWidth = constraints.maxWidth;
 
           int columns;
-          if (availableWidth >= 1200) {
+          if (availableWidth >= 1280) {
             columns = 3;
-          } else if (availableWidth >= 640) {
+          } else if (availableWidth >= 680) {
             columns = 2;
           } else {
             columns = 1;

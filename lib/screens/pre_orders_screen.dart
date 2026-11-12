@@ -1366,7 +1366,7 @@ class _OrderCard extends StatelessWidget {
       elevation: 0,
       color: Theme.of(context).colorScheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(
           color: isSelected
               ? GdcColors.emeraldPrimary
@@ -1378,18 +1378,19 @@ class _OrderCard extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Row 1: Checkbox, Avatar, Customer Name, Order ID & Status Badge
+            // Row 1: Checkbox, Avatar, Customer Name & ID, and Status Badge
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 if (canAdvance) ...[
                   SizedBox(
-                    width: 20,
-                    height: 20,
+                    width: 22,
+                    height: 22,
                     child: Checkbox(
                       value: isSelected,
                       onChanged: (_) => onSelectToggle(),
@@ -1401,19 +1402,19 @@ class _OrderCard extends StatelessWidget {
                   const SizedBox(width: 8),
                 ],
                 CircleAvatar(
-                  radius: 16,
+                  radius: 18,
                   backgroundColor:
                       Theme.of(context).colorScheme.primaryContainer,
                   child: Text(
                     initials,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontSize: 13,
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1422,74 +1423,107 @@ class _OrderCard extends StatelessWidget {
                       Text(
                         order.customerName,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13),
+                            fontWeight: FontWeight.bold, fontSize: 14),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 1),
                       Text(
-                        '#${order.orderId} • $dateStr',
+                        '#${order.orderId}',
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 11,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: StatusBadge(order.status),
+                const SizedBox(width: 8),
+                StatusBadge(order.status),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Row 2: Relative Timestamp
+            Row(
+              children: [
+                Icon(
+                  Icons.access_time_rounded,
+                  size: 13,
+                  color: Colors.amber.shade800,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  dateStr,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber.shade900,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
 
-            // Compact Order Summary Box with Total Amount integrated
+            // Row 3: Order Summary Box
             GestureDetector(
               onTap: onTap,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Theme.of(context)
                       .colorScheme
                       .surfaceContainerHigh
                       .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        summaryText,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      'Order summary',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(height: 2),
                     Text(
-                      formatPeso(order.total),
+                      summaryText,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                      ),
+                          fontWeight: FontWeight.bold, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
 
-            // Primary Card Action Button Row (Print Slip + Advance Button)
+            // Row 4: Total Amount Row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  formatPeso(order.total),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Row 5: Action Button & Print Icon
             Row(
               children: [
                 IconButton.outlined(
@@ -1498,13 +1532,14 @@ class _OrderCard extends StatelessWidget {
                   onPressed: () => PackingSlipPrinter.printPackingSlip(order),
                   style: IconButton.styleFrom(
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.all(10),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: SizedBox(
-                    height: 38,
+                    height: 40,
                     child:
                         _CardActionButton(order: order, canAdvance: canAdvance),
                   ),
