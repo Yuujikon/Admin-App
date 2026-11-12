@@ -417,7 +417,6 @@ class MoreManagementScreen extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(
