@@ -1813,11 +1813,23 @@ class _CardActionButtonState extends State<_CardActionButton> {
   bool _loading = false;
 
   String _buttonText(OrderStatus s) => switch (s) {
-        OrderStatus.pending => 'Print & Mark Ready',
-        OrderStatus.staging => 'Print & Mark Ready',
-        OrderStatus.ready => 'Complete pickup',
-        _ => 'View order details',
+        OrderStatus.pending => '🖨️ Print Packing Slip',
+        OrderStatus.staging => 'Mark Ready for Pickup',
+        OrderStatus.ready => 'Complete Pickup',
+        _ => 'View Order Details',
       };
+
+  Color _buttonBgColor(BuildContext context, OrderStatus s) {
+    if (!widget.canAdvance) {
+      return Theme.of(context).colorScheme.surfaceContainerHighest;
+    }
+    return switch (s) {
+      OrderStatus.pending => Colors.blue.shade800,
+      OrderStatus.staging => Colors.orange.shade800,
+      OrderStatus.ready => GdcColors.emeraldPrimary,
+      _ => Theme.of(context).colorScheme.surfaceContainerHighest,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1836,22 +1848,36 @@ class _CardActionButtonState extends State<_CardActionButton> {
               final messenger = ScaffoldMessenger.of(context);
               try {
                 final orderProvider = context.read<OrderProvider>();
-                if (order.status == OrderStatus.ready) {
-                  await PosCheckoutModal.show(context, order);
-                } else {
-                  // Option 3: Print Packing Slip + Advance Status in 1-Click
+                if (order.status == OrderStatus.pending) {
+                  // Step 1: Print packing slip and move to Packing/Staging
                   await PackingSlipPrinter.printPackingSlip(order);
                   await orderProvider.advanceStatus(order.id);
                   if (mounted) {
                     messenger.showSnackBar(
                       SnackBar(
-                        content:
-                            Text('Order #${order.orderId} printed & marked ready! 🖨️✅'),
+                        content: Text(
+                            'Order #${order.orderId} slip printed! Moving to packing... 🖨️'),
+                        backgroundColor: Colors.blue.shade700,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } else if (order.status == OrderStatus.staging) {
+                  // Step 2: Items packed from shelf -> Mark Ready for Pickup
+                  await orderProvider.advanceStatus(order.id);
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Order #${order.orderId} items packed & marked ready! ✅'),
                         backgroundColor: Colors.green,
                         duration: const Duration(seconds: 2),
                       ),
                     );
                   }
+                } else if (order.status == OrderStatus.ready) {
+                  // Step 3: Complete pickup checkout
+                  await PosCheckoutModal.show(context, order);
                 }
               } catch (e) {
                 if (mounted) {
@@ -1869,15 +1895,13 @@ class _CardActionButtonState extends State<_CardActionButton> {
               }
             },
       style: ElevatedButton.styleFrom(
-        backgroundColor: widget.canAdvance
-            ? GdcColors.emeraldPrimary
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        backgroundColor: _buttonBgColor(context, order.status),
         foregroundColor: widget.canAdvance
             ? Colors.white
             : Theme.of(context).colorScheme.onSurfaceVariant,
         elevation: 0,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: _loading
           ? const SizedBox(
