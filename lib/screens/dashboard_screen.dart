@@ -1006,7 +1006,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Icon(Icons.receipt_long, size: 20, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 8),
                     Text('Recent Transactions', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  ]
+                  ],
                 ),
                 children: [
                   Padding(
@@ -1038,14 +1038,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 trailing: Text(formatPeso(tx.change), style: Theme.of(context).textTheme.labelSmall),
                               ),
                             );
-                          }
-                        )
-                  )
-                ]
-              )
-            )
-          ));
-        }
+                          },
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
     } catch (_) {
       return const SizedBox.shrink();

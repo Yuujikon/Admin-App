@@ -860,9 +860,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           trailing:
               Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildBatchLotRow(BuildContext context, _BatchRecordWrapper wrapper) {
     final theme = Theme.of(context);
@@ -984,9 +983,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             );
           },
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildLossRecordRow(BuildContext context, LossRecord loss) {
     final theme = Theme.of(context);
@@ -1047,9 +1045,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildTimelineRow(
       BuildContext context, _TimelineItem item, List<Product> products) {
@@ -1168,9 +1165,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           trailing:
               Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildShiftRow(BuildContext context, ShiftSession shift) {
     final theme = Theme.of(context);
@@ -1374,9 +1370,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           trailing:
               Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   void _showInquiryDetailModal(BuildContext context, RestockInquiry inquiry) {
     showModalBottomSheet(
