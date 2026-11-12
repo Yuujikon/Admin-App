@@ -185,10 +185,12 @@ class _AdminPinScreenState extends State<AdminPinScreen>
     if (_isLockedOut) return;
 
     final auth = context.read<AppAuthProvider>();
+    final bool effectiveUseStaticPin = !auth.totpEnabled ? true : _useStaticPin;
+
     setState(() => _isVerifying = true);
 
     bool ok = false;
-    if (_useStaticPin) {
+    if (effectiveUseStaticPin) {
       ok = await _pinService.verifyPin(code);
     } else {
       ok = auth.verifyTotp(code);
@@ -443,6 +445,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       '⌫'
     ];
     final auth = context.watch<AppAuthProvider>();
+    final bool effectiveUseStaticPin = !auth.totpEnabled ? true : _useStaticPin;
     final user = auth.currentUser;
     final String email = user?.email ?? 'Unknown';
 
@@ -502,7 +505,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _useStaticPin ? 'Enter Admin PIN' : 'Enter 6-Digit Code',
+                    effectiveUseStaticPin ? 'Enter Admin PIN' : 'Enter 6-Digit Code',
                     style: Theme.of(context)
                         .textTheme
                         .headlineSmall
@@ -532,7 +535,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   // Pill mode toggle button
                   OutlinedButton.icon(
                     onPressed: () {
-                      if (!auth.totpEnabled && _useStaticPin) {
+                      if (!auth.totpEnabled) {
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -551,14 +554,14 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       });
                     },
                     icon: Icon(
-                      _useStaticPin
+                      effectiveUseStaticPin
                           ? Icons.security_rounded
                           : Icons.keyboard_outlined,
                       size: 16,
                       color: copperColor,
                     ),
                     label: Text(
-                      _useStaticPin
+                      effectiveUseStaticPin
                           ? 'Use Google Authenticator'
                           : 'Use 6-Digit Offline PIN',
                       style: TextStyle(
@@ -678,7 +681,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                           final isSetup = k == 'SETUP';
                           final isBackspace = k == '⌫';
                           if (isSetup) {
-                            if (_useStaticPin) {
+                            if (effectiveUseStaticPin) {
                               return const SizedBox();
                             }
                             return GestureDetector(
