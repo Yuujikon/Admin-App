@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../screens/otp_verification_screen.dart';
 import '../shared/services/admin_messaging_service.dart';
 
-/// BottomSheet choice dialog prompting admin user to select OTP delivery method:
-/// [Send to Email] or [Send to SMS], revealing input fields only after method selection.
+/// BottomSheet choice dialog prompting admin user to select verification method:
+/// [Send to Email], [Send to SMS], or [Use Emergency Backup Code].
 class OtpMethodBottomSheet extends StatefulWidget {
   final String? defaultEmail;
   final String? defaultPhone;
@@ -41,11 +43,13 @@ class OtpMethodBottomSheet extends StatefulWidget {
 class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   late TextEditingController _emailCtrl;
   late TextEditingController _phoneCtrl;
+  late TextEditingController _backupCodeCtrl;
   final _messagingService = AdminMessagingService();
 
-  String? _selectedMethod; // null (initial), 'email', or 'sms'
+  String? _selectedMethod; // null (initial), 'email', 'sms', or 'backup'
   bool _loadingEmail = false;
   bool _loadingSms = false;
+  bool _loadingBackup = false;
   String? _error;
 
   @override
@@ -53,12 +57,14 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
     super.initState();
     _emailCtrl = TextEditingController(text: widget.defaultEmail ?? '');
     _phoneCtrl = TextEditingController(text: widget.defaultPhone ?? '09558297358');
+    _backupCodeCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _backupCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -111,6 +117,57 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
       setState(() {
         _error = res['message'] as String? ?? 'Failed to send OTP.';
       });
+    }
+  }
+
+  Future<void> _verifyBackupCode() async {
+    final code = _backupCodeCtrl.text.trim();
+    if (code.isEmpty) {
+      setState(() {
+        _error = 'Please enter your 8-character emergency backup recovery code.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingBackup = true;
+      _error = null;
+    });
+
+    try {
+      final auth = context.read<AppAuthProvider>();
+      final ok = await auth.verifyAndConsumeRecoveryCode(code);
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadingBackup = false;
+      });
+
+      if (ok) {
+        Navigator.pop(context); // Close bottom sheet
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backup recovery code verified successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        if (widget.onVerified != null) {
+          await widget.onVerified!();
+        }
+      } else {
+        setState(() {
+          _error = 'Invalid emergency backup code. Please check your 8-character recovery code.';
+          _backupCodeCtrl.clear();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingBackup = false;
+          _error = 'Error verifying backup code: ${e.toString()}';
+        });
+      }
     }
   }
 
@@ -247,6 +304,23 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Emergency Backup Code Option
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _selectedMethod = 'backup';
+                    _error = null;
+                  });
+                },
+                icon: const Icon(Icons.vpn_key_outlined, size: 18),
+                label: const Text('Use Emergency Backup Code',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
           ] else if (_selectedMethod == 'email') ...[
             // Reveal email input when 'Send to Email' is clicked
             TextField(
@@ -349,6 +423,63 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
 
             TextButton.icon(
               onPressed: _loadingSms
+                  ? null
+                  : () {
+                      setState(() {
+                        _selectedMethod = null;
+                        _error = null;
+                      });
+                    },
+              icon: const Icon(Icons.arrow_back_rounded, size: 16),
+              label: const Text('Change Verification Method'),
+            ),
+          ] else if (_selectedMethod == 'backup') ...[
+            // Reveal backup code input when 'Use Emergency Backup Code' is clicked
+            TextField(
+              controller: _backupCodeCtrl,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                labelText: 'Emergency Backup Code',
+                hintText: 'XXXX-XXXX',
+                prefixIcon: Icon(Icons.vpn_key_outlined),
+                border: OutlineInputBorder(),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: copperColor, width: 2),
+                ),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _loadingBackup ? null : _verifyBackupCode,
+                icon: _loadingBackup
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.shield_outlined),
+                label: const Text('VERIFY BACKUP CODE',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: copperColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            TextButton.icon(
+              onPressed: _loadingBackup
                   ? null
                   : () {
                       setState(() {
