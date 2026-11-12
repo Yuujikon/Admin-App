@@ -29,6 +29,7 @@ class PreOrdersScreen extends StatefulWidget {
 class _PreOrdersScreenState extends State<PreOrdersScreen> {
   PreOrderStage _activeStage = PreOrderStage.pending;
   String _search = '';
+  bool _isListView = false;
   final FocusNode _searchFocus = FocusNode();
 
   // Multi-Select / Multiple Orders Advancement state
@@ -216,29 +217,96 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Search Field
-                        TextField(
-                          focusNode: _searchFocus,
-                          decoration: InputDecoration(
-                            hintText: _activeStage == PreOrderStage.refunds
-                                ? 'Search refunds by ID, Customer Name, Email, Reason...'
-                                : 'Search orders by ID, Customer Name, or Email...',
-                            prefixIcon:
-                                const Icon(Icons.search_rounded, size: 20),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            suffixIcon: _search.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () =>
-                                        setState(() => _search = ''),
-                                  )
-                                : null,
-                          ),
-                          onChanged: (v) => setState(() => _search = v),
+                        // Search Field & View Mode Toggle (Grid / List)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                focusNode: _searchFocus,
+                                decoration: InputDecoration(
+                                  hintText: _activeStage == PreOrderStage.refunds
+                                      ? 'Search refunds by ID, Customer Name, Email, Reason...'
+                                      : 'Search orders by ID, Customer Name, or Email...',
+                                  prefixIcon:
+                                      const Icon(Icons.search_rounded, size: 20),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  suffixIcon: _search.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 18),
+                                          onPressed: () =>
+                                              setState(() => _search = ''),
+                                        )
+                                      : null,
+                                ),
+                                onChanged: (v) => setState(() => _search = v),
+                              ),
+                            ),
+                            if (_activeStage != PreOrderStage.refunds) ...[
+                              const SizedBox(width: 12),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.grid_view_rounded,
+                                        size: 20,
+                                        color: !_isListView
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withValues(alpha: 0.5),
+                                      ),
+                                      tooltip: 'Grid View',
+                                      onPressed: () =>
+                                          setState(() => _isListView = false),
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      height: 24,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant
+                                          .withValues(alpha: 0.4),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.view_list_rounded,
+                                        size: 20,
+                                        color: _isListView
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withValues(alpha: 0.5),
+                                      ),
+                                      tooltip: 'Compact List View',
+                                      onPressed: () =>
+                                          setState(() => _isListView = true),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 16),
 
@@ -276,6 +344,22 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                                 ),
                               ],
                             ),
+                          )
+                        else if (_isListView)
+                          Column(
+                            children: visibleOrders.map((order) {
+                              final isSelected =
+                                  _selectedOrderIds.contains(order.id);
+                              return _OrderListRow(
+                                key: ValueKey(order.id),
+                                order: order,
+                                isSelected: isSelected,
+                                onSelectToggle: () =>
+                                    _toggleSelectOrder(order.id),
+                                onTap: () =>
+                                    _showOrderDetails(context, order),
+                              );
+                            }).toList(),
                           )
                         else
                           ResponsiveCardGrid(
@@ -1440,6 +1524,276 @@ class _OrderCard extends StatelessWidget {
     } else {
       return 'Ordered ${diff.inDays} ${diff.inDays == 1 ? "day" : "days"} ago';
     }
+  }
+}
+
+// ── COMPACT LIST VIEW ORDER ROW ─────────────────────────────────────────────
+
+class _OrderListRow extends StatelessWidget {
+  final PreOrder order;
+  final bool isSelected;
+  final VoidCallback onSelectToggle;
+  final VoidCallback onTap;
+
+  const _OrderListRow({
+    super.key,
+    required this.order,
+    required this.isSelected,
+    required this.onSelectToggle,
+    required this.onTap,
+  });
+
+  String _formatRelativeTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+    if (diff.inMinutes < 1) {
+      return 'Just now';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else {
+      return '${diff.inDays}d ago';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final initials = order.customerName.isNotEmpty
+        ? order.customerName[0].toUpperCase()
+        : 'C';
+
+    final totalQty = order.items.fold(0, (sum, i) => sum + i.qty);
+    final itemsSummaryNames = order.items.take(2).map((i) => i.name).join(', ');
+    final remainingCount =
+        order.items.length > 2 ? ' +${order.items.length - 2}' : '';
+    final summaryText = '$totalQty items • $itemsSummaryNames$remainingCount';
+    final dateStr = _formatRelativeTime(order.createdAt);
+
+    final canAdvance = order.status == OrderStatus.pending ||
+        order.status == OrderStatus.staging ||
+        order.status == OrderStatus.ready;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isSelected
+                ? GdcColors.emeraldPrimary
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isCompactWidth = constraints.maxWidth < 650;
+
+                if (isCompactWidth) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (canAdvance) ...[
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: Checkbox(
+                                value: isSelected,
+                                onChanged: (_) => onSelectToggle(),
+                                activeColor: GdcColors.emeraldPrimary,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            child: Text(
+                              initials,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${order.customerName} (#${order.orderId})',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          StatusBadge(order.status),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            summaryText,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                          Text(
+                            formatPeso(order.total),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w900, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: _CardActionButton(
+                            order: order, canAdvance: canAdvance),
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    // Checkbox
+                    if (canAdvance) ...[
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: Checkbox(
+                          value: isSelected,
+                          onChanged: (_) => onSelectToggle(),
+                          activeColor: GdcColors.emeraldPrimary,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(5)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+
+                    // Avatar
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      child: Text(
+                        initials,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+
+                    // Customer Name & Order ID
+                    SizedBox(
+                      width: 150,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            order.customerName,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '#${order.orderId}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Order Summary & Timestamp
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                size: 12,
+                                color: Colors.amber.shade800,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                dateStr,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.amber.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            summaryText,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Total Amount
+                    Text(
+                      formatPeso(order.total),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+
+                    // Action Button & Status Badge
+                    SizedBox(
+                      width: 160,
+                      child: _CardActionButton(
+                          order: order, canAdvance: canAdvance),
+                    ),
+                    const SizedBox(width: 10),
+                    StatusBadge(order.status),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
