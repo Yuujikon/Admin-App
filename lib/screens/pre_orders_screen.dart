@@ -1849,8 +1849,8 @@ class _CardActionButtonState extends State<_CardActionButton> {
   bool _loading = false;
 
   String _buttonText(OrderStatus s) => switch (s) {
-        OrderStatus.pending => 'Mark ready for pickup',
-        OrderStatus.staging => 'Mark ready for pickup',
+        OrderStatus.pending => 'Print & Mark Ready',
+        OrderStatus.staging => 'Print & Mark Ready',
         OrderStatus.ready => 'Complete pickup',
         _ => 'View order details',
       };
@@ -1875,11 +1875,14 @@ class _CardActionButtonState extends State<_CardActionButton> {
                 if (order.status == OrderStatus.ready) {
                   await PosCheckoutModal.show(context, order);
                 } else {
+                  // Option 3: Print Packing Slip + Advance Status in 1-Click
+                  await PackingSlipPrinter.printPackingSlip(order);
                   await orderProvider.advanceStatus(order.id);
                   if (mounted) {
                     messenger.showSnackBar(
                       SnackBar(
-                        content: Text('Order #${order.orderId} updated! ✅'),
+                        content:
+                            Text('Order #${order.orderId} printed & marked ready! 🖨️✅'),
                         backgroundColor: Colors.green,
                         duration: const Duration(seconds: 2),
                       ),

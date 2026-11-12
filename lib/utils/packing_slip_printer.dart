@@ -173,6 +173,35 @@ class PackingSlipPrinter {
                     ],
                   ),
                 ),
+                pw.SizedBox(height: 8),
+
+                // Tear / Cut Divider for Bulk Roll Printing
+                if (orders.length > 1) ...[
+                  pw.Center(
+                    child: pw.Column(
+                      children: [
+                        pw.Text(
+                          '- - - - - - - - - - - - - - - - - - - - - - - - - - -',
+                          style: pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'CUT HERE',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 9,
+                            color: PdfColors.grey800,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          '- - - - - - - - - - - - - - - - - - - - - - - - - - -',
+                          style: pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 pw.SizedBox(height: 12),
               ],
             );
