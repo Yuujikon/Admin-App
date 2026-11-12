@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/email_validator.dart';
 import '../widgets/premium_components.dart';
+import '../widgets/otp_method_bottom_sheet.dart';
 
 /// Login and self-registration authentication screen for store staff and store admin accounts.
 class StaffLoginScreen extends StatefulWidget {
@@ -442,35 +443,42 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     }
 
     setState(() {
-      _loading = true;
       _error = null;
     });
 
-    try {
-      final auth = context.read<AppAuthProvider>();
-      await auth.registerEmployee(
-        name: name,
-        email: email,
-        password: pass,
-        requestedRole: _requestedRole,
-      );
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        _loading = false;
-        _error = switch (e.code) {
-          'email-already-in-use' =>
-            'An account with this email already exists.',
-          'invalid-email' => 'Invalid email address format.',
-          'weak-password' => 'Password is too weak. Try a stronger password.',
-          _ => e.message ?? 'Registration failed. Try again.',
-        };
-      });
-    } catch (e) {
-      setState(() {
-        _loading = false;
-        _error = 'Error registering account: $e';
-      });
-    }
+    // Prompt user with BottomSheet choice: [Send to Email] or [Send to SMS]
+    await OtpMethodBottomSheet.show(
+      context,
+      defaultEmail: email,
+      onVerified: () async {
+        setState(() => _loading = true);
+        try {
+          final auth = context.read<AppAuthProvider>();
+          await auth.registerEmployee(
+            name: name,
+            email: email,
+            password: pass,
+            requestedRole: _requestedRole,
+          );
+        } on FirebaseAuthException catch (e) {
+          setState(() {
+            _loading = false;
+            _error = switch (e.code) {
+              'email-already-in-use' =>
+                'An account with this email already exists.',
+              'invalid-email' => 'Invalid email address format.',
+              'weak-password' => 'Password is too weak. Try a stronger password.',
+              _ => e.message ?? 'Registration failed. Try again.',
+            };
+          });
+        } catch (e) {
+          setState(() {
+            _loading = false;
+            _error = 'Error registering account: $e';
+          });
+        }
+      },
+    );
   }
 
   Future<void> _googleSignIn() async {

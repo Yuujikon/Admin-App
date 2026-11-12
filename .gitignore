@@ -59,6 +59,11 @@ build/
 # Firebase Functions
 **/functions/node_modules/
 
+# Environment variables
+.env
+assets/.env
+*.env
+
 # OS specific files
 .DS_Store
 Thumbs.db

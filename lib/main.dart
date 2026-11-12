@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'config/theme.dart';
@@ -51,6 +52,17 @@ Future<void> _bgHandler(RemoteMessage message) async {
 /// configures Firebase and Firestore offline persistence settings, and launches [GdcAdminApp].
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from assets/.env or root .env
+  try {
+    await dotenv.load(fileName: "assets/.env");
+  } catch (e) {
+    try {
+      await dotenv.load(fileName: ".env");
+    } catch (e2) {
+      debugPrint('Could not load .env file: $e2');
+    }
+  }
 
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {

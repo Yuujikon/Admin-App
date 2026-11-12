@@ -7,7 +7,9 @@ import '../providers/auth_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/order_provider.dart';
 import '../services/auth_service.dart';
+import '../shared/services/admin_messaging_service.dart';
 import '../utils/totp.dart';
+import '../widgets/otp_method_bottom_sheet.dart';
 
 /// Screen for 2FA TOTP code or Admin PIN verification prior to granting full application access.
 class AdminPinScreen extends StatefulWidget {
@@ -399,43 +401,15 @@ class _AdminPinScreenState extends State<AdminPinScreen>
 
   void _showForgotPinDialog(BuildContext context) {
     final auth = context.read<AppAuthProvider>();
-    final isAdmin = auth.role == UserRole.admin;
+    final user = auth.currentUser;
 
-    if (!isAdmin) {
-      showDialog(
-        context: context,
-        useRootNavigator: true,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.help_outline_rounded, color: Colors.blue),
-              SizedBox(width: 8),
-              Text('Forgot Security PIN?',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: const Text(
-            'Security PIN resets for staff must be authorized by a Store Admin or requested via your store account owner (markjeo.hinampas@gmail.com).\n\nAlternatively, ask a Store Admin to reset your PIN from User Management.',
-            style: TextStyle(fontSize: 13),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-          ],
-        ),
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (dialogCtx) => _AdminRecoveryDialog(
-        onSuccess: () {
-          _showSetNewPinDialog(context);
-        },
-      ),
+    OtpMethodBottomSheet.show(
+      context,
+      defaultEmail: user?.email,
+      defaultPhone: auth.phoneNumber ?? '09558297358',
+      onVerified: () async {
+        _showSetNewPinDialog(context);
+      },
     );
   }
 
@@ -472,16 +446,26 @@ class _AdminPinScreenState extends State<AdminPinScreen>
     final user = auth.currentUser;
     final String email = user?.email ?? 'Unknown';
 
+    final copperColor = const Color(0xFFC07038);
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
         actions: [
           TextButton.icon(
-              onPressed: () => auth.logout(),
-              icon: const Icon(Icons.logout),
-              label: const Text('Log Out')),
+            onPressed: () => auth.logout(),
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: const Text('Log Out'),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
         ],
       ),
       body: SafeArea(
@@ -489,7 +473,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 340),
+              constraints: const BoxConstraints(maxWidth: 360),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -497,29 +481,26 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primaryContainer
-                          .withValues(alpha: 0.3),
+                      color: copperColor.withValues(alpha: 0.25),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.storefront_rounded,
                       size: 40,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: copperColor,
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     'GDC SARI-SARI STORE',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1.2,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: copperColor,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     _useStaticPin ? 'Enter Admin PIN' : 'Enter 6-Digit Code',
                     style: Theme.of(context)
@@ -527,7 +508,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                         .headlineSmall
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
                     'Verification required to access financial & staff settings',
                     textAlign: TextAlign.center,
@@ -537,84 +518,82 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      auth.userFullName != null && auth.userFullName!.isNotEmpty
-                          ? '${auth.userFullName} ($email)'
-                          : email,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold),
+                  const SizedBox(height: 4),
+                  Text(
+                    email,
+                    style: TextStyle(
+                      color: copperColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => setState(() {
-                          _useStaticPin = !_useStaticPin;
-                          _pin = '';
-                          _errorMessage = null;
-                        }),
-                        icon: Icon(
-                            _useStaticPin
-                                ? Icons.security_rounded
-                                : Icons.pin_rounded,
-                            size: 16),
-                        label: Text(
-                          _useStaticPin
-                              ? 'Use Google Authenticator'
-                              : 'Use 6-Digit Offline PIN',
-                          style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
+
+                  // Pill mode toggle button
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() {
+                      _useStaticPin = !_useStaticPin;
+                      _pin = '';
+                      _errorMessage = null;
+                    }),
+                    icon: Icon(
+                      _useStaticPin
+                          ? Icons.security_rounded
+                          : Icons.keyboard_outlined,
+                      size: 16,
+                      color: copperColor,
+                    ),
+                    label: Text(
+                      _useStaticPin
+                          ? 'Use Google Authenticator'
+                          : 'Use 6-Digit Offline PIN',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: copperColor,
                       ),
-                      if (!_useStaticPin && !auth.isTotpLinked) ...[
-                        IconButton(
-                          icon: const Icon(Icons.info_outline_rounded,
-                              size: 18, color: Colors.blue),
-                          tooltip: 'Setup Key',
-                          onPressed: () => _showSetupDialog(context),
-                        ),
-                      ],
-                    ],
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      side: BorderSide(color: copperColor, width: 1.2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  // PIN Indicators
+                  const SizedBox(height: 16),
+
+                  // 6 Circular PIN Indicators
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(
-                        6,
-                        (i) => Container(
-                            width: 14,
-                            height: 14,
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: _isLockedOut
-                                        ? Theme.of(context).colorScheme.error
-                                        : Theme.of(context).colorScheme.primary,
-                                    width: 1.5),
-                                color: _isLockedOut
-                                    ? Theme.of(context)
-                                        .colorScheme
-                                        .error
-                                        .withValues(alpha: 0.3)
-                                    : (i < _pin.length
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.transparent)))),
+                      6,
+                      (i) => Container(
+                        width: 14,
+                        height: 14,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _isLockedOut
+                                ? Theme.of(context).colorScheme.error
+                                : copperColor,
+                            width: 1.5,
+                          ),
+                          color: _isLockedOut
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .error
+                                  .withValues(alpha: 0.3)
+                              : (i < _pin.length
+                                  ? copperColor
+                                  : Colors.transparent),
+                        ),
+                      ),
+                    ),
                   ),
+
                   if (_isLockedOut) ...[
                     const SizedBox(height: 12),
                     Container(
@@ -663,12 +642,13 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       ),
                     ),
                   ],
-                  const SizedBox(height: 20),
+
+                  const SizedBox(height: 24),
+
                   if (_isVerifying)
                     Padding(
                       padding: const EdgeInsets.all(16.0),
-                      child: CircularProgressIndicator(
-                          color: Theme.of(context).colorScheme.primary),
+                      child: CircularProgressIndicator(color: copperColor),
                     )
                   else
                     Opacity(
@@ -677,48 +657,76 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                         crossAxisCount: 3,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         children: keys.map((k) {
                           final isSetup = k == 'SETUP';
-                          return GestureDetector(
-                            onTap: isSetup
-                                ? () => _showSetupDialog(context)
-                                : () => _onKey(k),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isSetup
-                                    ? Colors.blue.withValues(alpha: 0.1)
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHigh,
+                          final isBackspace = k == '⌫';
+                          if (isSetup) {
+                            return GestureDetector(
+                              onTap: () => _showSetupDialog(context),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFFD6E4FF),
+                                ),
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  Icons.fingerprint_rounded,
+                                  color: Color(0xFF1967D2),
+                                  size: 26,
+                                ),
                               ),
-                              alignment: Alignment.center,
-                              child: isSetup
-                                  ? const Icon(Icons.fingerprint_rounded,
-                                      color: Colors.blue, size: 24)
-                                  : Text(
-                                      k,
-                                      style: const TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                            ),
-                          );
+                            );
+                          } else if (isBackspace) {
+                            return GestureDetector(
+                              onTap: () => _onKey('⌫'),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.transparent,
+                                ),
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  Icons.backspace_outlined,
+                                  size: 22,
+                                ),
+                              ),
+                            );
+                          } else {
+                            return GestureDetector(
+                              onTap: () => _onKey(k),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.transparent,
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  k,
+                                  style: const TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
                         }).toList(),
                       ),
                     ),
-                  const SizedBox(height: 16),
+
+                  const SizedBox(height: 20),
                   TextButton(
                     onPressed: () => _showForgotPinDialog(context),
                     child: Text(
                       'Forgot PIN? Contact Super Admin',
                       style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600),
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),

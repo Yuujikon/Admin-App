@@ -8,6 +8,7 @@ import '../models/transaction.dart';
 import '../models/store_settings.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
+import '../shared/services/admin_messaging_service.dart';
 import '../utils/pricing_engine.dart';
 import '../utils/format.dart';
 
@@ -319,6 +320,12 @@ class OrderProvider extends BaseProvider {
     // 4. Notify customer
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
+    await AdminMessagingService().sendCustomerOrderStatusNotification(
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone ?? '',
+      orderId: order.orderId,
+      newStatus: OrderStatus.collected.name,
+    );
   }
 
   /// Fast-checkout protocol for Click & Collect with strict cash tracking
@@ -366,6 +373,12 @@ class OrderProvider extends BaseProvider {
     // 5. Notify customer
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
+    await AdminMessagingService().sendCustomerOrderStatusNotification(
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone ?? '',
+      orderId: order.orderId,
+      newStatus: OrderStatus.collected.name,
+    );
     return tx;
   }
 
@@ -403,6 +416,14 @@ class OrderProvider extends BaseProvider {
     );
 
     await _fs.updateOrder(updatedOrder);
+
+    // Send Brevo Email & Traccar SMS Notification
+    await AdminMessagingService().sendCustomerOrderStatusNotification(
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone ?? '',
+      orderId: order.orderId,
+      newStatus: next.name,
+    );
 
     // Notify customer when order is ready
     if (next == OrderStatus.ready) {
@@ -447,6 +468,14 @@ class OrderProvider extends BaseProvider {
     );
 
     await _fs.updateOrder(updatedOrder);
+
+    // Send Brevo Email & Traccar SMS Notification
+    await AdminMessagingService().sendCustomerOrderStatusNotification(
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone ?? '',
+      orderId: order.orderId,
+      newStatus: OrderStatus.cancelled.name,
+    );
 
     if (isAuto) {
       await NotificationService.sendOrderAutoCancelled(
