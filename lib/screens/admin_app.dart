@@ -21,6 +21,8 @@ import 'sales_history_screen.dart';
 import 'inventory_records_screen.dart';
 import 'supplier_management_screen.dart';
 import 'more_management_screen.dart';
+import '../shared/services/time_service.dart';
+import '../shared/widgets/common/time_travel_sheet.dart';
 
 enum AppTab {
   dashboard,
@@ -476,6 +478,72 @@ class _AdminTopBar extends StatelessWidget {
             ],
           ),
           const Spacer(),
+          // Time Travel / Fast-Forward Simulation Control Button
+          Builder(
+            builder: (context) {
+              final timeService = context.watch<TimeService>();
+              final isSimulated = timeService.isSimulated;
+
+              return Tooltip(
+                message: isSimulated
+                    ? 'Time Simulation Active (${timeService.formattedOffset})'
+                    : 'Time Simulation & Fast-Forward Controls',
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => TimeTravelSheet.show(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSimulated
+                            ? Colors.amber.shade100
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSimulated
+                              ? Colors.amber.shade700
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: 0.6),
+                          width: isSimulated ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isSimulated
+                                ? Icons.more_time_rounded
+                                : Icons.access_time_rounded,
+                            size: isCompact ? 16 : 18,
+                            color: isSimulated
+                                ? Colors.amber.shade900
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                          if (isSimulated) ...[
+                            const SizedBox(width: 4),
+                            Text(
+                              timeService.formattedOffset,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
           // Dark Mode Toggle Button (Relocated cleanly in top right)
           Tooltip(
             message: context.watch<ThemeProvider>().isDarkMode

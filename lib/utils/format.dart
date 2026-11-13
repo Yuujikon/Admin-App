@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import '../shared/services/time_service.dart';
 
 final _peso = NumberFormat.currency(locale: 'fil_PH', symbol: 'P');
 
@@ -11,7 +12,7 @@ String formatDate(DateTime dt) => DateFormat('MMM d, y hh:mm a').format(dt);
 /// Formats a relative time ago string (e.g. "5m ago", "2h ago", "1d ago", or "Just now").
 String formatTimeAgo(DateTime? dt) {
   if (dt == null) return 'Never';
-  final diff = DateTime.now().difference(dt);
+  final diff = TimeService.now.difference(dt);
   if (diff.inDays > 0) return '${diff.inDays}d ago';
   if (diff.inHours > 0) return '${diff.inHours}h ago';
   if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';

@@ -9,6 +9,7 @@ import '../models/store_settings.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../shared/services/admin_messaging_service.dart';
+import '../shared/services/time_service.dart';
 import '../utils/pricing_engine.dart';
 import '../utils/format.dart';
 
@@ -137,7 +138,7 @@ class OrderProvider extends BaseProvider {
   }
 
   void _checkExpirations(List<PreOrder> list) {
-    final now = DateTime.now();
+    final now = TimeService.now;
     for (final order in list) {
       if (_processingOrders.contains(order.id)) continue;
 
@@ -494,7 +495,7 @@ class OrderProvider extends BaseProvider {
         for (final p in allProducts) p.id: p
       };
 
-      final now = DateTime.now();
+      final now = TimeService.now;
       final String adminUser = processedBy ?? _adminName;
 
       for (final item in order.items) {

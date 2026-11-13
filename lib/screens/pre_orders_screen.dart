@@ -17,6 +17,7 @@ import '../widgets/pos_checkout_modal.dart';
 import '../widgets/order_qr_scanner.dart';
 import '../widgets/responsive_layout.dart';
 import '../utils/packing_slip_printer.dart';
+import '../shared/services/time_service.dart';
 
 enum PreOrderStage { toPack, ready, completed, refunds, all }
 
@@ -1502,7 +1503,7 @@ class _OrderCard extends StatelessWidget {
   }
 
   String _formatRelativeTime(DateTime dateTime) {
-    final now = DateTime.now();
+    final now = TimeService.now;
     final diff = now.difference(dateTime);
     if (diff.inMinutes < 1) {
       return 'Just now';
@@ -1533,7 +1534,7 @@ class _OrderListRow extends StatelessWidget {
   });
 
   String _formatRelativeTime(DateTime dateTime) {
-    final now = DateTime.now();
+    final now = TimeService.now;
     final diff = now.difference(dateTime);
     if (diff.inMinutes < 1) {
       return 'Just now';

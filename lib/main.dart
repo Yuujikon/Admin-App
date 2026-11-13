@@ -19,7 +19,8 @@ import 'screens/staff_login_screen.dart';
 import 'screens/admin_pin_screen.dart';
 import 'screens/admin_app.dart';
 
-import 'services/notification_service.dart';
+import 'shared/services/notification_service.dart';
+import 'shared/services/time_service.dart';
 
 /// Top-level background message handler for FCM notifications.
 ///
@@ -131,6 +132,7 @@ class GdcAdminApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider.value(value: TimeService.instance),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AppAuthProvider()),
         ChangeNotifierProvider(create: (_) => InventoryProvider()),

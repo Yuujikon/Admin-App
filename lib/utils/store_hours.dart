@@ -1,10 +1,11 @@
 import '../models/store_settings.dart';
+import '../shared/services/time_service.dart';
 
 /// Utility class for checking store open/closed status and pickup schedule slots.
 class StoreHours {
   /// Dynamically checks if the store is currently (or on a target date) within active operating/pickup hours.
   static bool isOpen([StoreSettings? settings, DateTime? date]) {
-    final checkTime = date ?? DateTime.now();
+    final checkTime = date ?? TimeService.now;
     if (settings != null) {
       if (settings.isClosed) return false;
 
@@ -23,8 +24,8 @@ class StoreHours {
 
   /// Dynamically generates available pickup slots based on store settings, schedule overrides, and date.
   static List<Map<String, dynamic>> availableSlots([StoreSettings? settings, DateTime? targetDate]) {
-    final date = targetDate ?? DateTime.now();
-    final now = DateTime.now();
+    final date = targetDate ?? TimeService.now;
+    final now = TimeService.now;
     final isToday = date.year == now.year &&
         date.month == now.month &&
         date.day == now.day;

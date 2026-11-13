@@ -17,6 +17,7 @@ import '../models/product.dart';
 import '../models/supplier.dart';
 import '../models/store_settings.dart';
 import '../utils/format.dart';
+import '../shared/services/time_service.dart';
 import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/batch_expiration_widget.dart';
 import 'admin_app.dart';
@@ -88,8 +89,8 @@ class _IsolateComputationParams {
 }
 
 _DashboardData _computeDashboardData(_IsolateComputationParams params) {
-  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-  final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
+  final today = DateFormat('yyyy-MM-dd').format(TimeService.now);
+  final currentMonth = DateFormat('yyyy-MM').format(TimeService.now);
 
   // Filter today's transactions for the recent transaction list
   final todayTx = params.transactions.where((t) {
@@ -200,7 +201,7 @@ List<_DailyMetric> _computeChartMetrics(
   int days = 7,
   int offsetDays = 0,
 }) {
-  final now = DateTime.now().subtract(Duration(days: offsetDays));
+  final now = TimeService.now.subtract(Duration(days: offsetDays));
   final List<_DailyMetric> list = [];
 
   for (int i = days - 1; i >= 0; i--) {
@@ -474,7 +475,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                DateFormat('EEEE, MMMM d').format(TimeService.now),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -509,7 +510,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Color infoColor = Colors.blue.shade700;
       final Color errorColor = Theme.of(context).colorScheme.error;
 
-      final currentMonthName = DateFormat('MMMM').format(DateTime.now());
+      final currentMonthName = DateFormat('MMMM').format(TimeService.now);
       final bool isAdmin = role == UserRole.admin;
       final items = isAdmin
           ? [
