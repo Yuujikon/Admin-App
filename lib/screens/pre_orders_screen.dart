@@ -689,7 +689,8 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                 final selectedOrders = visibleOrders
                     .where((o) => _selectedOrderIds.contains(o.id))
                     .toList();
-                PackingSlipPrinter.printBulkPackingSlips(selectedOrders);
+                PackingSlipPrinter.showPrintDestinationDialog(
+                    context, selectedOrders);
               },
               icon: const Icon(Icons.print_rounded, size: 16),
               label: Text(
@@ -1861,14 +1862,15 @@ class _CardActionButtonState extends State<_CardActionButton> {
               try {
                 final orderProvider = context.read<OrderProvider>();
                 if (order.status == OrderStatus.pending) {
-                  // Step 1: Print 80mm packing slip & move to Packing stage (staging)
-                  await PackingSlipPrinter.printPackingSlip(order);
+                  // Let staff choose print destination (System Print, PDF Preview, etc.)
+                  await PackingSlipPrinter.showPrintDestinationDialog(
+                      context, [order]);
                   await orderProvider.advanceStatus(order.id);
                   if (mounted) {
                     messenger.showSnackBar(
                       SnackBar(
                         content: Text(
-                            'Order #${order.orderId} slip printed! Moved to Packing stage. 🖨️'),
+                            'Order #${order.orderId} slip sent to printer! Moved to Packing stage. 🖨️'),
                         backgroundColor: Colors.blue.shade700,
                         duration: const Duration(seconds: 2),
                       ),

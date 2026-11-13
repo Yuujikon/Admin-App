@@ -1,13 +1,174 @@
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
 import '../models/order.dart';
+import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 
 /// Packing Slip PDF Printing Helper for GDC Sari-Sari Admin.
 class PackingSlipPrinter {
+  /// Displays a print destination chooser dialog allowing staff to decide where to send the packing slip.
+  static Future<void> showPrintDestinationDialog(
+      BuildContext context, List<PreOrder> orders) async {
+    if (orders.isEmpty) return;
+
+    final printerProvider =
+        Provider.of<PrinterProvider>(context, listen: false);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.print_rounded,
+                    color: Theme.of(ctx).colorScheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select Print Destination',
+                        style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      Text(
+                        orders.length == 1
+                            ? 'Packing Slip #${orders.first.orderId}'
+                            : '${orders.length} Selected Orders',
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Option 1: System Print / Save as PDF
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              ),
+              leading: CircleAvatar(
+                backgroundColor: Colors.blue.shade50,
+                child: Icon(Icons.picture_as_pdf_rounded,
+                    color: Colors.blue.shade800),
+              ),
+              title: const Text('System Print / Save as PDF',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: const Text(
+                  'Send to Wi-Fi printer, Bluetooth, or export PDF file',
+                  style: TextStyle(fontSize: 11)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await printBulkPackingSlips(orders);
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // Option 2: Live PDF Preview & Print
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              ),
+              leading: CircleAvatar(
+                backgroundColor: Colors.green.shade50,
+                child: Icon(Icons.preview_rounded, color: Colors.green.shade800),
+              ),
+              title: const Text('Preview 80mm Slip First',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: const Text(
+                  'Inspect layout before printing or exporting',
+                  style: TextStyle(fontSize: 11)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.pop(ctx);
+                showPdfPreviewModal(context, orders);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Displays a live PDF Preview modal for single or bulk packing slips.
+  static Future<void> showPdfPreviewModal(
+      BuildContext context, List<PreOrder> orders) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Scaffold(
+        appBar: AppBar(
+          title: Text(orders.length == 1
+              ? 'Packing Slip Preview #${orders.first.orderId}'
+              : 'Bulk Packing Slips Preview (${orders.length})'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+        body: PdfPreview(
+          build: (format) => buildPackingSlipPdf(orders),
+          allowPrinting: true,
+          allowSharing: true,
+        ),
+      ),
+    );
+  }
+
   /// Triggers system print or thermal layout for a single pre-order packing slip.
   static Future<void> printPackingSlip(PreOrder order) async {
     final pdfBytes = await buildPackingSlipPdf([order]);
