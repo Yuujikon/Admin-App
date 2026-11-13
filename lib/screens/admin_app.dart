@@ -667,7 +667,6 @@ Future<void> _confirmLogout(BuildContext context, AppAuthProvider auth) async {
     builder: (ctx) => AlertDialog(
       backgroundColor: theme.colorScheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      padding: const EdgeInsets.all(24),
       titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24),
       actionsPadding: const EdgeInsets.all(20),
