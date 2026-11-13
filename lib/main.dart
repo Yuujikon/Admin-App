@@ -19,7 +19,7 @@ import 'screens/staff_login_screen.dart';
 import 'screens/admin_pin_screen.dart';
 import 'screens/admin_app.dart';
 
-import 'shared/services/notification_service.dart';
+import 'services/notification_service.dart';
 import 'shared/services/time_service.dart';
 
 /// Top-level background message handler for FCM notifications.
