@@ -352,7 +352,6 @@ class _PresetChip extends StatelessWidget {
       color: highlight
           ? Colors.amber.shade100.withValues(alpha: 0.6)
           : colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(14),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
