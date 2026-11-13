@@ -799,25 +799,73 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   Future<bool> _confirmDiscardChanges() async {
     if (!_hasUnsavedChanges()) return true;
 
+    final theme = Theme.of(context);
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Discard Unsaved Changes?'),
-        content: const Text(
+        backgroundColor: theme.colorScheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+        actionsPadding: const EdgeInsets.all(20),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.delete_outline_rounded,
+                color: theme.colorScheme.error,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Discard Unsaved Changes?',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
           'You have unsaved information in this form. Are you sure you want to discard your changes and close?',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 15,
+          ),
         ),
         actions: [
-          TextButton(
+          FilledButton.tonal(
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              foregroundColor: theme.colorScheme.onSurface,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep Editing'),
+            child: const Text('Keep Editing',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+          const SizedBox(width: 8),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Discard Changes'),
+            child: const Text('Discard Changes',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
