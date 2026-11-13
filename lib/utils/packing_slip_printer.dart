@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import '../models/order.dart';
@@ -169,7 +170,7 @@ class PackingSlipPrinter {
                   for (final order in orders) {
                     final bytes =
                         await ReceiptPrinterService.generatePackingSlipBytes(order);
-                    await printerProvider.printReceipt(bytes);
+                    await PrintBluetoothThermal.writeBytes(bytes);
                   }
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
