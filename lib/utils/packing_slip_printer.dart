@@ -139,7 +139,7 @@ class PackingSlipPrinter {
             ),
             const SizedBox(height: 10),
 
-            // Option 3: Bluetooth Thermal Printer (Direct ESC/POS)
+            // Option 3: Bluetooth Thermal Printer - 80mm Roll
             ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -148,42 +148,57 @@ class PackingSlipPrinter {
               ),
               leading: CircleAvatar(
                 backgroundColor: Colors.orange.shade50,
-                child: Icon(Icons.bluetooth_connected_rounded,
+                child: Icon(Icons.print_rounded,
                     color: Colors.orange.shade900),
               ),
               title: Text(
                 printerProvider.connected
-                    ? 'Bluetooth Thermal Printer (${printerProvider.device?.name ?? "Connected"})'
-                    : 'Bluetooth Thermal Printer (Direct ESC/POS)',
+                    ? 'Bluetooth Thermal Printer (80mm Wide Roll)'
+                    : 'Bluetooth Thermal Printer - 80mm Roll',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               subtitle: Text(
                 printerProvider.connected
-                    ? 'Print direct 80mm ESC/POS pick list'
-                    : 'Send packing slip bytes directly to paired thermal printer',
+                    ? 'Print 80mm (48 columns) ESC/POS pick list (${printerProvider.device?.name})'
+                    : 'Send 80mm packing slip bytes directly to paired thermal printer',
                 style: const TextStyle(fontSize: 11),
               ),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () async {
                 Navigator.pop(ctx);
-                if (printerProvider.connected) {
-                  for (final order in orders) {
-                    final bytes =
-                        await ReceiptPrinterService.generatePackingSlipBytes(order);
-                    await PrintBluetoothThermal.writeBytes(bytes);
-                  }
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                            'Sent ${orders.length} packing slips to Bluetooth printer! 🖨️'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                } else {
-                  await printBulkPackingSlips(orders);
-                }
+                await _printThermalDirect(context, orders, paperWidthMm: 80);
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // Option 4: Bluetooth Thermal Printer - 58mm Roll
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              ),
+              leading: CircleAvatar(
+                backgroundColor: Colors.amber.shade50,
+                child: Icon(Icons.receipt_long_rounded,
+                    color: Colors.amber.shade900),
+              ),
+              title: Text(
+                printerProvider.connected
+                    ? 'Bluetooth Thermal Printer (58mm Compact Roll)'
+                    : 'Bluetooth Thermal Printer - 58mm Roll',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: Text(
+                printerProvider.connected
+                    ? 'Print 58mm (32 columns) ESC/POS pick list (${printerProvider.device?.name})'
+                    : 'Send 58mm compact packing slip bytes directly to paired thermal printer',
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _printThermalDirect(context, orders, paperWidthMm: 58);
               },
             ),
           ],
@@ -192,6 +207,33 @@ class PackingSlipPrinter {
     ),
   );
 }
+
+  static Future<void> _printThermalDirect(
+      BuildContext context, List<PreOrder> orders,
+      {required int paperWidthMm}) async {
+    final printerProvider =
+        Provider.of<PrinterProvider>(context, listen: false);
+
+    if (printerProvider.connected) {
+      for (final order in orders) {
+        final bytes = await ReceiptPrinterService.generatePackingSlipBytes(
+            order,
+            paperWidthMm: paperWidthMm);
+        await PrintBluetoothThermal.writeBytes(bytes);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Sent ${orders.length} packing slips (${paperWidthMm}mm) to Bluetooth printer! 🖨️'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } else {
+      await printBulkPackingSlips(orders);
+    }
+  }
 
   /// Displays a live PDF Preview modal for single or bulk packing slips.
   static Future<void> showPdfPreviewModal(
