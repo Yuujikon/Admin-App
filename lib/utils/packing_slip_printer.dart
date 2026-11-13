@@ -25,13 +25,13 @@ class PackingSlipPrinter {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(ctx).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
+      builder: (ctx) => Material(
+        color: Theme.of(ctx).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -189,8 +189,9 @@ class PackingSlipPrinter {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   /// Displays a live PDF Preview modal for single or bulk packing slips.
   static Future<void> showPdfPreviewModal(
