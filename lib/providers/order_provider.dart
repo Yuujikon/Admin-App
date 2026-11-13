@@ -137,6 +137,10 @@ class OrderProvider extends BaseProvider {
     super.dispose();
   }
 
+  void checkExpirationsNow() {
+    _checkExpirations(_orders);
+  }
+
   void _checkExpirations(List<PreOrder> list) {
     final now = TimeService.now;
     for (final order in list) {
@@ -145,8 +149,12 @@ class OrderProvider extends BaseProvider {
       if (order.status == OrderStatus.pending ||
           order.status == OrderStatus.staging ||
           order.status == OrderStatus.ready) {
-        if (order.expiresAt != null && order.expiresAt!.isBefore(now)) {
-          // Auto cancel expired order
+        final effectiveExpiresAt =
+            order.expiresAt ?? order.createdAt.add(const Duration(hours: 72));
+
+        if (effectiveExpiresAt.isBefore(now)) {
+          debugPrint(
+              'Auto-cancelling expired order #${order.orderId} (Expires: $effectiveExpiresAt, Now: $now)');
           cancelOrder(order.id, isAuto: true);
         }
       }
@@ -223,11 +231,11 @@ class OrderProvider extends BaseProvider {
 
     DateTime expiresAt;
     if (onlyPerishables) {
-      expiresAt = DateTime.now().add(Duration(hours: pWindow));
+      expiresAt = TimeService.now.add(Duration(hours: pWindow));
     } else if (hasPerishables) {
-      expiresAt = DateTime.now().add(Duration(hours: mWindow));
+      expiresAt = TimeService.now.add(Duration(hours: mWindow));
     } else {
-      expiresAt = DateTime.now().add(Duration(hours: sWindow));
+      expiresAt = TimeService.now.add(Duration(hours: sWindow));
     }
 
     // Calculate breakdown using PricingEngine
@@ -249,7 +257,10 @@ class OrderProvider extends BaseProvider {
       notes: notes,
       location: location,
       pickupTime: pickupSlot,
-      createdAt: DateTime.now(),
+      createdAt: TimeService.now,
+      expiresAt: expiresAt,
+      statusTimeline: {OrderStatus.pending.name: TimeService.now},
+    );
       expiresAt: expiresAt,
       statusTimeline: {OrderStatus.pending.name: DateTime.now()},
     );

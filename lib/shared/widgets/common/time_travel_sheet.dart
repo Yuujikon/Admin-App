@@ -46,6 +46,7 @@ class _TimeTravelSheetState extends State<TimeTravelSheet> {
   void _notifyProviders(BuildContext context) {
     // Notify key providers to re-evaluate time-dependent checks
     try {
+      context.read<OrderProvider>().checkExpirationsNow();
       context.read<InventoryProvider>().notifyListeners();
       context.read<OrderProvider>().notifyListeners();
     } catch (_) {}
