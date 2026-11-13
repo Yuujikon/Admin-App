@@ -249,78 +249,238 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
             ),
             const SizedBox(height: 20),
 
-            // Printing Action Buttons
-            Row(
-              children: [
-                // Thermal Printer Button (if thermal printer connected)
-                if (printer.connected)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isThermalPrinting
-                          ? null
-                          : () async {
-                              setState(() => _isThermalPrinting = true);
-                              final ok = await printer.printBarcodeLabel(
-                                productName: widget.productName,
-                                price: widget.price,
-                                barcode: widget.barcode,
-                                copies: _copies,
-                              );
-                              if (mounted) {
-                                setState(() => _isThermalPrinting = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(ok
-                                        ? 'Printed $_copies label(s) to thermal printer! 🖨️'
-                                        : 'Failed to print label to thermal printer.'),
-                                    backgroundColor:
-                                        ok ? Colors.green : Colors.red,
-                                  ),
-                                );
-                              }
-                            },
-                      icon: _isThermalPrinting
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.bluetooth_audio_rounded, size: 18),
-                      label: Text('THERMAL (${_copies}x)'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                if (printer.connected) const SizedBox(width: 12),
-
-                // System Print / PDF Sticker Print Button
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final pdfBytes = await _buildPdfLabel(PdfPageFormat.a4);
-                      await Printing.layoutPdf(
-                        onLayout: (_) async => pdfBytes,
-                        name: 'PLU_Barcode_${widget.barcode}',
-                      );
-                    },
-                    icon: const Icon(Icons.print_rounded, size: 18),
-                    label: const Text('PRINT STICKERS / PDF'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: GdcColors.emeraldPrimary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
+            // Primary Print Action Button (Opens Print Options Chooser)
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () => _showPrintOptionsChooser(context),
+                icon: const Icon(Icons.print_rounded, size: 20),
+                label: Text(
+                  'PRINT OPTIONS (${_copies}x)',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                 ),
-              ],
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: GdcColors.emeraldPrimary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showPrintOptionsChooser(BuildContext context) {
+    final printer = context.read<PrinterProvider>();
+    final theme = Theme.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Material(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.print_rounded,
+                      color: theme.colorScheme.primary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Barcode Print Options',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          '${widget.productName} (${_copies}x copies)',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Option 1: System Print / Save PDF Stickers
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.blue.shade50,
+                  child: Icon(Icons.picture_as_pdf_rounded,
+                      color: Colors.blue.shade800),
+                ),
+                title: const Text('System Print / Save PDF Stickers',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text(
+                    'Print sticker sheet via Wi-Fi, Bluetooth, or export PDF file',
+                    style: TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final pdfBytes = await _buildPdfLabel(PdfPageFormat.a4);
+                  await Printing.layoutPdf(
+                    onLayout: (_) async => pdfBytes,
+                    name: 'PLU_Barcode_${widget.barcode}',
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Option 2: Live PDF Sticker Sheet Preview
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.green.shade50,
+                  child:
+                      Icon(Icons.preview_rounded, color: Colors.green.shade800),
+                ),
+                title: const Text('Preview Sticker Sheet First',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text(
+                    'Inspect sticker grid & page formatting before printing',
+                    style: TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showFullPdfPreview(context);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Option 3: Bluetooth Thermal Printer
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.orange.shade50,
+                  child: Icon(Icons.bluetooth_audio_rounded,
+                      color: Colors.orange.shade900),
+                ),
+                title: Text(
+                  printer.connected
+                      ? 'Bluetooth Thermal Printer (${printer.device?.name})'
+                      : 'Bluetooth Thermal Printer (ESC/POS Direct)',
+                  style:
+                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  printer.connected
+                      ? 'Print $_copies barcode label(s) directly to paired thermal printer'
+                      : 'Send barcode ESC/POS commands directly to paired thermal printer',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (printer.connected) {
+                    final ok = await printer.printBarcodeLabel(
+                      productName: widget.productName,
+                      price: widget.price,
+                      barcode: widget.barcode,
+                      copies: _copies,
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(ok
+                              ? 'Printed $_copies label(s) to thermal printer! 🖨️'
+                              : 'Failed to print label to thermal printer.'),
+                          backgroundColor: ok ? Colors.green : Colors.red,
+                        ),
+                      );
+                    }
+                  } else {
+                    final pdfBytes = await _buildPdfLabel(PdfPageFormat.a4);
+                    await Printing.layoutPdf(
+                      onLayout: (_) async => pdfBytes,
+                      name: 'PLU_Barcode_${widget.barcode}',
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFullPdfPreview(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Scaffold(
+        appBar: AppBar(
+          title: Text('Barcode Sticker Preview (${widget.productName})'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+        body: PdfPreview(
+          build: (format) => _buildPdfLabel(format),
+          allowPrinting: true,
+          allowSharing: true,
         ),
       ),
     );
