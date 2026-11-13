@@ -272,4 +272,78 @@ class ReceiptPrinterService {
 
     return bytes;
   }
+
+  /// Generates ESC/POS byte commands for 80mm/58mm thermal packing slips.
+  static Future<List<int>> generatePackingSlipBytes(PreOrder order,
+      {int paperWidthMm = 80}) async {
+    final List<int> bytes = [];
+    final PaperSize paperSize =
+        paperWidthMm == 80 ? PaperSize.mm80 : PaperSize.mm58;
+    final int widthChars = paperWidthMm == 80 ? 48 : 32;
+
+    CapabilityProfile profile;
+    try {
+      profile = await CapabilityProfile.load();
+    } catch (_) {
+      final profiles = await CapabilityProfile.getAvailableProfiles();
+      profile = await CapabilityProfile.load(name: profiles.first.toString());
+    }
+
+    final generator = Generator(paperSize, profile);
+
+    bytes.addAll(generator.reset());
+    bytes.addAll(generator.text('GDC SARI-SARI STORE',
+        styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+            width: PosTextSize.size2)));
+    bytes.addAll(generator.text('ORDER FULFILLMENT PICK LIST',
+        styles: const PosStyles(align: PosAlign.center, bold: true)));
+    bytes.addAll(generator.text('=' * widthChars,
+        styles: const PosStyles(align: PosAlign.center)));
+
+    bytes.addAll(generator.text(
+        formatLine('ORDER ID:', '#${order.orderId}', width: widthChars),
+        styles: const PosStyles(bold: true)));
+    bytes.addAll(generator.text(
+        formatLine('CUSTOMER:', order.customerName, width: widthChars)));
+    if (order.customerPhone != null && order.customerPhone!.isNotEmpty) {
+      bytes.addAll(generator.text(
+          formatLine('PHONE:', order.customerPhone!, width: widthChars)));
+    }
+    final dateStr = DateFormat('MMM d, yyyy h:mm a').format(order.createdAt);
+    bytes.addAll(
+        generator.text(formatLine('DATE:', dateStr, width: widthChars)));
+    bytes.addAll(generator.text('-' * widthChars,
+        styles: const PosStyles(align: PosAlign.center)));
+
+    final totalQty = order.items.fold(0, (sum, i) => sum + i.qty);
+    bytes.addAll(generator.text('ITEMS TO PACK ($totalQty items):',
+        styles: const PosStyles(bold: true)));
+
+    for (final item in order.items) {
+      final leftStr = '[  ] ${item.qty}x ${item.name}';
+      final rightStr = cleanPeso(formatPeso(item.price * item.qty));
+      bytes.addAll(generator.text(
+          formatLine(leftStr, rightStr, width: widthChars),
+          styles: const PosStyles(bold: true)));
+    }
+
+    bytes.addAll(generator.text('=' * widthChars,
+        styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(generator.text(
+        formatLine('TOTAL VALUE:', cleanPeso(formatPeso(order.total)),
+            width: widthChars),
+        styles: const PosStyles(
+            bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
+    bytes.addAll(generator.feed(1));
+
+    bytes.addAll(generator.text('Packed By:  __________________________'));
+    bytes.addAll(generator.text('Checked By: __________________________'));
+    bytes.addAll(generator.feed(2));
+    bytes.addAll(generator.cut());
+
+    return bytes;
+  }
 }

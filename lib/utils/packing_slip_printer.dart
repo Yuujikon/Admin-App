@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import '../models/order.dart';
 import '../providers/printer_provider.dart';
+import '../services/receipt_printer_service.dart';
 import '../utils/format.dart';
 
 /// Packing Slip PDF Printing Helper for GDC Sari-Sari Admin.
@@ -133,6 +134,55 @@ class PackingSlipPrinter {
               onTap: () {
                 Navigator.pop(ctx);
                 showPdfPreviewModal(context, orders);
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // Option 3: Bluetooth Thermal Printer (Direct ESC/POS)
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              ),
+              leading: CircleAvatar(
+                backgroundColor: Colors.orange.shade50,
+                child: Icon(Icons.bluetooth_connected_rounded,
+                    color: Colors.orange.shade900),
+              ),
+              title: Text(
+                printerProvider.connected
+                    ? 'Bluetooth Thermal Printer (${printerProvider.device?.name ?? "Connected"})'
+                    : 'Bluetooth Thermal Printer (Direct ESC/POS)',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: Text(
+                printerProvider.connected
+                    ? 'Print direct 80mm ESC/POS pick list'
+                    : 'Send packing slip bytes directly to paired thermal printer',
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                Navigator.pop(ctx);
+                if (printerProvider.connected) {
+                  for (final order in orders) {
+                    final bytes =
+                        await ReceiptPrinterService.generatePackingSlipBytes(order);
+                    await printerProvider.printReceipt(bytes);
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Sent ${orders.length} packing slips to Bluetooth printer! 🖨️'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } else {
+                  await printBulkPackingSlips(orders);
+                }
               },
             ),
           ],
