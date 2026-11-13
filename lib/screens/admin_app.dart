@@ -661,23 +661,79 @@ class _SideLogoutButton extends StatelessWidget {
 }
 
 Future<void> _confirmLogout(BuildContext context, AppAuthProvider auth) async {
+  final theme = Theme.of(context);
   final confirm = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Confirm Logout'),
-      content:
-          const Text('Are you sure you want to log out of your account?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Cancel'),
+      backgroundColor: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      padding: const EdgeInsets.all(24),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+      actionsPadding: const EdgeInsets.all(20),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.logout_rounded,
+              color: Colors.red.shade700,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Text(
+            'Confirm Logout',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+        ],
+      ),
+      content: Text(
+        'Are you sure you want to log out of your account?',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontSize: 15,
         ),
+      ),
+      actions: [
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         FilledButton(
           style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
+            backgroundColor: Colors.red.shade700,
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('Log Out'),
+          child: const Text(
+            'Log Out',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
       ],
     ),
