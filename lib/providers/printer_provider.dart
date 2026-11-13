@@ -296,6 +296,7 @@ class PrinterProvider extends ChangeNotifier {
     required String barcode,
     int copies = 1,
     String storeName = "GDC SARI-SARI STORE",
+    int paperWidthMm = 58,
   }) async {
     try {
       final bool isBluetoothEnabled =
@@ -327,12 +328,17 @@ class PrinterProvider extends ChangeNotifier {
         profile = await CapabilityProfile.load(name: profiles.first.toString());
       }
 
-      final generator = Generator(PaperSize.mm58, profile);
+      final PaperSize paperSize =
+          paperWidthMm == 80 ? PaperSize.mm80 : PaperSize.mm58;
+      final int widthChars = paperWidthMm == 80 ? 48 : 32;
+      final String sep = '=' * widthChars;
+
+      final generator = Generator(paperSize, profile);
       List<int> bytes = [];
 
       for (int i = 0; i < copies; i++) {
         bytes.addAll(generator.reset());
-        bytes.addAll(generator.text("================================",
+        bytes.addAll(generator.text(sep,
             styles: const PosStyles(align: PosAlign.center)));
         bytes.addAll(generator.text(storeName,
             styles: const PosStyles(align: PosAlign.center, bold: true)));
@@ -368,7 +374,7 @@ class PrinterProvider extends ChangeNotifier {
                   height: PosTextSize.size2)));
         }
 
-        bytes.addAll(generator.text("================================",
+        bytes.addAll(generator.text(sep,
             styles: const PosStyles(align: PosAlign.center)));
         bytes.addAll(generator.feed(3));
       }

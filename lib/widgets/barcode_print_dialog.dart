@@ -402,7 +402,7 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
               ),
               const SizedBox(height: 10),
 
-              // Option 3: Bluetooth Thermal Printer
+              // Option 3: 80mm Bluetooth Thermal Printer
               ListTile(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -410,49 +410,58 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
                 ),
                 leading: CircleAvatar(
                   backgroundColor: Colors.orange.shade50,
-                  child: Icon(Icons.bluetooth_audio_rounded,
+                  child: Icon(Icons.print_rounded,
                       color: Colors.orange.shade900),
                 ),
                 title: Text(
                   printer.connected
-                      ? 'Bluetooth Thermal Printer (${printer.device?.name})'
-                      : 'Bluetooth Thermal Printer (ESC/POS Direct)',
+                      ? 'Bluetooth Thermal Printer (80mm Roll)'
+                      : 'Bluetooth Thermal Printer - 80mm Roll',
                   style:
                       const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 subtitle: Text(
                   printer.connected
-                      ? 'Print $_copies barcode label(s) directly to paired thermal printer'
-                      : 'Send barcode ESC/POS commands directly to paired thermal printer',
+                      ? 'Print $_copies label(s) directly (48-col 80mm roll, ${printer.device?.name})'
+                      : 'Send 80mm ESC/POS barcode commands directly to thermal printer',
                   style: const TextStyle(fontSize: 11),
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  if (printer.connected) {
-                    final ok = await printer.printBarcodeLabel(
-                      productName: widget.productName,
-                      price: widget.price,
-                      barcode: widget.barcode,
-                      copies: _copies,
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(ok
-                              ? 'Printed $_copies label(s) to thermal printer! 🖨️'
-                              : 'Failed to print label to thermal printer.'),
-                          backgroundColor: ok ? Colors.green : Colors.red,
-                        ),
-                      );
-                    }
-                  } else {
-                    final pdfBytes = await _buildPdfLabel(PdfPageFormat.a4);
-                    await Printing.layoutPdf(
-                      onLayout: (_) async => pdfBytes,
-                      name: 'PLU_Barcode_${widget.barcode}',
-                    );
-                  }
+                  await _printThermalBarcode(context, paperWidthMm: 80);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Option 4: 58mm Bluetooth Thermal Printer
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.amber.shade50,
+                  child: Icon(Icons.receipt_long_rounded,
+                      color: Colors.amber.shade900),
+                ),
+                title: Text(
+                  printer.connected
+                      ? 'Bluetooth Thermal Printer (58mm Roll)'
+                      : 'Bluetooth Thermal Printer - 58mm Roll',
+                  style:
+                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  printer.connected
+                      ? 'Print $_copies label(s) directly (32-col 58mm roll, ${printer.device?.name})'
+                      : 'Send 58mm ESC/POS barcode commands directly to thermal printer',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _printThermalBarcode(context, paperWidthMm: 58);
                 },
               ),
             ],
@@ -460,6 +469,36 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
         ),
       ),
     );
+  }
+
+  Future<void> _printThermalBarcode(BuildContext context,
+      {required int paperWidthMm}) async {
+    final printer = context.read<PrinterProvider>();
+    if (printer.connected) {
+      final ok = await printer.printBarcodeLabel(
+        productName: widget.productName,
+        price: widget.price,
+        barcode: widget.barcode,
+        copies: _copies,
+        paperWidthMm: paperWidthMm,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok
+                ? 'Printed $_copies label(s) (${paperWidthMm}mm) to thermal printer! 🖨️'
+                : 'Failed to print label to thermal printer.'),
+            backgroundColor: ok ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } else {
+      final pdfBytes = await _buildPdfLabel(PdfPageFormat.a4);
+      await Printing.layoutPdf(
+        onLayout: (_) async => pdfBytes,
+        name: 'PLU_Barcode_${widget.barcode}',
+      );
+    }
   }
 
   void _showFullPdfPreview(BuildContext context) {
