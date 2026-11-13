@@ -614,6 +614,12 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       _ => 'Advance Selected ($selectedCount)',
     };
 
+    final pendingOrdersToPrint = visibleOrders
+        .where((o) =>
+            _selectedOrderIds.contains(o.id) &&
+            o.status == OrderStatus.pending)
+        .toList();
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -682,35 +688,25 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
               ),
             ),
           ),
-          if (selectedCount > 0) ...[
-            final pendingOrdersToPrint = visibleOrders
-                .where((o) =>
-                    _selectedOrderIds.contains(o.id) &&
-                    o.status == OrderStatus.pending)
-                .toList();
-
-            if (pendingOrdersToPrint.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () {
-                  PackingSlipPrinter.showPrintDestinationDialog(
-                      context, pendingOrdersToPrint);
-                },
-                icon: const Icon(Icons.print_rounded, size: 16),
-                label: Text(
-                  'Print Slips (${pendingOrdersToPrint.length})',
-                  style:
-                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                ),
+          if (selectedCount > 0 && pendingOrdersToPrint.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () {
+                PackingSlipPrinter.showPrintDestinationDialog(
+                    context, pendingOrdersToPrint);
+              },
+              icon: const Icon(Icons.print_rounded, size: 16),
+              label: Text(
+                'Print Slips (${pendingOrdersToPrint.length})',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
               ),
-            ],
-          ],
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
             ),
           ],
           const SizedBox(width: 8),
