@@ -756,7 +756,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
           );
         }
       } else {
-        final selectedOrders = visibleOrders
+        final selectedOrders = orderProvider.orders
             .where((o) => _selectedOrderIds.contains(o.id))
             .toList();
         final pendingToPrint = selectedOrders
