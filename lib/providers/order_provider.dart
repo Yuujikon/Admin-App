@@ -261,9 +261,6 @@ class OrderProvider extends BaseProvider {
       expiresAt: expiresAt,
       statusTimeline: {OrderStatus.pending.name: TimeService.now},
     );
-      expiresAt: expiresAt,
-      statusTimeline: {OrderStatus.pending.name: DateTime.now()},
-    );
 
     await _fs.addOrder(order);
 
