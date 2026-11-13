@@ -609,9 +609,9 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
         advanceableOrders.every((o) => _selectedOrderIds.contains(o.id));
 
     final String bulkActionText = switch (_activeStage) {
-      PreOrderStage.toPack => 'Print & Move to Ready ($selectedCount)',
-      PreOrderStage.ready => 'Complete pickup ($selectedCount)',
-      _ => 'Advance selected ($selectedCount)',
+      PreOrderStage.toPack => 'Advance Selected ($selectedCount)',
+      PreOrderStage.ready => 'Complete Pickup ($selectedCount)',
+      _ => 'Advance Selected ($selectedCount)',
     };
 
     return Container(
@@ -756,11 +756,22 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
           );
         }
       } else {
+        final selectedOrders = visibleOrders
+            .where((o) => _selectedOrderIds.contains(o.id))
+            .toList();
+        final pendingToPrint = selectedOrders
+            .where((o) => o.status == OrderStatus.pending)
+            .toList();
+
+        if (pendingToPrint.isNotEmpty) {
+          await PackingSlipPrinter.printBulkPackingSlips(pendingToPrint);
+        }
+
         final count = await orderProvider.bulkAdvanceStatus(selectedIds);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Successfully advanced $count orders! 🚀'),
+              content: Text('Successfully processed $count orders! 🚀'),
               backgroundColor: Colors.green,
             ),
           );
