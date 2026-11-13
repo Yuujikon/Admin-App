@@ -158,8 +158,8 @@ class MoreManagementScreen extends StatelessWidget {
                 // 1. Operational Tools
                 _sectionHeader(
                   context,
-                  title: 'Operational tools',
-                  subtitle: 'Daily store activity',
+                  title: 'Operational Tools',
+                  subtitle: 'Daily Store Activity',
                 ),
                 _menuItemCard(
                   context,
@@ -167,7 +167,7 @@ class MoreManagementScreen extends StatelessWidget {
                   iconBg: GdcColors.creamActiveBackground,
                   iconColor: GdcColors.darkEmerald,
                   title: 'Shift & Cash Register',
-                  subtitle: 'X/Z readings, cash drops & opening float',
+                  subtitle: 'X/Z Readings, Cash Drops & Opening Float',
                   onTap: () {
                     if (onNavigateToTab != null) {
                       onNavigateToTab!(AppTab.shift);
@@ -186,7 +186,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconBg: const Color(0xFFF1F5F9),
                     iconColor: const Color(0xFF475569),
                     title: 'Sales History',
-                    subtitle: 'View & search past transactions',
+                    subtitle: 'View & Search Past Transactions',
                     onTap: () {
                       if (onNavigateToTab != null) {
                         onNavigateToTab!(AppTab.salesHistory);
@@ -205,8 +205,8 @@ class MoreManagementScreen extends StatelessWidget {
                 if (isAdmin || isTrusted) ...[
                   _sectionHeader(
                     context,
-                    title: 'Inventory & supply chain',
-                    subtitle: 'Products, deliveries and partners',
+                    title: 'Inventory & Supply Chain',
+                    subtitle: 'Products, Deliveries And Partners',
                   ),
                   _menuItemCard(
                     context,
@@ -214,7 +214,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconBg: GdcColors.creamActiveBackground,
                     iconColor: GdcColors.darkEmerald,
                     title: 'Inventory Records & Logs',
-                    subtitle: 'Delivery logs, batch expiry & stock adjustments',
+                    subtitle: 'Delivery Logs, Batch Expiry & Stock Adjustments',
                     onTap: () {
                       if (onNavigateToTab != null) {
                         onNavigateToTab!(AppTab.inventoryRecords);
@@ -233,7 +233,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconBg: const Color(0xFFF1F5F9),
                     iconColor: const Color(0xFF475569),
                     title: 'Suppliers',
-                    subtitle: 'Contact directory and restock histories',
+                    subtitle: 'Contact Directory And Restock Histories',
                     onTap: () {
                       if (onNavigateToTab != null) {
                         onNavigateToTab!(AppTab.suppliers);
@@ -252,7 +252,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconBg: const Color(0xFFFFEDD5),
                     iconColor: const Color(0xFFEA580C),
                     title: 'Categories, Bundles & Groups',
-                    subtitle: 'Master categories, meal sets & variant families',
+                    subtitle: 'Master Categories, Meal Sets & Variant Families',
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -267,7 +267,7 @@ class MoreManagementScreen extends StatelessWidget {
                   _sectionHeader(
                     context,
                     title: 'Administration & Finance',
-                    subtitle: 'Roles, permissions & reports',
+                    subtitle: 'Roles, Permissions & Reports',
                   ),
                   _menuItemCard(
                     context,
@@ -275,7 +275,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconBg: const Color(0xFFF3E8FF),
                     iconColor: GdcColors.violetAccent,
                     title: 'Staff & Roles',
-                    subtitle: 'Manage staff accounts, PINs & permissions',
+                    subtitle: 'Manage Staff Accounts, PINs & Permissions',
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -288,7 +288,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconColor: Colors.purple.shade700,
                     title: 'Financial & Loss Reports',
                     subtitle:
-                        'Sales, net profit, expenses & stock loss tracking',
+                        'Sales, Net Profit, Expenses & Stock Loss Tracking',
                     onTap: () {
                       if (onNavigateToTab != null) {
                         onNavigateToTab!(AppTab.reports);
@@ -307,7 +307,7 @@ class MoreManagementScreen extends StatelessWidget {
                     iconColor: const Color(0xFFD97706),
                     title: 'Order Expiration Windows',
                     subtitle:
-                        'Set pickup time limits for perishable, mixed & standard items',
+                        'Set Pickup Time Limits For Perishable, Mixed & Standard Items',
                     onTap: () => _showOrderExpirationModal(context),
                   ),
                   const SizedBox(height: 24),
@@ -321,7 +321,7 @@ class MoreManagementScreen extends StatelessWidget {
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 14)),
                     subtitle: const Text(
-                        'Soothing dark palette for nighttime use',
+                        'Soothing Dark Palette For Nighttime Use',
                         style: TextStyle(fontSize: 12)),
                     secondary: Container(
                       padding: const EdgeInsets.all(8),
@@ -429,7 +429,8 @@ class MoreManagementScreen extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           onTap: onTap,
           leading: Container(
             padding: const EdgeInsets.all(10),
@@ -688,7 +689,8 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Google Authenticator 2FA turned off.'),
+                                content: Text(
+                                    'Google Authenticator 2FA turned off.'),
                               ),
                             );
                           }
@@ -698,13 +700,13 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
                       auth.setTotpEnabled(true);
                     }
                   },
-                  title: const Text('Require 6-Digit Code on Login',
+                  title: const Text('Require 6-Digit Code On Login',
                       style:
                           TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                   subtitle: Text(
                     auth.totpEnabled
-                        ? '6-digit Google Authenticator 2FA is currently active.'
-                        : '6-digit Google Authenticator 2FA is turned off.',
+                        ? '6-Digit Google Authenticator 2FA Is Currently Active.'
+                        : '6-Digit Google Authenticator 2FA Is Turned Off.',
                     style: TextStyle(
                         fontSize: 11,
                         color: auth.totpEnabled
@@ -917,7 +919,7 @@ class _MyStaffAccountSection extends StatelessWidget {
                       fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 subtitle: Text(
-                    user?.email ?? 'Currently logged in staff account',
+                    user?.email ?? 'Currently Logged In Staff Account',
                     style: const TextStyle(fontSize: 11)),
               ),
               const Divider(height: 1, indent: 16, endIndent: 16),
@@ -934,7 +936,7 @@ class _MyStaffAccountSection extends StatelessWidget {
                 title: const Text('Change Password',
                     style:
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: const Text('Update your login password',
+                subtitle: const Text('Update Your Login Password',
                     style: TextStyle(fontSize: 11)),
                 trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                 onTap: () => _showChangePasswordDialog(context),
@@ -952,7 +954,7 @@ class _MyStaffAccountSection extends StatelessWidget {
                 title: const Text('Change 6-Digit Security PIN',
                     style:
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: const Text('Update your 6-digit security PIN',
+                subtitle: const Text('Update Your 6-Digit Security PIN',
                     style: TextStyle(fontSize: 11)),
                 trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                 onTap: () => _showChangePinDialog(context),
@@ -972,7 +974,7 @@ class _MyStaffAccountSection extends StatelessWidget {
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   subtitle: const Text(
-                      'View or generate 8-character codes for emergency PIN recovery',
+                      'View Or Generate 8-Character Codes For Emergency PIN Recovery',
                       style: TextStyle(fontSize: 11)),
                   trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                   onTap: () => _showRecoveryCodesDialog(context),
@@ -1715,7 +1717,7 @@ class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
                 subtitle: Text(
                   printer.connected
                       ? 'Connected (${printer.device?.macAdress ?? ''})'
-                      : 'Tap to connect paired thermal printer',
+                      : 'Tap To Connect Paired Thermal Printer',
                   style: const TextStyle(fontSize: 11),
                 ),
                 trailing: printer.isConnecting
@@ -1752,7 +1754,7 @@ class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
                 title: const Text('Paper Width Control',
                     style:
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: Text('Selected width: $_paperWidth',
+                subtitle: Text('Selected Width: $_paperWidth',
                     style: const TextStyle(fontSize: 11)),
                 trailing: SegmentedButton<String>(
                   segments: const [
@@ -1778,7 +1780,7 @@ class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
                     style:
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 subtitle: const Text(
-                    'Automatically print receipt upon checkout',
+                    'Automatically Print Receipt Upon Checkout',
                     style: TextStyle(fontSize: 11)),
                 secondary:
                     const Icon(Icons.print_outlined, color: Colors.blueGrey),
@@ -1794,8 +1796,8 @@ class _PrinterToolsSectionState extends State<_PrinterToolsSection> {
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 subtitle: Text(
                   printer.connected
-                      ? 'Send sample test receipt to thermal printer'
-                      : 'Connect a printer above to test',
+                      ? 'Send Sample Test Receipt To Thermal Printer'
+                      : 'Connect A Printer Above To Test',
                   style: const TextStyle(fontSize: 11),
                 ),
                 trailing: IconButton.filledTonal(
