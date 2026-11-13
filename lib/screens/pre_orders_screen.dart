@@ -1510,11 +1510,40 @@ class _OrderCard extends StatelessWidget {
             Divider(height: 1, thickness: 1, color: outlineColor),
             const SizedBox(height: 12),
 
-            // Section 3: Action Button
-            SizedBox(
-              width: double.infinity,
-              height: 40,
-              child: _CardActionButton(order: order, canAdvance: canAdvance),
+            // Section 3: Action Button & Re-print Icon for Lost Details
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 40,
+                    child: _CardActionButton(
+                        order: order, canAdvance: canAdvance),
+                  ),
+                ),
+                if (order.status != OrderStatus.pending) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: OutlinedButton(
+                      onPressed: () =>
+                          PackingSlipPrinter.showPrintDestinationDialog(
+                              context, [order]),
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        side: BorderSide(color: outlineColor),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: Icon(
+                        Icons.print_outlined,
+                        size: 18,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -2213,27 +2242,46 @@ class _OrderDetailsSheet extends StatelessWidget {
             ),
           ),
 
-          // Bottom Action Bar
-          if (onCancel != null &&
-              (order.status == OrderStatus.pending ||
-                  order.status == OrderStatus.staging)) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: OutlinedButton.icon(
-                onPressed: () => onCancel!(context, order.id),
-                icon: const Icon(Icons.cancel_outlined, size: 18),
-                label: const Text('CANCEL THIS ORDER'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  side: const BorderSide(color: Colors.red),
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+          // Bottom Action Bar: Re-print Packing Slip & Cancel Order
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    PackingSlipPrinter.showPrintDestinationDialog(
+                        context, [order]);
+                  },
+                  icon: const Icon(Icons.print_rounded, size: 18),
+                  label: const Text('🖨️ RE-PRINT PACKING SLIP'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 44),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-              ),
+                if (onCancel != null &&
+                    (order.status == OrderStatus.pending ||
+                        order.status == OrderStatus.staging)) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => onCancel!(context, order.id),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                    label: const Text('CANCEL THIS ORDER'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      minimumSize: const Size(double.infinity, 44),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
