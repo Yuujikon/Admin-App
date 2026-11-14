@@ -78,7 +78,9 @@ class BatchExpirationWidget extends StatelessWidget {
             Row(
               children: [
                 Icon(Icons.event_busy_rounded,
-                    color: isDark ? Colors.orange.shade300 : Colors.orange.shade900,
+                    color: isDark
+                        ? Colors.orange.shade300
+                        : Colors.orange.shade900,
                     size: 22),
                 const SizedBox(width: 8),
                 Expanded(

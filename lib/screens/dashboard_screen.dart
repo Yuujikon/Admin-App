@@ -388,13 +388,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(child: _buildFastMovingSection(context, data)),
+                                Expanded(
+                                    child:
+                                        _buildFastMovingSection(context, data)),
                                 const SizedBox(width: 16),
-                                Expanded(child: _buildSlowMovingSection(context, data, inventory)),
+                                Expanded(
+                                    child: _buildSlowMovingSection(
+                                        context, data, inventory)),
                               ],
                             ),
                             const SizedBox(height: 24),
-                            _buildRecentTransactionsSection(context, data.todayTx),
+                            _buildRecentTransactionsSection(
+                                context, data.todayTx),
                           ],
                         ),
                       ),
@@ -514,28 +519,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final bool isAdmin = role == UserRole.admin;
       final items = isAdmin
           ? [
-              _StatCard("Gross Sales ($currentMonthName)", formatPeso(data.todayGrossSales),
-                  Icons.auto_graph_rounded, successColor),
-              _StatCard("Net Profit ($currentMonthName)", formatPeso(data.todayNetProfit),
-                  Icons.monetization_on_rounded, infoColor),
-              _StatCard("Loss / Waste ($currentMonthName)", formatPeso(data.todayLoss),
-                  Icons.delete_sweep_rounded, errorColor),
+              _StatCard(
+                  "Gross Sales ($currentMonthName)",
+                  formatPeso(data.todayGrossSales),
+                  Icons.auto_graph_rounded,
+                  successColor),
+              _StatCard(
+                  "Net Profit ($currentMonthName)",
+                  formatPeso(data.todayNetProfit),
+                  Icons.monetization_on_rounded,
+                  infoColor),
+              _StatCard(
+                  "Loss / Waste ($currentMonthName)",
+                  formatPeso(data.todayLoss),
+                  Icons.delete_sweep_rounded,
+                  errorColor),
               _StatCard("Pre-Orders", "${data.toProcessOrders}",
                   Icons.pending_actions_rounded, warningColor,
-                  onTap: () => widget.onTabChange(AppTab.preOrders, category: null)),
+                  onTap: () =>
+                      widget.onTabChange(AppTab.preOrders, category: null)),
             ]
           : [
               _StatCard("Total Products", "${data.lowStockProducts.length}",
                   Icons.inventory_2_rounded, infoColor,
-                  onTap: () => widget.onTabChange(AppTab.inventory, category: null)),
+                  onTap: () =>
+                      widget.onTabChange(AppTab.inventory, category: null)),
               _StatCard("Restock Needed", "${data.restockPending}",
                   Icons.add_shopping_cart_rounded, warningColor,
-                  onTap: () =>
-                      widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
+                  onTap: () => widget.onTabChange(AppTab.inventory,
+                      category: 'Low Stock')),
               _StatCard("Safety Warnings", "${data.lowStockProducts.length}",
                   Icons.warning_amber_rounded, errorColor,
-                  onTap: () =>
-                      widget.onTabChange(AppTab.inventory, category: 'Low Stock')),
+                  onTap: () => widget.onTabChange(AppTab.inventory,
+                      category: 'Low Stock')),
               _StatCard(
                   "Categories", "Catalog", Icons.category_rounded, infoColor),
             ];
@@ -688,8 +704,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 8),
               Text(
                 'Low Stock Warnings',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold, color: errorColor),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold, color: errorColor),
               ),
             ],
           ),
@@ -711,8 +729,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   final p = data.lowStockProducts[index];
                   return ListTile(
                     dense: true,
-                    onTap: () =>
-                        widget.onTabChange(AppTab.inventory, category: 'Low Stock'),
+                    onTap: () => widget.onTabChange(AppTab.inventory,
+                        category: 'Low Stock'),
                     title: Text(p.name,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
@@ -831,7 +849,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+          border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withValues(alpha: 0.4)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -842,8 +864,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('Fast Moving (30d)',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
@@ -868,27 +894,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.2)),
+                        side: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outlineVariant
+                                .withValues(alpha: 0.2)),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                         child: Row(
                           children: [
                             CircleAvatar(
                               radius: 14,
-                              backgroundColor: warningColor.withValues(alpha: 0.15),
-                              child: Icon(Icons.bolt_rounded, size: 14, color: warningColor),
+                              backgroundColor:
+                                  warningColor.withValues(alpha: 0.15),
+                              child: Icon(Icons.bolt_rounded,
+                                  size: 14, color: warningColor),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(entry.key,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                             ),
                             const SizedBox(width: 8),
                             Text('${entry.value} sold',
-                                style: TextStyle(fontSize: 11, color: warningColor, fontWeight: FontWeight.w600)),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: warningColor,
+                                    fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -913,7 +951,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+          border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withValues(alpha: 0.4)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -924,8 +966,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('Slow Moving (30d)',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
@@ -951,27 +997,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.2)),
+                        side: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outlineVariant
+                                .withValues(alpha: 0.2)),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                         child: Row(
                           children: [
                             CircleAvatar(
                               radius: 14,
-                              backgroundColor: infoColor.withValues(alpha: 0.15),
-                              child: Icon(Icons.hourglass_bottom_rounded, size: 14, color: infoColor),
+                              backgroundColor:
+                                  infoColor.withValues(alpha: 0.15),
+                              child: Icon(Icons.hourglass_bottom_rounded,
+                                  size: 14, color: infoColor),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(p.name,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                             ),
                             const SizedBox(width: 8),
                             Text(sold == 0 ? 'No sales' : '$sold sold',
-                                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -1015,43 +1075,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 initiallyExpanded: false,
                 title: Row(
                   children: [
-                    Icon(Icons.receipt_long, size: 20, color: Theme.of(context).colorScheme.primary),
+                    Icon(Icons.receipt_long,
+                        size: 20, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text('Recent Transactions', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('Recent Transactions',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold)),
                   ],
                 ),
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: todayTx.isEmpty
-                      ? _buildEmptyStateCard(context, icon: Icons.receipt_long_outlined, message: 'No sales transactions recorded today.')
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: todayTx.take(10).length,
-                          itemBuilder: (context, index) {
-                            final tx = todayTx[index];
-                            String timeStr = '';
-                            try {
-                              timeStr = DateFormat('hh:mm a').format(tx.createdAt);
-                            } catch (_) {
-                              timeStr = 'Just now';
-                            }
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              color: Theme.of(context).colorScheme.surfaceContainerLow,
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                  child: Icon(Icons.receipt, color: Theme.of(context).colorScheme.primary),
+                        ? _buildEmptyStateCard(context,
+                            icon: Icons.receipt_long_outlined,
+                            message: 'No sales transactions recorded today.')
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: todayTx.take(10).length,
+                            itemBuilder: (context, index) {
+                              final tx = todayTx[index];
+                              String timeStr = '';
+                              try {
+                                timeStr =
+                                    DateFormat('hh:mm a').format(tx.createdAt);
+                              } catch (_) {
+                                timeStr = 'Just now';
+                              }
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerLow,
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer,
+                                    child: Icon(Icons.receipt,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
+                                  ),
+                                  title: Text(formatPeso(tx.total),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                  subtitle: Text(
+                                      '${tx.items.length} item${tx.items.length != 1 ? 's' : ''} · $timeStr'),
+                                  trailing: Text(formatPeso(tx.change),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall),
                                 ),
-                                title: Text(formatPeso(tx.total), style: const TextStyle(fontWeight: FontWeight.bold)),
-                                subtitle: Text('${tx.items.length} item${tx.items.length != 1 ? 's' : ''} · $timeStr'),
-                                trailing: Text(formatPeso(tx.change), style: Theme.of(context).textTheme.labelSmall),
-                              ),
-                            );
-                          },
-                        ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
@@ -1123,8 +1204,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     TimeOfDay openTime = _parseTimeOfDay(
         inventory.settings.dailyOpenTime, const TimeOfDay(hour: 8, minute: 0));
-    TimeOfDay closeTime = _parseTimeOfDay(
-        inventory.settings.dailyCloseTime, const TimeOfDay(hour: 21, minute: 0));
+    TimeOfDay closeTime = _parseTimeOfDay(inventory.settings.dailyCloseTime,
+        const TimeOfDay(hour: 21, minute: 0));
 
     showDialog(
       context: context,
@@ -1217,7 +1298,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 16),
                     const Text(
                       'Regular Operating Hours',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                     const SizedBox(height: 6),
                     Row(
@@ -1254,8 +1336,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             subtitle: Text(_formatTimeOfDayDisplay(closeTime),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
-                            trailing: const Icon(Icons.access_time_filled,
-                                size: 18),
+                            trailing:
+                                const Icon(Icons.access_time_filled, size: 18),
                             onTap: () async {
                               final picked = await showTimePicker(
                                   context: context, initialTime: closeTime);
@@ -1274,13 +1356,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                     const Divider(height: 24),
-
                     const Text(
                       'Custom Date / Holiday Schedule',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                     const SizedBox(height: 8),
-
                     OutlinedButton.icon(
                       icon: const Icon(Icons.calendar_month, size: 18),
                       label: Text(
@@ -1307,22 +1388,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
                     const SizedBox(height: 10),
-
                     SegmentedButton<OverrideType>(
                       segments: const [
                         ButtonSegment(
                           value: OverrideType.customOpenHours,
-                          label: Text('Custom Hours', style: TextStyle(fontSize: 11)),
+                          label: Text('Custom Hours',
+                              style: TextStyle(fontSize: 11)),
                           icon: Icon(Icons.schedule, size: 15),
                         ),
                         ButtonSegment(
                           value: OverrideType.fullClosure,
-                          label: Text('Closed All Day', style: TextStyle(fontSize: 11)),
+                          label: Text('Closed All Day',
+                              style: TextStyle(fontSize: 11)),
                           icon: Icon(Icons.block, size: 15),
                         ),
                         ButtonSegment(
                           value: OverrideType.maintenanceWindow,
-                          label: Text('Maintenance', style: TextStyle(fontSize: 11)),
+                          label: Text('Maintenance',
+                              style: TextStyle(fontSize: 11)),
                           icon: Icon(Icons.build, size: 15),
                         ),
                       ],
@@ -1332,7 +1415,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
                     const SizedBox(height: 10),
-
                     if (selectedType != OverrideType.fullClosure) ...[
                       Row(
                         children: [
@@ -1343,11 +1425,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   context: context,
                                   initialTime: customStart,
                                 );
-                                if (t != null) setDialogState(() => customStart = t);
+                                if (t != null)
+                                  setDialogState(() => customStart = t);
                               },
                               child: InputDecorator(
                                 decoration: InputDecoration(
-                                  labelText: selectedType == OverrideType.maintenanceWindow
+                                  labelText: selectedType ==
+                                          OverrideType.maintenanceWindow
                                       ? 'Maintenance From'
                                       : 'Available From',
                                   border: const OutlineInputBorder(),
@@ -1365,11 +1449,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   context: context,
                                   initialTime: customEnd,
                                 );
-                                if (t != null) setDialogState(() => customEnd = t);
+                                if (t != null)
+                                  setDialogState(() => customEnd = t);
                               },
                               child: InputDecorator(
                                 decoration: InputDecoration(
-                                  labelText: selectedType == OverrideType.maintenanceWindow
+                                  labelText: selectedType ==
+                                          OverrideType.maintenanceWindow
                                       ? 'Maintenance Until'
                                       : 'Until Time',
                                   border: const OutlineInputBorder(),
@@ -1383,15 +1469,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const SizedBox(height: 10),
                     ],
-
                     TextField(
                       controller: selectedType == OverrideType.maintenanceWindow
                           ? controller
                           : reasonCtrl,
                       decoration: InputDecoration(
-                        labelText: selectedType == OverrideType.maintenanceWindow
-                            ? 'Maintenance Reason / Notice'
-                            : 'Reason / Notice',
+                        labelText:
+                            selectedType == OverrideType.maintenanceWindow
+                                ? 'Maintenance Reason / Notice'
+                                : 'Reason / Notice',
                         hintText: selectedType == OverrideType.fullClosure
                             ? 'e.g. Holidays'
                             : selectedType == OverrideType.maintenanceWindow
@@ -1402,7 +1488,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-
                     if (selectedType == OverrideType.customOpenHours) ...[
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
@@ -1413,16 +1498,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        icon: const Icon(Icons.event_available_rounded, size: 18),
+                        icon:
+                            const Icon(Icons.event_available_rounded, size: 18),
                         label: const Text(
                           'Save Custom Hours',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         onPressed: () async {
                           if (selectedDateRange == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('Please select a date range first.')),
+                                  content: Text(
+                                      'Please select a date range first.')),
                             );
                             return;
                           }
@@ -1452,13 +1540,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         icon: const Icon(Icons.block_rounded, size: 18),
                         label: const Text(
                           'Close Store',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         onPressed: () async {
                           if (selectedDateRange == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('Please select a date range first.')),
+                                  content: Text(
+                                      'Please select a date range first.')),
                             );
                             return;
                           }
@@ -1475,7 +1565,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           );
                         },
                       ),
-                    ] else if (selectedType == OverrideType.maintenanceWindow) ...[
+                    ] else if (selectedType ==
+                        OverrideType.maintenanceWindow) ...[
                       Row(
                         children: [
                           Expanded(
@@ -1483,19 +1574,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.amber.shade800,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
                               icon: const Icon(Icons.build_rounded, size: 16),
                               label: const Text('Maintenance',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold)),
                               onPressed: () async {
                                 if (selectedDateRange == null) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                        content: Text('Please select a date range first.')),
+                                        content: Text(
+                                            'Please select a date range first.')),
                                   );
                                   return;
                                 }
@@ -1519,14 +1614,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: errColor,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: const Icon(Icons.warning_amber_rounded, size: 16),
+                              icon: const Icon(Icons.warning_amber_rounded,
+                                  size: 16),
                               label: const Text('Emergency Maint.',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold)),
                               onPressed: () async {
                                 final bool? confirm = await showDialog<bool>(
                                   context: context,
@@ -1536,7 +1635,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         Icon(Icons.warning_amber_rounded,
                                             color: errColor, size: 24),
                                         const SizedBox(width: 8),
-                                        const Text('Confirm Emergency Maintenance'),
+                                        const Text(
+                                            'Confirm Emergency Maintenance'),
                                       ],
                                     ),
                                     content: const Text(
@@ -1545,7 +1645,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(confirmCtx, false),
+                                        onPressed: () =>
+                                            Navigator.pop(confirmCtx, false),
                                         child: const Text('Cancel'),
                                       ),
                                       ElevatedButton.icon(
@@ -1553,8 +1654,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           backgroundColor: errColor,
                                           foregroundColor: Colors.white,
                                         ),
-                                        onPressed: () => Navigator.pop(confirmCtx, true),
-                                        icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                                        onPressed: () =>
+                                            Navigator.pop(confirmCtx, true),
+                                        icon: const Icon(
+                                            Icons.warning_amber_rounded,
+                                            size: 18),
                                         label: const Text('Confirm & Activate'),
                                       ),
                                     ],
@@ -1567,12 +1671,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   final msg = controller.text.trim().isNotEmpty
                                       ? controller.text.trim()
                                       : 'Emergency Maintenance - Will be back to you soon';
-                                  await inventory.toggleStoreStatus(true, message: msg);
+                                  await inventory.toggleStoreStatus(true,
+                                      message: msg);
                                   if (!ctx.mounted) return;
                                   Navigator.pop(ctx);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Emergency Maintenance activated!'),
+                                      content: Text(
+                                          'Emergency Maintenance activated!'),
                                     ),
                                   );
                                 } catch (e) {
@@ -1625,7 +1731,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       dateRange.end.year,
       dateRange.end.month,
       dateRange.end.day,
-      23, 59, 59,
+      23,
+      59,
+      59,
     );
 
     final newOverride = ScheduleOverride(
@@ -1783,8 +1891,7 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
 
     double percentChange;
     if (priorTotalGross > 0) {
-      percentChange =
-          ((totalGross - priorTotalGross) / priorTotalGross) * 100;
+      percentChange = ((totalGross - priorTotalGross) / priorTotalGross) * 100;
     } else if (totalGross > 0) {
       percentChange = 100.0;
     } else {
@@ -1892,7 +1999,10 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                         const SizedBox(width: 12),
                         Text(
                           formatPeso(totalGross),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(
                                 fontWeight: FontWeight.w900,
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1983,8 +2093,8 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                         ),
                     ],
                     child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: Theme.of(context)
@@ -2009,7 +2119,8 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                           Icon(
                             Icons.keyboard_arrow_down_rounded,
                             size: 16,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ],
                       ),
@@ -2047,264 +2158,278 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                         spacing: 16,
                         runSpacing: 12,
                         children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Gross sales',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        formatPeso(totalGross),
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Gross sales',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    formatPeso(totalGross),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: (isPositive
+                                              ? Colors.green
+                                              : Colors.red)
+                                          .shade500
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isPositive
+                                              ? Icons.north_east_rounded
+                                              : Icons.south_east_rounded,
+                                          size: 12,
+                                          color: isPositive
+                                              ? Colors.green.shade700
+                                              : Colors.red.shade700,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          percentText,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isPositive
+                                                ? Colors.green.shade700
+                                                : Colors.red.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _chartLegend(greenColor, 'Revenue'),
+                              const SizedBox(width: 14),
+                              _chartLegend(blueColor, 'Net Profit'),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: (isPositive ? Colors.green : Colors.red)
-                              .shade500
-                              .withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isPositive
-                                  ? Icons.north_east_rounded
-                                  : Icons.south_east_rounded,
-                              size: 12,
-                              color: isPositive
-                                  ? Colors.green.shade700
-                                  : Colors.red.shade700,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              percentText,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isPositive
-                                    ? Colors.green.shade700
-                                    : Colors.red.shade700,
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        height: 220,
+                        child: LineChart(
+                          LineChartData(
+                            lineTouchData: LineTouchData(
+                              handleBuiltInTouches: true,
+                              touchTooltipData: LineTouchTooltipData(
+                                getTooltipColor: (_) => Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                                getTooltipItems: (touchedSpots) {
+                                  return touchedSpots.map((spot) {
+                                    final label = spot.barIndex == 0
+                                        ? 'Revenue'
+                                        : 'Net Profit';
+                                    final color = spot.barIndex == 0
+                                        ? greenColor
+                                        : blueColor;
+                                    return LineTooltipItem(
+                                      '$label\n${formatPeso(spot.y)}',
+                                      TextStyle(
+                                        color: color,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    );
+                                  }).toList();
+                                },
                               ),
                             ),
-                          ],
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              drawHorizontalLine: true,
+                              horizontalInterval: intervalY,
+                              getDrawingHorizontalLine: (value) => FlLine(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant
+                                    .withValues(alpha: 0.35),
+                                strokeWidth: 1,
+                              ),
+                            ),
+                            titlesData: FlTitlesData(
+                              rightTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                              topTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 45,
+                                  interval: intervalY,
+                                  getTitlesWidget: (value, meta) {
+                                    if (value < 0 ||
+                                        value > roundedCeiling + 0.1) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    String label;
+                                    if (value >= 1000000) {
+                                      label =
+                                          '₱${(value / 1000000).toStringAsFixed(1)}M';
+                                    } else if (value >= 1000) {
+                                      final kVal = value / 1000;
+                                      final isWhole = kVal % 1 == 0;
+                                      label =
+                                          '₱${kVal.toStringAsFixed(isWhole ? 0 : 1)}k';
+                                    } else {
+                                      label = '₱${value.toInt()}';
+                                    }
+                                    return SideTitleWidget(
+                                      meta: meta,
+                                      space: 6,
+                                      child: Text(
+                                        label,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant
+                                              .withValues(alpha: 0.8),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  interval: titleInterval,
+                                  getTitlesWidget: (val, meta) {
+                                    final int index = val.toInt();
+                                    if (index >= 0 &&
+                                        index < metrics.length &&
+                                        (val - index).abs() < 0.1) {
+                                      final date = metrics[index].date;
+                                      final labelStr = _selectedPeriod ==
+                                              ChartPeriod.thisWeek
+                                          ? DateFormat('E').format(date)
+                                          : DateFormat('MMM d').format(date);
+                                      return SideTitleWidget(
+                                        meta: meta,
+                                        space: 8,
+                                        child: Text(
+                                          labelStr,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  },
+                                ),
+                              ),
+                            ),
+                            borderData: FlBorderData(show: false),
+                            minX: 0,
+                            maxX: maxX,
+                            minY: 0,
+                            maxY: roundedCeiling,
+                            lineBarsData: [
+                              LineChartBarData(
+                                spots: grossSpots,
+                                isCurved: true,
+                                color: greenColor,
+                                barWidth: 3.5,
+                                isStrokeCapRound: true,
+                                dotData: FlDotData(
+                                  show: _selectedPeriod == ChartPeriod.thisWeek,
+                                  getDotPainter:
+                                      (spot, percent, barData, index) =>
+                                          FlDotCirclePainter(
+                                    radius: 4.5,
+                                    color: greenColor,
+                                    strokeWidth: 2,
+                                    strokeColor:
+                                        Theme.of(context).colorScheme.surface,
+                                  ),
+                                ),
+                                belowBarData: BarAreaData(
+                                  show: true,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      greenColor.withValues(alpha: 0.25),
+                                      greenColor.withValues(alpha: 0.01),
+                                    ],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
+                                ),
+                              ),
+                              LineChartBarData(
+                                spots: profitSpots,
+                                isCurved: true,
+                                color: blueColor,
+                                barWidth: 3.0,
+                                isStrokeCapRound: true,
+                                dotData: FlDotData(
+                                  show: _selectedPeriod == ChartPeriod.thisWeek,
+                                  getDotPainter:
+                                      (spot, percent, barData, index) =>
+                                          FlDotCirclePainter(
+                                    radius: 4,
+                                    color: blueColor,
+                                    strokeWidth: 2,
+                                    strokeColor:
+                                        Theme.of(context).colorScheme.surface,
+                                  ),
+                                ),
+                                belowBarData: BarAreaData(
+                                  show: true,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      blueColor.withValues(alpha: 0.18),
+                                      blueColor.withValues(alpha: 0.01),
+                                    ],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _chartLegend(greenColor, 'Revenue'),
-                  const SizedBox(width: 14),
-                  _chartLegend(blueColor, 'Net Profit'),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 220,
-            child: LineChart(
-              LineChartData(
-                lineTouchData: LineTouchData(
-                  handleBuiltInTouches: true,
-                  touchTooltipData: LineTouchTooltipData(
-                    getTooltipColor: (_) => Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        final label =
-                            spot.barIndex == 0 ? 'Revenue' : 'Net Profit';
-                        final color =
-                            spot.barIndex == 0 ? greenColor : blueColor;
-                        return LineTooltipItem(
-                          '$label\n${formatPeso(spot.y)}',
-                          TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  drawHorizontalLine: true,
-                  horizontalInterval: intervalY,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outlineVariant
-                        .withValues(alpha: 0.35),
-                    strokeWidth: 1,
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 45,
-                      interval: intervalY,
-                      getTitlesWidget: (value, meta) {
-                        if (value < 0 || value > roundedCeiling + 0.1) {
-                          return const SizedBox.shrink();
-                        }
-                        String label;
-                        if (value >= 1000000) {
-                          label = '₱${(value / 1000000).toStringAsFixed(1)}M';
-                        } else if (value >= 1000) {
-                          final kVal = value / 1000;
-                          final isWhole = kVal % 1 == 0;
-                          label = '₱${kVal.toStringAsFixed(isWhole ? 0 : 1)}k';
-                        } else {
-                          label = '₱${value.toInt()}';
-                        }
-                        return SideTitleWidget(
-                          meta: meta,
-                          space: 6,
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant
-                                  .withValues(alpha: 0.8),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: titleInterval,
-                      getTitlesWidget: (val, meta) {
-                        final int index = val.toInt();
-                        if (index >= 0 &&
-                            index < metrics.length &&
-                            (val - index).abs() < 0.1) {
-                          final date = metrics[index].date;
-                          final labelStr = _selectedPeriod == ChartPeriod.thisWeek
-                              ? DateFormat('E').format(date)
-                              : DateFormat('MMM d').format(date);
-                          return SideTitleWidget(
-                            meta: meta,
-                            space: 8,
-                            child: Text(
-                              labelStr,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                minX: 0,
-                maxX: maxX,
-                minY: 0,
-                maxY: roundedCeiling,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: grossSpots,
-                    isCurved: true,
-                    color: greenColor,
-                    barWidth: 3.5,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(
-                      show: _selectedPeriod == ChartPeriod.thisWeek,
-                      getDotPainter: (spot, percent, barData, index) =>
-                          FlDotCirclePainter(
-                        radius: 4.5,
-                        color: greenColor,
-                        strokeWidth: 2,
-                        strokeColor: Theme.of(context).colorScheme.surface,
-                      ),
-                    ),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        colors: [
-                          greenColor.withValues(alpha: 0.25),
-                          greenColor.withValues(alpha: 0.01),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                  ),
-                  LineChartBarData(
-                    spots: profitSpots,
-                    isCurved: true,
-                    color: blueColor,
-                    barWidth: 3.0,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(
-                      show: _selectedPeriod == ChartPeriod.thisWeek,
-                      getDotPainter: (spot, percent, barData, index) =>
-                          FlDotCirclePainter(
-                        radius: 4,
-                        color: blueColor,
-                        strokeWidth: 2,
-                        strokeColor: Theme.of(context).colorScheme.surface,
-                      ),
-                    ),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        colors: [
-                          blueColor.withValues(alpha: 0.18),
-                          blueColor.withValues(alpha: 0.01),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-                    )
+                  )
                 : const SizedBox.shrink(),
           ),
         ],

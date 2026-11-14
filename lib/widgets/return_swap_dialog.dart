@@ -8,6 +8,7 @@ import '../services/firestore_service.dart';
 import '../utils/format.dart';
 
 enum ItemCondition { unopenedSealed, openedBroken }
+
 enum ReturnActionType { cashRefund, itemSwap }
 
 /// Counter Dual-Scan Verification & Physical Seal Gate for Returns / Swaps.
@@ -21,7 +22,8 @@ class ReturnSwapDialog extends StatefulWidget {
     this.orderId,
   });
 
-  static Future<void> show(BuildContext context, StoreTransaction tx, {String? orderId}) {
+  static Future<void> show(BuildContext context, StoreTransaction tx,
+      {String? orderId}) {
     return showDialog(
       context: context,
       barrierDismissible: false,
@@ -35,7 +37,7 @@ class ReturnSwapDialog extends StatefulWidget {
 
 class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
   final MobileScannerController _scannerController = MobileScannerController();
-  
+
   CartItem? _matchedItem;
   String? _errorMessage;
   bool _hasScanned = false;
@@ -70,7 +72,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     if (matchingIndex < 0) {
       setState(() {
         _hasScanned = false;
-        _errorMessage = 'Item Mismatch: Barcode [$cleanBarcode] was not part of this receipt.';
+        _errorMessage =
+            'Item Mismatch: Barcode [$cleanBarcode] was not part of this receipt.';
       });
       return;
     }
@@ -79,7 +82,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     if (matched.returnedQty >= matched.qty) {
       setState(() {
         _hasScanned = false;
-        _errorMessage = 'All units of "${matched.name}" on this receipt have already been returned.';
+        _errorMessage =
+            'All units of "${matched.name}" on this receipt have already been returned.';
       });
       return;
     }
@@ -100,7 +104,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     if (unbarcodedItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No unbarcoded items available for return on this receipt.'),
+          content:
+              Text('No unbarcoded items available for return on this receipt.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -121,8 +126,10 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
               final item = unbarcodedItems[i];
               final availableQty = item.qty - item.returnedQty;
               return ListTile(
-                title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('Qty bought: ${item.qty} • Returned: ${item.returnedQty} (Available: $availableQty)'),
+                title: Text(item.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                    'Qty bought: ${item.qty} • Returned: ${item.returnedQty} (Available: $availableQty)'),
                 trailing: Text(formatPeso(item.price)),
                 onTap: () => Navigator.pop(ctx, item),
               );
@@ -149,7 +156,9 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
   }
 
   Future<void> _confirmReturn() async {
-    if (_matchedItem == null || _selectedCondition != ItemCondition.unopenedSealed || _isProcessing) {
+    if (_matchedItem == null ||
+        _selectedCondition != ItemCondition.unopenedSealed ||
+        _isProcessing) {
       return;
     }
 
@@ -173,7 +182,7 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
       if (mounted) {
         // Refresh local inventory state
         context.read<InventoryProvider>().initialize();
-        
+
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -218,11 +227,13 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.published_with_changes_rounded, color: Colors.teal, size: 24),
+                      Icon(Icons.published_with_changes_rounded,
+                          color: Colors.teal, size: 24),
                       SizedBox(width: 10),
                       Text(
                         'Process Return / Swap',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w900),
                       ),
                     ],
                   ),
@@ -233,7 +244,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 ],
               ),
               const Divider(height: 24),
-
               if (_errorMessage != null) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -244,7 +254,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: Colors.red, size: 20),
+                      const Icon(Icons.error_outline_rounded,
+                          color: Colors.red, size: 20),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -261,7 +272,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 ),
                 const SizedBox(height: 16),
               ],
-
               if (_matchedItem == null) ...[
                 // STEP 2: Live Barcode Match
                 const Text(
@@ -308,7 +318,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                     icon: const Icon(Icons.touch_app_rounded, size: 18),
                     label: const Text('Manual Select (No Barcode on Item)'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
                     ),
                   ),
                 ),
@@ -323,7 +334,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.check_circle_rounded, color: Colors.teal, size: 28),
+                      const Icon(Icons.check_circle_rounded,
+                          color: Colors.teal, size: 28),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -331,15 +343,18 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                           children: [
                             Text(
                               _matchedItem!.name,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14),
                             ),
                             Text(
                               'Barcode: ${_matchedItem!.barcode.isNotEmpty ? _matchedItem!.barcode : "N/A"} • Price: ${formatPeso(_matchedItem!.price)}',
-                              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                              style: const TextStyle(
+                                  fontSize: 11, fontFamily: 'monospace'),
                             ),
                             Text(
                               'Bought: ${_matchedItem!.qty} • Already Returned: ${_matchedItem!.returnedQty}',
-                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey),
                             ),
                           ],
                         ),
@@ -368,8 +383,11 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 const SizedBox(height: 8),
 
                 RadioListTile<ItemCondition>(
-                  title: const Text('Unopened & Factory Sealed', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  subtitle: const Text('Packaging is intact, unbroken seal. Eligible for return/swap.'),
+                  title: const Text('Unopened & Factory Sealed',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  subtitle: const Text(
+                      'Packaging is intact, unbroken seal. Eligible for return/swap.'),
                   value: ItemCondition.unopenedSealed,
                   groupValue: _selectedCondition,
                   onChanged: (v) => setState(() => _selectedCondition = v),
@@ -378,8 +396,13 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 ),
 
                 RadioListTile<ItemCondition>(
-                  title: const Text('Opened / Seal Broken', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.red)),
-                  subtitle: const Text('Package has been opened or seal tampered.'),
+                  title: const Text('Opened / Seal Broken',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.red)),
+                  subtitle:
+                      const Text('Package has been opened or seal tampered.'),
                   value: ItemCondition.openedBroken,
                   groupValue: _selectedCondition,
                   onChanged: (v) => setState(() => _selectedCondition = v),
@@ -427,47 +450,54 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                     ),
                   ),
                   const SizedBox(height: 8),
-
                   SegmentedButton<ReturnActionType>(
                     segments: const [
                       ButtonSegment(
                         value: ReturnActionType.cashRefund,
-                        label: Text('Cash Refund (+Restock)', style: TextStyle(fontSize: 12)),
+                        label: Text('Cash Refund (+Restock)',
+                            style: TextStyle(fontSize: 12)),
                         icon: Icon(Icons.attach_money_rounded, size: 16),
                       ),
                       ButtonSegment(
                         value: ReturnActionType.itemSwap,
-                        label: Text('1-to-1 Item Swap', style: TextStyle(fontSize: 12)),
+                        label: Text('1-to-1 Item Swap',
+                            style: TextStyle(fontSize: 12)),
                         icon: Icon(Icons.swap_horiz_rounded, size: 16),
                       ),
                     ],
                     selected: {_actionType},
-                    onSelectionChanged: (s) => setState(() => _actionType = s.first),
+                    onSelectionChanged: (s) =>
+                        setState(() => _actionType = s.first),
                   ),
-
                   if (_actionType == ReturnActionType.itemSwap) ...[
                     const SizedBox(height: 12),
                     CheckboxListTile(
-                      title: const Text('Mark returned unit as Damaged / Expired (-1 sellable stock)',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      subtitle: const Text('Check this if returned unit cannot go back to sellable shelf.'),
+                      title: const Text(
+                          'Mark returned unit as Damaged / Expired (-1 sellable stock)',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
+                      subtitle: const Text(
+                          'Check this if returned unit cannot go back to sellable shelf.'),
                       value: _isDamagedSwap,
-                      onChanged: (v) => setState(() => _isDamagedSwap = v ?? false),
+                      onChanged: (v) =>
+                          setState(() => _isDamagedSwap = v ?? false),
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
                     ),
                   ],
-
                   const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Quantity to return:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const Text('Quantity to return:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
                       DropdownButton<int>(
                         value: _returnQty,
                         items: List.generate(
                           _matchedItem!.qty - _matchedItem!.returnedQty,
-                          (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}')),
+                          (i) => DropdownMenuItem(
+                              value: i + 1, child: Text('${i + 1}')),
                         ),
                         onChanged: (v) {
                           if (v != null) setState(() => _returnQty = v);
@@ -481,24 +511,29 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: (_selectedCondition == ItemCondition.unopenedSealed && !_isProcessing)
-                        ? _confirmReturn
-                        : null,
+                    onPressed:
+                        (_selectedCondition == ItemCondition.unopenedSealed &&
+                                !_isProcessing)
+                            ? _confirmReturn
+                            : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.teal,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     child: _isProcessing
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
                         : const Text(
                             'Confirm Refund / 1-to-1 Swap',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 14),
                           ),
                   ),
                 ),

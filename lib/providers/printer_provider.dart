@@ -348,8 +348,7 @@ class PrinterProvider extends ChangeNotifier {
                 bold: true,
                 height: PosTextSize.size1,
                 width: PosTextSize.size1)));
-        bytes.addAll(generator.text(
-            _cleanPeso("PRICE: ${formatPeso(price)}"),
+        bytes.addAll(generator.text(_cleanPeso("PRICE: ${formatPeso(price)}"),
             styles: const PosStyles(
                 align: PosAlign.center,
                 bold: true,

@@ -232,8 +232,8 @@ class ExpensesScreen extends StatelessWidget {
                   Expanded(
                       child: TextField(
                           controller: amtCtrl,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                           decoration: const InputDecoration(
                               labelText: 'Amount', prefixText: 'P '))),
                   const SizedBox(width: 12),
@@ -249,7 +249,8 @@ class ExpensesScreen extends StatelessWidget {
                           ].contains(category)
                               ? category
                               : 'Operations',
-                          decoration: const InputDecoration(labelText: 'Category'),
+                          decoration:
+                              const InputDecoration(labelText: 'Category'),
                           items: [
                             'Operations',
                             'Supplies',
@@ -259,7 +260,8 @@ class ExpensesScreen extends StatelessWidget {
                           ]
                               .map((c) => DropdownMenuItem(
                                   value: c,
-                                  child: Text(c, overflow: TextOverflow.ellipsis)))
+                                  child:
+                                      Text(c, overflow: TextOverflow.ellipsis)))
                               .toList(),
                           onChanged: (v) => setSt(() => category = v!))),
                 ]),

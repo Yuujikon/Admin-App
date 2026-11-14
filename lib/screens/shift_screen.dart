@@ -89,7 +89,9 @@ class _NoActiveShiftView extends StatelessWidget {
     final defaultName = auth.userFullName ??
         (auth.currentUser?.displayName?.isNotEmpty == true
             ? auth.currentUser!.displayName!
-            : (currentEmail.contains('@') ? currentEmail.split('@').first : 'Cashier'));
+            : (currentEmail.contains('@')
+                ? currentEmail.split('@').first
+                : 'Cashier'));
 
     Map<String, String>? selectedStaff;
 
@@ -131,9 +133,13 @@ class _NoActiveShiftView extends StatelessWidget {
                         if (snapshot.hasData) {
                           for (final doc in snapshot.data!.docs) {
                             final data = doc.data() as Map<String, dynamic>;
-                            if (data['isCustomer'] == true || data['isDisabled'] == true) continue;
+                            if (data['isCustomer'] == true ||
+                                data['isDisabled'] == true) continue;
                             final email = data['email'] as String? ?? '';
-                            final name = data['name'] as String? ?? (email.contains('@') ? email.split('@').first : 'Staff');
+                            final name = data['name'] as String? ??
+                                (email.contains('@')
+                                    ? email.split('@').first
+                                    : 'Staff');
                             if (name.isNotEmpty && doc.id.isNotEmpty) {
                               staffMap[doc.id] = {
                                 'uid': doc.id,
@@ -170,7 +176,8 @@ class _NoActiveShiftView extends StatelessWidget {
                                 TextSpan(
                                   text: name,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.bold, fontSize: 13),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13),
                                   children: [
                                     if (email.isNotEmpty)
                                       TextSpan(
@@ -199,10 +206,11 @@ class _NoActiveShiftView extends StatelessWidget {
                       width: double.infinity,
                       child: TextField(
                         controller: floatCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'^\d*\.?\d*'))
                         ],
                         decoration: const InputDecoration(
                             labelText: 'Opening Cash Float',
@@ -216,11 +224,13 @@ class _NoActiveShiftView extends StatelessWidget {
             ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
               ElevatedButton(
                 onPressed: () async {
                   final float = double.tryParse(floatCtrl.text) ?? 0.0;
-                  final cashierId = selectedStaff?['uid'] ?? auth.currentUser?.uid ?? 'uid-1';
+                  final cashierId =
+                      selectedStaff?['uid'] ?? auth.currentUser?.uid ?? 'uid-1';
                   final cashierName = selectedStaff?['name'] ?? defaultName;
 
                   await context.read<ShiftProvider>().openShift(
@@ -302,19 +312,28 @@ class _ActiveShiftView extends StatelessWidget {
                     ),
                     const Divider(height: 24),
                     _row('Cashier:', shift.cashierName),
-                    _row('Shift Started:',
-                        DateFormat('MMM d, yyyy • hh:mm a').format(shift.openedAt)),
+                    _row(
+                        'Shift Started:',
+                        DateFormat('MMM d, yyyy • hh:mm a')
+                            .format(shift.openedAt)),
                     _row('Opening Float:', formatPeso(shift.openingFloat)),
-                    _row('Sales Completed:', '${shift.transactionCount} transaction${shift.transactionCount == 1 ? '' : 's'}'),
-                    _row('Total Items Sold:', '${shift.itemsSoldCount} unit${shift.itemsSoldCount == 1 ? '' : 's'}'),
+                    _row('Sales Completed:',
+                        '${shift.transactionCount} transaction${shift.transactionCount == 1 ? '' : 's'}'),
+                    _row('Total Items Sold:',
+                        '${shift.itemsSoldCount} unit${shift.itemsSoldCount == 1 ? '' : 's'}'),
                     if (shift.totalCashReceived > 0) ...[
-                      _row('Cash Received:', formatPeso(shift.totalCashReceived)),
-                      _row('Change Given:', '-${formatPeso(shift.totalChangeGiven)}'),
+                      _row('Cash Received:',
+                          formatPeso(shift.totalCashReceived)),
+                      _row('Change Given:',
+                          '-${formatPeso(shift.totalChangeGiven)}'),
                     ],
                     _row('Net Cash Sales:', formatPeso(shift.cashSales),
                         Colors.green.shade800),
                     if (shift.totalCashDrops > 0)
-                      _row('Mid-Shift Cash Drops:', '-${formatPeso(shift.totalCashDrops)}', Colors.orange.shade800),
+                      _row(
+                          'Mid-Shift Cash Drops:',
+                          '-${formatPeso(shift.totalCashDrops)}',
+                          Colors.orange.shade800),
                     const Divider(height: 24),
                     _row(
                         'Expected Cash in Register:',
@@ -359,7 +378,8 @@ class _ActiveShiftView extends StatelessWidget {
                 minWidth: 200,
                 maxWidth: 350,
                 child: const Text('CLOSE REGISTER SHIFT',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               ),
             ),
           ],
@@ -420,204 +440,211 @@ class _ActiveShiftView extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            color: Colors.red.shade700, size: 28),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Confirm Close Register Shift',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Icon(Icons.warning_amber_rounded,
-                          color: Colors.red.shade700, size: 28),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Confirm Close Register Shift',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
+                      child: Column(
+                        children: [
+                          _dialogRow('Cashier:', shift.cashierName),
+                          _dialogRow(
+                              'Opening Float:', formatPeso(shift.openingFloat)),
+                          _dialogRow('Completed Sales:',
+                              '${shift.transactionCount} sale${shift.transactionCount == 1 ? '' : 's'} (${shift.itemsSoldCount} units)'),
+                          _dialogRow('Cash Received:',
+                              formatPeso(shift.totalCashReceived)),
+                          _dialogRow('Change Returned:',
+                              '-${formatPeso(shift.totalChangeGiven)}'),
+                          _dialogRow(
+                              'Net Cash Sales:', formatPeso(shift.cashSales),
+                              color: Colors.green.shade800),
+                          if (shift.totalCashDrops > 0)
+                            _dialogRow('Mid-Shift Drops:',
+                                '-${formatPeso(shift.totalCashDrops)}',
+                                color: Colors.orange.shade800),
+                          const Divider(height: 16),
+                          _dialogRow(
+                            'Expected Cash in Register:',
+                            formatPeso(shift.expectedCash),
+                            isBold: true,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Column(
-                      children: [
-                        _dialogRow('Cashier:', shift.cashierName),
-                        _dialogRow(
-                            'Opening Float:', formatPeso(shift.openingFloat)),
-                        _dialogRow('Completed Sales:', '${shift.transactionCount} sale${shift.transactionCount == 1 ? '' : 's'} (${shift.itemsSoldCount} units)'),
-                        _dialogRow('Cash Received:', formatPeso(shift.totalCashReceived)),
-                        _dialogRow('Change Returned:', '-${formatPeso(shift.totalChangeGiven)}'),
-                        _dialogRow('Net Cash Sales:', formatPeso(shift.cashSales), color: Colors.green.shade800),
-                        if (shift.totalCashDrops > 0)
-                          _dialogRow('Mid-Shift Drops:', '-${formatPeso(shift.totalCashDrops)}', color: Colors.orange.shade800),
-                        const Divider(height: 16),
-                        _dialogRow(
-                          'Expected Cash in Register:',
-                          formatPeso(shift.expectedCash),
-                          isBold: true,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Verify Cash Amount in Drawer:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: actualCashCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Verify Cash Amount in Drawer:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: actualCashCtrl,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
-                    ],
-                    onChanged: (val) {
-                      setState(() {
-                        actualAmount = double.tryParse(val) ?? 0.0;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'Verified Cash Count *',
-                      prefixText: 'P ',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          actualCashCtrl.clear();
-                          setState(() {
-                            actualAmount = 0.0;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isMatch
-                          ? Colors.green.shade50
-                          : (isShort
-                              ? Colors.red.shade50
-                              : Colors.blue.shade50),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isMatch
-                            ? Colors.green.shade300
-                            : (isShort
-                                ? Colors.red.shade300
-                                : Colors.blue.shade300),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          isMatch
-                              ? '✓ Cash matches expected amount'
-                              : (isShort ? '⚠ Shortage' : 'ℹ Overage'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: isMatch
-                                ? Colors.green.shade900
-                                : (isShort
-                                    ? Colors.red.shade900
-                                    : Colors.blue.shade900),
-                          ),
-                        ),
-                        Text(
-                          formatPeso(variance.abs()),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: isMatch
-                                ? Colors.green.shade900
-                                : (isShort
-                                    ? Colors.red.shade900
-                                    : Colors.blue.shade900),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            final closed = await context
-                                .read<ShiftProvider>()
-                                .closeShift(actualCashCounted: actualAmount);
-
-                            if (ctx.mounted) {
-                              Navigator.pop(ctx);
-                              _showZReadingDialog(context, closed);
-                            }
+                      onChanged: (val) {
+                        setState(() {
+                          actualAmount = double.tryParse(val) ?? 0.0;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Verified Cash Count *',
+                        prefixText: 'P ',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            actualCashCtrl.clear();
+                            setState(() {
+                              actualAmount = 0.0;
+                            });
                           },
-                          icon:
-                              const Icon(Icons.check_circle_rounded, size: 18),
-                          label: const Text('CONFIRM & CLOSE SHIFT'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade800,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isMatch
+                            ? Colors.green.shade50
+                            : (isShort
+                                ? Colors.red.shade50
+                                : Colors.blue.shade50),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isMatch
+                              ? Colors.green.shade300
+                              : (isShort
+                                  ? Colors.red.shade300
+                                  : Colors.blue.shade300),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isMatch
+                                ? '✓ Cash matches expected amount'
+                                : (isShort ? '⚠ Shortage' : 'ℹ Overage'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: isMatch
+                                  ? Colors.green.shade900
+                                  : (isShort
+                                      ? Colors.red.shade900
+                                      : Colors.blue.shade900),
+                            ),
+                          ),
+                          Text(
+                            formatPeso(variance.abs()),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: isMatch
+                                  ? Colors.green.shade900
+                                  : (isShort
+                                      ? Colors.red.shade900
+                                      : Colors.blue.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final closed = await context
+                                  .read<ShiftProvider>()
+                                  .closeShift(actualCashCounted: actualAmount);
+
+                              if (ctx.mounted) {
+                                Navigator.pop(ctx);
+                                _showZReadingDialog(context, closed);
+                              }
+                            },
+                            icon: const Icon(Icons.check_circle_rounded,
+                                size: 18),
+                            label: const Text('CONFIRM & CLOSE SHIFT'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade800,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
-    ),
-  );
-}
+          );
+        },
+      ),
+    );
+  }
 
   Widget _dialogRow(String label, String value,
       {bool isBold = false, Color? color}) {
@@ -632,9 +659,7 @@ class _ActiveShiftView extends StatelessWidget {
                   fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
           Text(value,
               style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: color)),
+                  fontSize: 12, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );

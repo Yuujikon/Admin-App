@@ -62,7 +62,10 @@ class _SupplierSheetState extends State<SupplierSheet> {
             children: [
               Row(
                 children: [
-                  Text(widget.supplier == null ? 'Add Supplier' : 'Edit Supplier',
+                  Text(
+                      widget.supplier == null
+                          ? 'Add Supplier'
+                          : 'Edit Supplier',
                       style: Theme.of(context)
                           .textTheme
                           .titleLarge
@@ -121,8 +124,8 @@ class _SupplierSheetState extends State<SupplierSheet> {
                 child: Autocomplete<String>(
                   optionsBuilder: (TextEditingValue value) {
                     if (value.text == '') return existingCategories;
-                    return existingCategories.where(
-                        (c) => c.toLowerCase().contains(value.text.toLowerCase()));
+                    return existingCategories.where((c) =>
+                        c.toLowerCase().contains(value.text.toLowerCase()));
                   },
                   onSelected: (c) => _category.text = c,
                   fieldViewBuilder: (ctx, ctrl, focus, onFieldSubmitted) {
@@ -151,7 +154,8 @@ class _SupplierSheetState extends State<SupplierSheet> {
                   title: const Text('Auto-Notify Low Stock',
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Sends internal alert when items are low',
+                  subtitle: const Text(
+                      'Sends internal alert when items are low',
                       style: TextStyle(fontSize: 12)),
                   value: _autoNotify,
                   onChanged: (v) => setState(() => _autoNotify = v),

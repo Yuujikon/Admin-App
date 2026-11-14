@@ -202,7 +202,9 @@ class PrimaryButton extends StatelessWidget {
     final theme = Theme.of(context);
     final bg = backgroundColor ?? theme.colorScheme.primary;
     final fg = foregroundColor ??
-        (theme.brightness == Brightness.dark ? GdcColors.midnight : Colors.white);
+        (theme.brightness == Brightness.dark
+            ? GdcColors.midnight
+            : Colors.white);
 
     final buttonStyle = ElevatedButton.styleFrom(
       backgroundColor: bg,

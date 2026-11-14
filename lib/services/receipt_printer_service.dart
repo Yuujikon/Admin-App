@@ -306,11 +306,11 @@ class ReceiptPrinterService {
     bytes.addAll(generator.text(
         formatLine('ORDER ID:', '#${order.orderId}', width: widthChars),
         styles: const PosStyles(bold: true)));
-    bytes.addAll(generator.text(
-        formatLine('CUSTOMER:', order.customerName, width: widthChars)));
+    bytes.addAll(generator
+        .text(formatLine('CUSTOMER:', order.customerName, width: widthChars)));
     if (order.customerPhone != null && order.customerPhone!.isNotEmpty) {
-      bytes.addAll(generator.text(
-          formatLine('PHONE:', order.customerPhone!, width: widthChars)));
+      bytes.addAll(generator
+          .text(formatLine('PHONE:', order.customerPhone!, width: widthChars)));
     }
     final dateStr = DateFormat('MMM d, yyyy h:mm a').format(order.createdAt);
     bytes.addAll(

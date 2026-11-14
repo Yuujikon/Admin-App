@@ -32,181 +32,187 @@ class PackingSlipPrinter {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(ctx).colorScheme.primaryContainer,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.print_rounded,
-                    color: Theme.of(ctx).colorScheme.primary,
-                    size: 22,
+                    color: Theme.of(ctx).colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Select Print Destination',
-                        style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      Text(
-                        orders.length == 1
-                            ? 'Packing Slip #${orders.first.orderId}'
-                            : '${orders.length} Selected Orders',
-                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.print_rounded,
+                      color: Theme.of(ctx).colorScheme.primary,
+                      size: 22,
+                    ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Select Print Destination',
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          orders.length == 1
+                              ? 'Packing Slip #${orders.first.orderId}'
+                              : '${orders.length} Selected Orders',
+                          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                                color:
+                                    Theme.of(ctx).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Option 1: System Print / Save as PDF
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                      color: Theme.of(ctx).colorScheme.outlineVariant),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(ctx),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.blue.shade50,
+                  child: Icon(Icons.picture_as_pdf_rounded,
+                      color: Colors.blue.shade800),
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                title: const Text('System Print / Save as PDF',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text(
+                    'Send to Wi-Fi printer, Bluetooth, or export PDF file',
+                    style: TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await printBulkPackingSlips(orders);
+                },
+              ),
+              const SizedBox(height: 10),
 
-            // Option 1: System Print / Save as PDF
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              // Option 2: Live PDF Preview & Print
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                      color: Theme.of(ctx).colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.green.shade50,
+                  child:
+                      Icon(Icons.preview_rounded, color: Colors.green.shade800),
+                ),
+                title: const Text('Preview 80mm Slip First',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text(
+                    'Inspect layout before printing or exporting',
+                    style: TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showPdfPreviewModal(context, orders);
+                },
               ),
-              leading: CircleAvatar(
-                backgroundColor: Colors.blue.shade50,
-                child: Icon(Icons.picture_as_pdf_rounded,
-                    color: Colors.blue.shade800),
-              ),
-              title: const Text('System Print / Save as PDF',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text(
-                  'Send to Wi-Fi printer, Bluetooth, or export PDF file',
-                  style: TextStyle(fontSize: 11)),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await printBulkPackingSlips(orders);
-              },
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            // Option 2: Live PDF Preview & Print
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              // Option 3: Bluetooth Thermal Printer - 80mm Roll
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                      color: Theme.of(ctx).colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.orange.shade50,
+                  child:
+                      Icon(Icons.print_rounded, color: Colors.orange.shade900),
+                ),
+                title: Text(
+                  printerProvider.connected
+                      ? 'Bluetooth Thermal Printer (80mm Wide Roll)'
+                      : 'Bluetooth Thermal Printer - 80mm Roll',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  printerProvider.connected
+                      ? 'Print 80mm (48 columns) ESC/POS pick list (${printerProvider.device?.name})'
+                      : 'Send 80mm packing slip bytes directly to paired thermal printer',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _printThermalDirect(context, orders, paperWidthMm: 80);
+                },
               ),
-              leading: CircleAvatar(
-                backgroundColor: Colors.green.shade50,
-                child: Icon(Icons.preview_rounded, color: Colors.green.shade800),
-              ),
-              title: const Text('Preview 80mm Slip First',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text(
-                  'Inspect layout before printing or exporting',
-                  style: TextStyle(fontSize: 11)),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                Navigator.pop(ctx);
-                showPdfPreviewModal(context, orders);
-              },
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            // Option 3: Bluetooth Thermal Printer - 80mm Roll
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                    color: Theme.of(ctx).colorScheme.outlineVariant),
+              // Option 4: Bluetooth Thermal Printer - 58mm Roll
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                      color: Theme.of(ctx).colorScheme.outlineVariant),
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.amber.shade50,
+                  child: Icon(Icons.receipt_long_rounded,
+                      color: Colors.amber.shade900),
+                ),
+                title: Text(
+                  printerProvider.connected
+                      ? 'Bluetooth Thermal Printer (58mm Compact Roll)'
+                      : 'Bluetooth Thermal Printer - 58mm Roll',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  printerProvider.connected
+                      ? 'Print 58mm (32 columns) ESC/POS pick list (${printerProvider.device?.name})'
+                      : 'Send 58mm compact packing slip bytes directly to paired thermal printer',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _printThermalDirect(context, orders, paperWidthMm: 58);
+                },
               ),
-              leading: CircleAvatar(
-                backgroundColor: Colors.orange.shade50,
-                child: Icon(Icons.print_rounded,
-                    color: Colors.orange.shade900),
-              ),
-              title: Text(
-                printerProvider.connected
-                    ? 'Bluetooth Thermal Printer (80mm Wide Roll)'
-                    : 'Bluetooth Thermal Printer - 80mm Roll',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              subtitle: Text(
-                printerProvider.connected
-                    ? 'Print 80mm (48 columns) ESC/POS pick list (${printerProvider.device?.name})'
-                    : 'Send 80mm packing slip bytes directly to paired thermal printer',
-                style: const TextStyle(fontSize: 11),
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _printThermalDirect(context, orders, paperWidthMm: 80);
-              },
-            ),
-            const SizedBox(height: 10),
-
-            // Option 4: Bluetooth Thermal Printer - 58mm Roll
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                    color: Theme.of(ctx).colorScheme.outlineVariant),
-              ),
-              leading: CircleAvatar(
-                backgroundColor: Colors.amber.shade50,
-                child: Icon(Icons.receipt_long_rounded,
-                    color: Colors.amber.shade900),
-              ),
-              title: Text(
-                printerProvider.connected
-                    ? 'Bluetooth Thermal Printer (58mm Compact Roll)'
-                    : 'Bluetooth Thermal Printer - 58mm Roll',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              subtitle: Text(
-                printerProvider.connected
-                    ? 'Print 58mm (32 columns) ESC/POS pick list (${printerProvider.device?.name})'
-                    : 'Send 58mm compact packing slip bytes directly to paired thermal printer',
-                style: const TextStyle(fontSize: 11),
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _printThermalDirect(context, orders, paperWidthMm: 58);
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   static Future<void> _printThermalDirect(
       BuildContext context, List<PreOrder> orders,
@@ -288,7 +294,8 @@ class PackingSlipPrinter {
 
     for (final order in orders) {
       final totalQty = order.items.fold(0, (sum, i) => sum + i.qty);
-      final dateStr = DateFormat('MMM d, yyyy • h:mm a').format(order.createdAt);
+      final dateStr =
+          DateFormat('MMM d, yyyy • h:mm a').format(order.createdAt);
 
       pdf.addPage(
         pw.Page(
@@ -333,25 +340,37 @@ class PackingSlipPrinter {
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('ORDER ID:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                    pw.Text('#${order.orderId}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                    pw.Text('ORDER ID:',
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                    pw.Text('#${order.orderId}',
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold, fontSize: 12)),
                   ],
                 ),
                 pw.SizedBox(height: 2),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('CUSTOMER:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                    pw.Text(order.customerName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('CUSTOMER:',
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                    pw.Text(order.customerName,
+                        style: pw.TextStyle(
+                            fontSize: 10, fontWeight: pw.FontWeight.bold)),
                   ],
                 ),
-                if (order.customerPhone != null && order.customerPhone!.isNotEmpty) ...[
+                if (order.customerPhone != null &&
+                    order.customerPhone!.isNotEmpty) ...[
                   pw.SizedBox(height: 2),
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text('PHONE:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                      pw.Text(order.customerPhone!, style: pw.TextStyle(fontSize: 9)),
+                      pw.Text('PHONE:',
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                      pw.Text(order.customerPhone!,
+                          style: pw.TextStyle(fontSize: 9)),
                     ],
                   ),
                 ],
@@ -359,7 +378,9 @@ class PackingSlipPrinter {
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('DATE:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                    pw.Text('DATE:',
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold, fontSize: 9)),
                     pw.Text(dateStr, style: pw.TextStyle(fontSize: 9)),
                   ],
                 ),
@@ -369,7 +390,8 @@ class PackingSlipPrinter {
                 // Items Pick Checklist
                 pw.Text(
                   'ITEMS TO PACK ($totalQty items):',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                  style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold, fontSize: 10),
                 ),
                 pw.SizedBox(height: 4),
 
@@ -379,15 +401,21 @@ class PackingSlipPrinter {
                     child: pw.Row(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text('[  ] ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                        pw.Text('[  ] ',
+                            style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold, fontSize: 11)),
                         pw.SizedBox(
                           width: 24,
-                          child: pw.Text('${item.qty}x', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                          child: pw.Text('${item.qty}x',
+                              style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 11)),
                         ),
                         pw.Expanded(
                           child: pw.Text(
                             item.name,
-                            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                            style: pw.TextStyle(
+                                fontSize: 10, fontWeight: pw.FontWeight.bold),
                           ),
                         ),
                         pw.Text(
@@ -406,8 +434,12 @@ class PackingSlipPrinter {
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('TOTAL VALUE:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                    pw.Text(formatPeso(order.total), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13)),
+                    pw.Text('TOTAL VALUE:',
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                    pw.Text(formatPeso(order.total),
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold, fontSize: 13)),
                   ],
                 ),
                 pw.SizedBox(height: 10),
@@ -422,9 +454,11 @@ class PackingSlipPrinter {
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Packed By: __________________________', style: const pw.TextStyle(fontSize: 8)),
+                      pw.Text('Packed By: __________________________',
+                          style: const pw.TextStyle(fontSize: 8)),
                       pw.SizedBox(height: 4),
-                      pw.Text('Checked By: ________________________', style: const pw.TextStyle(fontSize: 8)),
+                      pw.Text('Checked By: ________________________',
+                          style: const pw.TextStyle(fontSize: 8)),
                     ],
                   ),
                 ),
@@ -437,7 +471,8 @@ class PackingSlipPrinter {
                       children: [
                         pw.Text(
                           '- - - - - - - - - - - - - - - - - - - - - - - - - - -',
-                          style: pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
+                          style: pw.TextStyle(
+                              color: PdfColors.grey600, fontSize: 8),
                         ),
                         pw.SizedBox(height: 2),
                         pw.Text(
@@ -451,7 +486,8 @@ class PackingSlipPrinter {
                         pw.SizedBox(height: 2),
                         pw.Text(
                           '- - - - - - - - - - - - - - - - - - - - - - - - - - -',
-                          style: pw.TextStyle(color: PdfColors.grey600, fontSize: 8),
+                          style: pw.TextStyle(
+                              color: PdfColors.grey600, fontSize: 8),
                         ),
                       ],
                     ),

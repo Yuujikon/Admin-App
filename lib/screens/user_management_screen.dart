@@ -36,9 +36,7 @@ class UserManagementScreen extends StatelessWidget {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .snapshots(),
+        stream: FirebaseFirestore.instance.collection('users').snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
@@ -89,7 +87,8 @@ class UserManagementScreen extends StatelessWidget {
               activeStaff.isEmpty &&
               inactiveStaff.isEmpty) {
             return const Center(
-                child: Text('No staff records found. Staff can register via the app login screen.'));
+                child: Text(
+                    'No staff records found. Staff can register via the app login screen.'));
           }
 
           final semantic = Theme.of(context).semantic;
@@ -99,7 +98,8 @@ class UserManagementScreen extends StatelessWidget {
                 const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 88),
             children: [
               // PENDING APPROVAL REQUESTS
-              _sectionHeader('Pending Approval Requests (${pendingRequests.length})',
+              _sectionHeader(
+                  'Pending Approval Requests (${pendingRequests.length})',
                   Colors.amber.shade800),
               if (pendingRequests.isEmpty)
                 const Padding(
@@ -126,8 +126,9 @@ class UserManagementScreen extends StatelessWidget {
                 )
               else
                 ResponsiveCardGrid(
-                  children:
-                      activeStaff.map((d) => _activeUserCard(context, d)).toList(),
+                  children: activeStaff
+                      .map((d) => _activeUserCard(context, d))
+                      .toList(),
                 ),
               const SizedBox(height: 16),
 
@@ -215,7 +216,8 @@ class UserManagementScreen extends StatelessWidget {
               ),
               title: Text(
                 name,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Column(
@@ -224,7 +226,8 @@ class UserManagementScreen extends StatelessWidget {
                   Text(email,
                       style: TextStyle(
                           fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 2),
                   Row(
                     children: [
@@ -266,7 +269,8 @@ class UserManagementScreen extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         'Requested: ${DateFormat('MMM dd, yyyy').format(createdAt)}',
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 10, color: Colors.grey),
                       ),
                     ),
                 ],
@@ -281,8 +285,10 @@ class UserManagementScreen extends StatelessWidget {
                   icon: const Icon(Icons.cancel_outlined,
                       size: 14, color: Colors.red),
                   label: const Text('DENY',
-                      style:
-                          TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.red),
                     padding:
@@ -291,8 +297,8 @@ class UserManagementScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
-                  onPressed: () =>
-                      _showApproveDialog(context, d.id, name, email, requestedRole),
+                  onPressed: () => _showApproveDialog(
+                      context, d.id, name, email, requestedRole),
                   icon: const Icon(Icons.check_circle_outline_rounded,
                       size: 14, color: Colors.white),
                   label: const Text('APPROVE & ASSIGN ROLE',
@@ -360,8 +366,7 @@ class UserManagementScreen extends StatelessWidget {
             ),
             if (isCurrentUser) ...[
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 margin: const EdgeInsets.only(right: 6),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.primaryContainer,
@@ -521,7 +526,8 @@ class UserManagementScreen extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    color: isDenied ? Colors.red.shade800 : Colors.grey.shade700),
+                    color:
+                        isDenied ? Colors.red.shade800 : Colors.grey.shade700),
               ),
             ),
           ],
@@ -571,20 +577,26 @@ class UserManagementScreen extends StatelessWidget {
 
   String _getRoleLabel(String role) => switch (role) {
         'admin' => 'Admin',
-        'trustedPartner' || 'cashier' || 'inventoryManager' => 'Trusted Partner',
+        'trustedPartner' ||
+        'cashier' ||
+        'inventoryManager' =>
+          'Trusted Partner',
         _ => role.toUpperCase(),
       };
 
   Color _getRoleBadgeColor(String role) {
     return switch (role) {
       'admin' => const Color(0xFF7E57C2), // Purple
-      'trustedPartner' || 'cashier' || 'inventoryManager' => const Color(0xFFC07038), // Copper
+      'trustedPartner' ||
+      'cashier' ||
+      'inventoryManager' =>
+        const Color(0xFFC07038), // Copper
       _ => Colors.grey,
     };
   }
 
-  void _showApproveDialog(
-      BuildContext context, String id, String name, String email, String initialRequestedRole) {
+  void _showApproveDialog(BuildContext context, String id, String name,
+      String email, String initialRequestedRole) {
     String selectedRole =
         ['admin', 'trustedPartner'].contains(initialRequestedRole)
             ? initialRequestedRole
@@ -609,34 +621,32 @@ class UserManagementScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Text('Applicant: $name',
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold)),
-              Text('Email: $email',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey)),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedRole,
-                decoration: const InputDecoration(
-                    labelText: 'Assign Authorized Role',
-                    border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'trustedPartner', child: Text('Trusted Partner (Copper Badge)')),
-                  DropdownMenuItem(
-                      value: 'admin', child: Text('Admin (Purple Badge)')),
-                ],
-                onChanged: (v) {
-                  if (v != null) setSt(() => selectedRole = v);
-                },
-              ),
-            ],
+                Text('Applicant: $name',
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold)),
+                Text('Email: $email',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(
+                      labelText: 'Assign Authorized Role',
+                      border: OutlineInputBorder()),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'trustedPartner',
+                        child: Text('Trusted Partner (Copper Badge)')),
+                    DropdownMenuItem(
+                        value: 'admin', child: Text('Admin (Purple Badge)')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setSt(() => selectedRole = v);
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-        actions: [
+          actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('CANCEL')),
@@ -667,7 +677,8 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _confirmDeny(BuildContext context, String id, String name, String email) {
+  void _confirmDeny(
+      BuildContext context, String id, String name, String email) {
     showDialog(
       context: context,
       useRootNavigator: true,
@@ -690,7 +701,9 @@ class UserManagementScreen extends StatelessWidget {
               });
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Denied $name ($email) registration request.')),
+                SnackBar(
+                    content:
+                        Text('Denied $name ($email) registration request.')),
               );
             },
             child: const Text('DENY REQUEST'),
@@ -700,8 +713,8 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _showEditRoleDialog(
-      BuildContext context, String id, String name, String email, String currentRole) async {
+  void _showEditRoleDialog(BuildContext context, String id, String name,
+      String email, String currentRole) async {
     String selected =
         ['admin', 'inventoryManager', 'cashier'].contains(currentRole)
             ? currentRole
@@ -722,12 +735,9 @@ class UserManagementScreen extends StatelessWidget {
               children: [
                 Text('Staff Member: $name',
                     style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold)),
+                        fontSize: 14, fontWeight: FontWeight.bold)),
                 Text('Email: $email',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey)),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: ['admin', 'trustedPartner'].contains(selected)
@@ -737,7 +747,8 @@ class UserManagementScreen extends StatelessWidget {
                       labelText: 'Assigned Role', border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(
-                        value: 'trustedPartner', child: Text('Trusted Partner (Copper Badge)')),
+                        value: 'trustedPartner',
+                        child: Text('Trusted Partner (Copper Badge)')),
                     DropdownMenuItem(
                         value: 'admin', child: Text('Admin (Purple Badge)')),
                   ],
@@ -822,30 +833,27 @@ class UserManagementScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            Text('Reset 6-digit PIN for: $name',
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold)),
-            Text('Email: $email',
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinCtrl,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'New 6-Digit Security PIN',
-                prefixIcon: Icon(Icons.pin_rounded),
-                border: OutlineInputBorder(),
+              Text('Reset 6-digit PIN for: $name',
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold)),
+              Text('Email: $email',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: pinCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New 6-Digit Security PIN',
+                  prefixIcon: Icon(Icons.pin_rounded),
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      actions: [
+        actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
           ElevatedButton(
@@ -879,8 +887,8 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _confirmDisable(
-      BuildContext context, String id, String name, String email, String currentRole) async {
+  void _confirmDisable(BuildContext context, String id, String name,
+      String email, String currentRole) async {
     // Safety check: if disabling an admin account, ensure another active admin exists
     if (currentRole == 'admin') {
       final activeAdmins = await _getActiveAdminCount();
@@ -929,7 +937,10 @@ class UserManagementScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange, foregroundColor: Colors.white),
             onPressed: () async {
-              await FirebaseFirestore.instance.collection('users').doc(id).update({
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(id)
+                  .update({
                 'isDisabled': true,
                 'status': 'denied',
                 'previousRole': currentRole,
@@ -939,7 +950,8 @@ class UserManagementScreen extends StatelessWidget {
               Navigator.pop(ctx);
 
               final currentUser = FirebaseAuth.instance.currentUser;
-              final isSelf = currentUser?.uid == id || currentUser?.email == email;
+              final isSelf =
+                  currentUser?.uid == id || currentUser?.email == email;
 
               if (context.mounted) {
                 if (isSelf) {
@@ -965,8 +977,8 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _confirmActivate(
-      BuildContext context, String id, String name, String email, String previousRole) {
+  void _confirmActivate(BuildContext context, String id, String name,
+      String email, String previousRole) {
     showDialog(
       context: context,
       useRootNavigator: true,
@@ -1077,8 +1089,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
     }
 
     if (pin.length != 6 || !RegExp(r'^\d{6}$').hasMatch(pin)) {
-      setState(
-          () => _error = 'Security PIN must be exactly 6 digits.');
+      setState(() => _error = 'Security PIN must be exactly 6 digits.');
       return;
     }
 
@@ -1121,7 +1132,8 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Staff $name ($email) created! Verification email sent.'),
+              content: Text(
+                  'Staff $name ($email) created! Verification email sent.'),
               backgroundColor: Theme.of(context).colorScheme.primary,
               behavior: SnackBarBehavior.floating,
             ),
@@ -1205,13 +1217,15 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                     : 'trustedPartner',
                 decoration: const InputDecoration(
                   labelText: 'Assigned Role',
-                  prefixIcon: Icon(Icons.admin_panel_settings_outlined, size: 20),
+                  prefixIcon:
+                      Icon(Icons.admin_panel_settings_outlined, size: 20),
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
                 items: const [
                   DropdownMenuItem(
-                      value: 'trustedPartner', child: Text('Trusted Partner (Copper Badge)')),
+                      value: 'trustedPartner',
+                      child: Text('Trusted Partner (Copper Badge)')),
                   DropdownMenuItem(
                       value: 'admin', child: Text('Admin (Purple Badge)')),
                 ],

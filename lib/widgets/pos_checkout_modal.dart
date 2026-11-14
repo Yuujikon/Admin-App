@@ -215,7 +215,8 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
                       children: [
                         const Text('Total Amount:'),
                         Text(formatPeso(tx.total),
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const Divider(height: 16),
@@ -224,7 +225,8 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
                       children: [
                         const Text('Cash Received:'),
                         Text(formatPeso(tx.cashTendered),
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 4),

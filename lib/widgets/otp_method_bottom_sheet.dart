@@ -56,7 +56,8 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   void initState() {
     super.initState();
     _emailCtrl = TextEditingController(text: widget.defaultEmail ?? '');
-    _phoneCtrl = TextEditingController(text: widget.defaultPhone ?? '09558297358');
+    _phoneCtrl =
+        TextEditingController(text: widget.defaultPhone ?? '09558297358');
     _backupCodeCtrl = TextEditingController();
   }
 
@@ -69,7 +70,10 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   }
 
   Future<void> _sendOtp({required bool isEmail}) async {
-    final contactMethod = isEmail ? _emailCtrl.text.trim() : _phoneCtrl.text.trim();
+    if (_loadingEmail || _loadingSms) return;
+
+    final contactMethod =
+        isEmail ? _emailCtrl.text.trim() : _phoneCtrl.text.trim();
 
     if (contactMethod.isEmpty) {
       setState(() {
@@ -121,10 +125,13 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   }
 
   Future<void> _verifyBackupCode() async {
+    if (_loadingBackup) return;
+
     final code = _backupCodeCtrl.text.trim();
     if (code.isEmpty) {
       setState(() {
-        _error = 'Please enter your 8-character emergency backup recovery code.';
+        _error =
+            'Please enter your 8-character emergency backup recovery code.';
       });
       return;
     }
@@ -157,7 +164,8 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
         }
       } else {
         setState(() {
-          _error = 'Invalid emergency backup code. Please check your 8-character recovery code.';
+          _error =
+              'Invalid emergency backup code. Please check your 8-character recovery code.';
           _backupCodeCtrl.clear();
         });
       }
@@ -218,7 +226,6 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
-
           if (_error != null) ...[
             Container(
               width: double.infinity,
@@ -239,7 +246,6 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
               ),
             ),
           ],
-
           if (_selectedMethod == null) ...[
             // Initial option buttons (No input fields shown)
             SizedBox(

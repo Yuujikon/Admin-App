@@ -117,30 +117,31 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                               fontSize: 11,
                               letterSpacing: 1)),
                       TextButton.icon(
-                        onPressed: () => _showAddProductPicker(supplierProducts),
+                        onPressed: () =>
+                            _showAddProductPicker(supplierProducts),
                         icon: const Icon(Icons.add_rounded, size: 18),
                         label: const Text('ADD ITEM',
                             style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 12)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (_items.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Center(
-                        child: Text('No items in this inquiry',
-                            style: TextStyle(color: Colors.grey))),
-                  )
-                else
-                  ...List.generate(_items.length, (index) => _itemRow(index)),
-                const SizedBox(height: 32),
-              ],
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(
+                          child: Text('No items in this inquiry',
+                              style: TextStyle(color: Colors.grey))),
+                    )
+                  else
+                    ...List.generate(_items.length, (index) => _itemRow(index)),
+                  const SizedBox(height: 32),
+                ],
+              ),
             ),
           ),
-        ),
-        _buildFooter(),
+          _buildFooter(),
         ],
       ),
     );

@@ -169,6 +169,7 @@ class _StaffAuthGate extends StatefulWidget {
 
 class _StaffAuthGateState extends State<_StaffAuthGate> {
   String? _activeUid;
+  bool _isResendingVerification = false;
 
   @override
   Widget build(BuildContext context) {
@@ -208,8 +209,11 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
     }
 
     // Check if email address needs verification (for email/password sign-up)
-    final isPasswordUser = user.providerData.any((p) => p.providerId == 'password');
-    if (isPasswordUser && !auth.isEmailVerified && user.email != 'markjeo.hinampas@gmail.com') {
+    final isPasswordUser =
+        user.providerData.any((p) => p.providerId == 'password');
+    if (isPasswordUser &&
+        !auth.isEmailVerified &&
+        user.email != 'markjeo.hinampas@gmail.com') {
       return Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         body: Center(
@@ -233,7 +237,8 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(12),
@@ -261,28 +266,49 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      await auth.resendEmailVerification();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Verification email re-sent! Check your inbox.'),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Could not resend email. Try again later.'),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.send_rounded, size: 16),
-                  label: const Text('Resend Verification Email'),
+                  onPressed: _isResendingVerification
+                      ? null
+                      : () async {
+                          setState(() {
+                            _isResendingVerification = true;
+                          });
+                          try {
+                            await auth.resendEmailVerification();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Verification email re-sent! Check your inbox.'),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Could not resend email. Try again later.'),
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (mounted) {
+                              setState(() {
+                                _isResendingVerification = false;
+                              });
+                            }
+                          }
+                        },
+                  icon: _isResendingVerification
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_rounded, size: 16),
+                  label: Text(_isResendingVerification
+                      ? 'Resending...'
+                      : 'Resend Verification Email'),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -316,14 +342,14 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                   const SizedBox(height: 16),
                   Text(
                     'Access Denied',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.error),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.error),
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(12),
@@ -363,7 +389,10 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
         // REGISTRATION PENDING APPROVAL SCREEN
         final requestedStr = switch (auth.requestedRole) {
           'admin' => 'Store Admin',
-          'trustedPartner' || 'cashier' || 'inventoryManager' => 'Trusted Partner',
+          'trustedPartner' ||
+          'cashier' ||
+          'inventoryManager' =>
+            'Trusted Partner',
           _ => 'Trusted Partner',
         };
 
@@ -390,7 +419,8 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.amber.shade100,
                       borderRadius: BorderRadius.circular(12),
@@ -410,22 +440,32 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                      border: Border.all(
+                          color: Theme.of(context).colorScheme.outlineVariant),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (auth.userFullName != null && auth.userFullName!.isNotEmpty) ...[
+                        if (auth.userFullName != null &&
+                            auth.userFullName!.isNotEmpty) ...[
                           Text('Applicant: ${auth.userFullName}',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13)),
                           const SizedBox(height: 4),
                         ],
-                        Text('Email: ${user.email}', style: const TextStyle(fontSize: 12)),
+                        Text('Email: ${user.email}',
+                            style: const TextStyle(fontSize: 12)),
                         const SizedBox(height: 4),
                         Text('Requested Access: $requestedStr',
-                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),

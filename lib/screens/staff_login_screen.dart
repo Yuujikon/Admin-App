@@ -249,9 +249,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                 const SizedBox(height: 24),
 
                 PrimaryButton(
-                  onPressed: _loading
-                      ? null
-                      : (_isRegistering ? _register : _login),
+                  onPressed:
+                      _loading ? null : (_isRegistering ? _register : _login),
                   isLoading: _loading,
                   minWidth: 200,
                   maxWidth: 350,
@@ -358,6 +357,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   Future<void> _login() async {
+    if (_loading) return;
+
     final email = _email.text.trim();
     final pass = _pass.text.trim();
 
@@ -400,6 +401,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   Future<void> _register() async {
+    if (_loading) return;
+
     final name = _fullName.text.trim();
     final phone = _phone.text.trim();
     final email = _email.text.trim();
@@ -459,7 +462,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
               'email-already-in-use' =>
                 'An account with this email already exists.',
               'invalid-email' => 'Invalid email address format.',
-              'weak-password' => 'Password is too weak. Try a stronger password.',
+              'weak-password' =>
+                'Password is too weak. Try a stronger password.',
               _ => e.message ?? 'Registration failed. Try again.',
             };
           });
@@ -474,6 +478,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   Future<void> _googleSignIn() async {
+    if (_loading) return;
+
     setState(() {
       _loading = true;
       _error = null;
@@ -501,8 +507,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   Future<void> _showGoogleProfileDialog() async {
     final auth = context.read<AppAuthProvider>();
     final googleUser = auth.currentUser;
-    final nameCtrl =
-        TextEditingController(text: googleUser?.displayName ?? '');
+    final nameCtrl = TextEditingController(text: googleUser?.displayName ?? '');
 
     await showDialog(
       context: context,
@@ -557,6 +562,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   Future<void> _resetPassword() async {
+    if (_loading) return;
+
     final email = _email.text.trim();
     if (email.isEmpty) {
       setState(() => _error = 'Please enter your email address first.');
@@ -576,13 +583,15 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
 
       // Dispatch branded HTML email via Brevo
-      await AdminMessagingService().sendBrandedPasswordResetEmail(toEmail: email);
+      await AdminMessagingService()
+          .sendBrandedPasswordResetEmail(toEmail: email);
 
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Password reset email sent to $email! Check your inbox.'),
+            content:
+                Text('Password reset email sent to $email! Check your inbox.'),
             backgroundColor: Colors.green.shade700,
           ),
         );

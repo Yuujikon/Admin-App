@@ -81,7 +81,10 @@ class AuthService {
     final user = _auth.currentUser;
     if (user != null) {
       try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
         if (doc.exists) {
           final userPin = doc.data()?['pin']?.toString();
           if (userPin != null && userPin == pin) {

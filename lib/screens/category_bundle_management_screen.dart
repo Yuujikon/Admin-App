@@ -457,8 +457,8 @@ class _CategoryBundleManagementScreenState
                         final includedProducts = products
                             .where((p) => b.productIds.contains(p.id))
                             .toList();
-                        final double calculatedPrice =
-                            includedProducts.fold(0.0, (sum, p) => sum + p.price);
+                        final double calculatedPrice = includedProducts.fold(
+                            0.0, (sum, p) => sum + p.price);
 
                         return Card(
                           shape: RoundedRectangleBorder(
@@ -481,7 +481,8 @@ class _CategoryBundleManagementScreenState
                               child: b.photoBase64 != null
                                   ? Image.memory(base64Decode(b.photoBase64!),
                                       fit: BoxFit.cover)
-                                  : const Icon(Icons.auto_awesome_motion_rounded,
+                                  : const Icon(
+                                      Icons.auto_awesome_motion_rounded,
                                       color: Colors.grey),
                             ),
                             title: Row(
@@ -499,7 +500,8 @@ class _CategoryBundleManagementScreenState
                                   style: TextStyle(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 14,
-                                    color: Theme.of(context).colorScheme.primary,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
                                   ),
                                 ),
                               ],
@@ -583,8 +585,8 @@ class _CategoryBundleManagementScreenState
                                               fontSize: 11, color: Colors.grey))
                                     else
                                       ...includedProducts.map((p) => Padding(
-                                            padding:
-                                                const EdgeInsets.only(bottom: 4),
+                                            padding: const EdgeInsets.only(
+                                                bottom: 4),
                                             child: Row(
                                               children: [
                                                 const Icon(
@@ -876,8 +878,8 @@ class _CategoryBundleManagementScreenState
                       onPressed: () => _showEditParentGroupDialog(
                           context, inventory, parentId),
                       icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Rename',
-                          style: TextStyle(fontSize: 12)),
+                      label:
+                          const Text('Rename', style: TextStyle(fontSize: 12)),
                     ),
                     const SizedBox(width: 4),
                     TextButton.icon(
@@ -987,7 +989,8 @@ class _CategoryBundleManagementScreenState
               }
             },
             child: const Text('Delete Group',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -1115,8 +1118,9 @@ class _LinkProductsDialogState extends State<_LinkProductsDialog> {
                           : '${p.category} • ${formatPeso(p.price)}',
                       style: TextStyle(
                         fontSize: 11,
-                        color:
-                            hasOtherGroup ? Colors.orange.shade800 : Colors.grey,
+                        color: hasOtherGroup
+                            ? Colors.orange.shade800
+                            : Colors.grey,
                       ),
                     ),
                     value: isChecked,
@@ -1334,8 +1338,7 @@ class __CreateParentGroupDialogState extends State<_CreateParentGroupDialog> {
                   if (_selectedProductIds.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                          content:
-                              Text('Please select at least one product.')),
+                          content: Text('Please select at least one product.')),
                     );
                     return;
                   }

@@ -91,7 +91,8 @@ class _AdminAppState extends State<AdminApp> {
 
     final toProcessCount = orderProvider.orders
             .where((o) =>
-                o.status == OrderStatus.pending || o.status == OrderStatus.staging)
+                o.status == OrderStatus.pending ||
+                o.status == OrderStatus.staging)
             .length +
         pendingRefundsCount;
 
@@ -331,16 +332,13 @@ class _SideNavItem extends StatelessWidget {
     final Color activeBg = isDark
         ? GdcColors.darkEmerald.withValues(alpha: 0.25)
         : GdcColors.creamActiveBackground;
-    final Color activeBorder = isDark
-        ? GdcColors.emeraldPrimary
-        : GdcColors.darkEmerald;
-    final Color activeFg = isDark
-        ? GdcColors.emeraldPrimary
-        : GdcColors.darkEmerald;
+    final Color activeBorder =
+        isDark ? GdcColors.emeraldPrimary : GdcColors.darkEmerald;
+    final Color activeFg =
+        isDark ? GdcColors.emeraldPrimary : GdcColors.darkEmerald;
 
-    final Color inactiveFg = isDark
-        ? Colors.white.withValues(alpha: 0.6)
-        : const Color(0xFF64748B);
+    final Color inactiveFg =
+        isDark ? Colors.white.withValues(alpha: 0.6) : const Color(0xFF64748B);
 
     Widget iconWidget = Icon(
       isSelected
@@ -387,7 +385,8 @@ class _SideNavItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                        fontWeight:
+                            isSelected ? FontWeight.w800 : FontWeight.w600,
                         color: isSelected ? activeFg : inactiveFg,
                       ),
                     ),
@@ -406,7 +405,8 @@ class _SideNavItem extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 10,
-                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      fontWeight:
+                          isSelected ? FontWeight.w800 : FontWeight.w600,
                       color: isSelected ? activeFg : inactiveFg,
                     ),
                   ),
@@ -741,4 +741,3 @@ Future<void> _confirmLogout(BuildContext context, AppAuthProvider auth) async {
     await auth.logout();
   }
 }
-

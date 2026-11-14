@@ -23,12 +23,12 @@ class StoreHours {
   }
 
   /// Dynamically generates available pickup slots based on store settings, schedule overrides, and date.
-  static List<Map<String, dynamic>> availableSlots([StoreSettings? settings, DateTime? targetDate]) {
+  static List<Map<String, dynamic>> availableSlots(
+      [StoreSettings? settings, DateTime? targetDate]) {
     final date = targetDate ?? TimeService.now;
     final now = TimeService.now;
-    final isToday = date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
 
     if (settings != null && settings.isClosed) {
       return []; // No slots available during emergency maintenance

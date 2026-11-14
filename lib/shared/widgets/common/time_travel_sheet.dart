@@ -59,8 +59,7 @@ class _TimeTravelSheetState extends State<TimeTravelSheet> {
     final simulatedNow = TimeService.now;
     final isSimulated = timeService.isSimulated;
 
-    final dateFormatted =
-        DateFormat('EEEE, MMM d, yyyy').format(simulatedNow);
+    final dateFormatted = DateFormat('EEEE, MMM d, yyyy').format(simulatedNow);
     final timeFormatted = DateFormat('h:mm:ss a').format(simulatedNow);
 
     return Container(

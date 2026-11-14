@@ -210,9 +210,11 @@ class _SupplierCard extends StatelessWidget {
     } catch (_) {}
   }
 
-  Future<void> _sendSms(BuildContext context, String phone, [String? supplierName]) async {
+  Future<void> _sendSms(BuildContext context, String phone,
+      [String? supplierName]) async {
     if (phone.isEmpty) return;
-    final String message = (supplierName != null && supplierName.trim().isNotEmpty)
+    final String message = (supplierName != null &&
+            supplierName.trim().isNotEmpty)
         ? 'Hello $supplierName, this is GDC Store regarding inventory supply restocking.'
         : 'Hello, this is GDC Store regarding inventory supply restocking.';
     final Uri uri = Uri(
@@ -282,25 +284,21 @@ class _SupplierCard extends StatelessWidget {
                       children: [
                         Text(
                           supplier.name,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: colorScheme.onSurface,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: colorScheme.onSurface,
+                                  ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           supplier.category,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -442,7 +440,8 @@ class _SupplierCard extends StatelessWidget {
                         ),
                       ),
                       child: InkWell(
-                        onTap: () => _sendSms(context, supplier.phone, supplier.name),
+                        onTap: () =>
+                            _sendSms(context, supplier.phone, supplier.name),
                         borderRadius: BorderRadius.circular(10),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(

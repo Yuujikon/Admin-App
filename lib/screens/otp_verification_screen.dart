@@ -137,7 +137,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       } else {
         setState(() {
           _isVerifying = false;
-          _errorMessage = res['message'] as String? ?? 'Invalid verification code.';
+          _errorMessage =
+              res['message'] as String? ?? 'Invalid verification code.';
           _pinController.clear();
         });
       }
@@ -203,7 +204,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+                    color: theme.colorScheme.primaryContainer
+                        .withValues(alpha: 0.4),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -252,15 +254,20 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 if (_errorMessage != null) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer.withValues(alpha: 0.6),
+                      color: theme.colorScheme.errorContainer
+                          .withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.4)),
+                      border: Border.all(
+                          color:
+                              theme.colorScheme.error.withValues(alpha: 0.4)),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline_rounded, color: theme.colorScheme.error, size: 20),
+                        Icon(Icons.error_outline_rounded,
+                            color: theme.colorScheme.error, size: 20),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(

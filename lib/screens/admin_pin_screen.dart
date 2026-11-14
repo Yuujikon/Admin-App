@@ -279,8 +279,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       bool launched = false;
       for (final uri in directUris) {
         try {
-          launched =
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
+          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
           if (launched) break;
         } catch (_) {}
       }
@@ -378,8 +377,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       icon: const Icon(Icons.copy_rounded, size: 20),
                       tooltip: 'Copy Key',
                       onPressed: () {
-                        Clipboard.setData(
-                            ClipboardData(text: auth.totpSecret));
+                        Clipboard.setData(ClipboardData(text: auth.totpSecret));
                         auth.markTotpLinked();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -502,7 +500,9 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    effectiveUseStaticPin ? 'Enter Admin PIN' : 'Enter 6-Digit Code',
+                    effectiveUseStaticPin
+                        ? 'Enter Admin PIN'
+                        : 'Enter 6-Digit Code',
                     style: Theme.of(context)
                         .textTheme
                         .headlineSmall
@@ -1053,4 +1053,3 @@ class _SetNewPinDialogState extends State<_SetNewPinDialog> {
     );
   }
 }
-

@@ -58,20 +58,18 @@ class GdcTheme {
   static ThemeData _buildTheme(Brightness brightness) {
     final bool isDark = brightness == Brightness.dark;
 
-    final primaryColor = isDark ? GdcColors.mutedGreen : GdcColors.emeraldPrimary;
-    final secondaryColor =
-        isDark ? GdcColors.goldDim : GdcColors.darkEmerald;
+    final primaryColor =
+        isDark ? GdcColors.mutedGreen : GdcColors.emeraldPrimary;
+    final secondaryColor = isDark ? GdcColors.goldDim : GdcColors.darkEmerald;
     final backgroundColor =
         isDark ? GdcColors.midnight : GdcColors.appBackground;
     final surfaceColor = isDark ? GdcColors.slate : GdcColors.whiteSurface;
     final textColor =
         isDark ? Colors.white.withValues(alpha: 0.95) : GdcColors.mainText;
-    final subTextColor = isDark
-        ? Colors.white.withValues(alpha: 0.6)
-        : GdcColors.mutedText;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : GdcColors.border;
+    final subTextColor =
+        isDark ? Colors.white.withValues(alpha: 0.6) : GdcColors.mutedText;
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.12) : GdcColors.border;
 
     final errorColor = isDark ? GdcColors.errorDark : GdcColors.errorLight;
     final successColor =
@@ -180,7 +178,8 @@ class GdcTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         side: BorderSide(color: borderColor, width: 1),
         backgroundColor: isDark ? GdcColors.slate : GdcColors.appBackground,
-        selectedColor: isDark ? GdcColors.emeraldPrimary : GdcColors.mintActiveBackground,
+        selectedColor:
+            isDark ? GdcColors.emeraldPrimary : GdcColors.mintActiveBackground,
         labelStyle: TextStyle(
             color: isDark ? Colors.white : GdcColors.mainText,
             fontWeight: FontWeight.w700,
@@ -255,7 +254,8 @@ class GdcTheme {
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: surfaceColor,
         indicatorColor: GdcColors.mintActiveBackground,
-        selectedIconTheme: IconThemeData(color: GdcColors.darkEmerald, size: 22),
+        selectedIconTheme:
+            IconThemeData(color: GdcColors.darkEmerald, size: 22),
         unselectedIconTheme: IconThemeData(color: subTextColor, size: 20),
         selectedLabelTextStyle: TextStyle(
           color: GdcColors.darkEmerald,
@@ -279,7 +279,9 @@ class GdcTheme {
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w800, color: GdcColors.darkEmerald);
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: GdcColors.darkEmerald);
           }
           return TextStyle(
               fontSize: 11, fontWeight: FontWeight.w600, color: subTextColor);

@@ -114,7 +114,8 @@ class _RefundRequestsScreenState extends State<RefundRequestsScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                       child: ResponsiveCardGrid(
                         children: filteredReqs
-                            .map((r) => _RefundCard(req: r, inventory: inventory))
+                            .map((r) =>
+                                _RefundCard(req: r, inventory: inventory))
                             .toList(),
                       ),
                     ),

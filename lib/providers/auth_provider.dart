@@ -142,12 +142,15 @@ class AppAuthProvider extends ChangeNotifier {
           _recoveryCodes = [];
         }
 
-        if (_totpSecret == null || _totpSecret!.isEmpty || data['isCustomer'] == null) {
+        if (_totpSecret == null ||
+            _totpSecret!.isEmpty ||
+            data['isCustomer'] == null) {
           _totpSecret = _totpSecret ?? TotpUtils.generateSecret();
           await _db.collection('users').doc(uid).set({
             'totpSecret': _totpSecret,
             'isCustomer': false,
-            if (data['status'] == null) 'status': roleStr == 'none' ? 'pending' : 'approved',
+            if (data['status'] == null)
+              'status': roleStr == 'none' ? 'pending' : 'approved',
           }, SetOptions(merge: true));
         }
 
@@ -243,9 +246,10 @@ class AppAuthProvider extends ChangeNotifier {
         debugPrint('Error sending verification email: $e');
       });
 
-      final sanitizedPhone = phoneNumber != null && phoneNumber.trim().isNotEmpty
-          ? formatPhoneNumber(phoneNumber.trim())
-          : null;
+      final sanitizedPhone =
+          phoneNumber != null && phoneNumber.trim().isNotEmpty
+              ? formatPhoneNumber(phoneNumber.trim())
+              : null;
 
       _totpSecret = TotpUtils.generateSecret();
       _phoneNumber = sanitizedPhone;
@@ -406,10 +410,13 @@ class AppAuthProvider extends ChangeNotifier {
   /// Generates [count] formatted 8-character uppercase backup recovery codes (e.g. XXXX-XXXX).
   static List<String> generateRecoveryCodes({int count = 5}) {
     final random = Random.secure();
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excludes ambiguous characters (0, 1, O, I)
+    const chars =
+        'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excludes ambiguous characters (0, 1, O, I)
     final List<String> codes = [];
     for (int i = 0; i < count; i++) {
-      final code = List.generate(8, (index) => chars[random.nextInt(chars.length)]).join();
+      final code =
+          List.generate(8, (index) => chars[random.nextInt(chars.length)])
+              .join();
       codes.add('${code.substring(0, 4)}-${code.substring(4)}');
     }
     return codes;
@@ -436,11 +443,13 @@ class AppAuthProvider extends ChangeNotifier {
     final user = currentUser;
     if (user == null) return false;
 
-    final sanitized = codeInput.replaceAll('-', '').replaceAll(' ', '').toUpperCase();
+    final sanitized =
+        codeInput.replaceAll('-', '').replaceAll(' ', '').toUpperCase();
     if (sanitized.isEmpty) return false;
 
     int matchIndex = _recoveryCodes.indexWhere(
-      (c) => c.replaceAll('-', '').replaceAll(' ', '').toUpperCase() == sanitized,
+      (c) =>
+          c.replaceAll('-', '').replaceAll(' ', '').toUpperCase() == sanitized,
     );
 
     if (matchIndex == -1) {
@@ -448,9 +457,12 @@ class AppAuthProvider extends ChangeNotifier {
       if (doc.exists) {
         final rawCodes = doc.data()?['recoveryCodes'];
         if (rawCodes is List) {
-          final firestoreCodes = List<String>.from(rawCodes.map((e) => e.toString()));
+          final firestoreCodes =
+              List<String>.from(rawCodes.map((e) => e.toString()));
           matchIndex = firestoreCodes.indexWhere(
-            (c) => c.replaceAll('-', '').replaceAll(' ', '').toUpperCase() == sanitized,
+            (c) =>
+                c.replaceAll('-', '').replaceAll(' ', '').toUpperCase() ==
+                sanitized,
           );
           if (matchIndex != -1) {
             _recoveryCodes = firestoreCodes;

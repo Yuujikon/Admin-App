@@ -73,8 +73,11 @@ class _ReportsScreenState extends State<ReportsScreen>
 
     DateTimeRange initialRange;
     if (_customRange != null) {
-      final start = _customRange!.start.isAfter(todayEnd) ? todayEnd : _customRange!.start;
-      final end = _customRange!.end.isAfter(todayEnd) ? todayEnd : _customRange!.end;
+      final start = _customRange!.start.isAfter(todayEnd)
+          ? todayEnd
+          : _customRange!.start;
+      final end =
+          _customRange!.end.isAfter(todayEnd) ? todayEnd : _customRange!.end;
       initialRange = DateTimeRange(
         start: start.isAfter(end) ? end : start,
         end: end,
@@ -97,10 +100,13 @@ class _ReportsScreenState extends State<ReportsScreen>
     );
 
     if (picked != null) {
-      final normalizedStart = DateTime(picked.start.year, picked.start.month, picked.start.day);
-      final normalizedEnd = DateTime(picked.end.year, picked.end.month, picked.end.day, 23, 59, 59);
+      final normalizedStart =
+          DateTime(picked.start.year, picked.start.month, picked.start.day);
+      final normalizedEnd = DateTime(
+          picked.end.year, picked.end.month, picked.end.day, 23, 59, 59);
       setState(() {
-        _customRange = DateTimeRange(start: normalizedStart, end: normalizedEnd);
+        _customRange =
+            DateTimeRange(start: normalizedStart, end: normalizedEnd);
         _selectedPeriod = ReportPeriod.custom;
       });
     }
@@ -266,25 +272,34 @@ class _ReportsScreenState extends State<ReportsScreen>
                     },
                   ),
                 ),
-                if (_selectedPeriod == ReportPeriod.custom && _customRange != null) ...[
+                if (_selectedPeriod == ReportPeriod.custom &&
+                    _customRange != null) ...[
                   const SizedBox(height: 8),
                   InkWell(
                     onTap: _selectCustomDateRange,
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer.withAlpha(128),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withAlpha(128),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.primary.withAlpha(80),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withAlpha(80),
                         ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.calendar_month_rounded,
-                              size: 16, color: Theme.of(context).colorScheme.primary),
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary),
                           const SizedBox(width: 6),
                           Text(
                             '${DateFormat('MMM d, yyyy').format(_customRange!.start)} - ${DateFormat('MMM d, yyyy').format(_customRange!.end)}',
@@ -296,7 +311,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                           ),
                           const SizedBox(width: 6),
                           Icon(Icons.edit_rounded,
-                              size: 14, color: Theme.of(context).colorScheme.primary),
+                              size: 14,
+                              color: Theme.of(context).colorScheme.primary),
                         ],
                       ),
                     ),

@@ -318,129 +318,132 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
             maxWidth: MaxWidthContainer.formMaxWidth,
             alignment: Alignment.topCenter,
             child: Card(
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _infoSource == 'Catalog Match'
-                            ? Icons.verified
-                            : Icons.help_outline,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _infoSource == 'Catalog Match'
+                              ? Icons.verified
+                              : Icons.help_outline,
+                          color: _infoSource == 'Catalog Match'
+                              ? Colors.green
+                              : Colors.orange,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Catalog Identification',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Source: $_infoSource',
+                      style: TextStyle(
+                        fontSize: 12,
                         color: _infoSource == 'Catalog Match'
                             ? Colors.green
                             : Colors.orange,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Catalog Identification',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
+                    ),
+                    const Divider(height: 32),
+                    if (_detectedBarcode != null) ...[
+                      Text('Barcode',
+                          style: Theme.of(context).textTheme.labelSmall),
+                      Text(_detectedBarcode!,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 16),
                     ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Source: $_infoSource',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _infoSource == 'Catalog Match'
-                          ? Colors.green
-                          : Colors.orange,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Divider(height: 32),
-                  if (_detectedBarcode != null) ...[
-                    Text('Barcode',
-                        style: Theme.of(context).textTheme.labelSmall),
-                    Text(_detectedBarcode!,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 16),
-                  ],
-                  if (_infoSource == 'New Barcode')
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: ElevatedButton.icon(
-                        onPressed: _searchCatalog,
-                        icon: const Icon(Icons.search),
-                        label: const Text('Search Catalog for this Product'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade50,
-                          foregroundColor: Colors.blue.shade900,
-                        ),
-                      ),
-                    ),
-                  TextField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Product Name',
-                      hintText: 'e.g. Original Taste',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _brandController,
-                    decoration: const InputDecoration(
-                      labelText: 'Brand',
-                      hintText: 'e.g. Coca-Cola',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: _categories.contains(_selectedCategory)
-                        ? _selectedCategory
-                        : (_categories.isNotEmpty ? _categories.first : null),
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _categories
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (val) => setState(() => _selectedCategory = val),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => setState(() => _showReview = false),
-                          child: const Text('Rescan'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _onConfirm,
+                    if (_infoSource == 'New Barcode')
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: ElevatedButton.icon(
+                          onPressed: _searchCatalog,
+                          icon: const Icon(Icons.search),
+                          label: const Text('Search Catalog for this Product'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: GdcColors.primaryGreen,
-                            foregroundColor: Colors.white,
+                            backgroundColor: Colors.blue.shade50,
+                            foregroundColor: Colors.blue.shade900,
                           ),
-                          child: const Text('Confirm'),
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Product Name',
+                        hintText: 'e.g. Original Taste',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _brandController,
+                      decoration: const InputDecoration(
+                        labelText: 'Brand',
+                        hintText: 'e.g. Coca-Cola',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _categories.contains(_selectedCategory)
+                          ? _selectedCategory
+                          : (_categories.isNotEmpty ? _categories.first : null),
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _categories
+                          .map(
+                              (c) => DropdownMenuItem(value: c, child: Text(c)))
+                          .toList(),
+                      onChanged: (val) =>
+                          setState(() => _selectedCategory = val),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                setState(() => _showReview = false),
+                            child: const Text('Rescan'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _onConfirm,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: GdcColors.primaryGreen,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Confirm'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 class ViewfinderPainter extends CustomPainter {

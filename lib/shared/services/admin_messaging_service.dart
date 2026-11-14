@@ -12,7 +12,8 @@ class AdminMessagingService {
   String? _lastBrevoError;
 
   /// Singleton instance
-  static final AdminMessagingService _instance = AdminMessagingService._internal();
+  static final AdminMessagingService _instance =
+      AdminMessagingService._internal();
   factory AdminMessagingService() => _instance;
   AdminMessagingService._internal();
 
@@ -69,7 +70,8 @@ class AdminMessagingService {
     final senderEmail = _brevoSenderEmail;
 
     if (apiKey.isEmpty) {
-      debugPrint('[AdminMessagingService] BREVO_API_KEY is missing from environment.');
+      debugPrint(
+          '[AdminMessagingService] BREVO_API_KEY is missing from environment.');
       return false;
     }
 
@@ -101,11 +103,13 @@ class AdminMessagingService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         _lastBrevoError = null;
-        debugPrint('[AdminMessagingService] Brevo Email sent to $toEmail [${response.statusCode}]');
+        debugPrint(
+            '[AdminMessagingService] Brevo Email sent to $toEmail [${response.statusCode}]');
         return true;
       } else {
         _lastBrevoError = 'Brevo [${response.statusCode}]: ${response.body}';
-        debugPrint('[AdminMessagingService] Brevo Email failed [${response.statusCode}]: ${response.body}');
+        debugPrint(
+            '[AdminMessagingService] Brevo Email failed [${response.statusCode}]: ${response.body}');
         return false;
       }
     } catch (e) {
@@ -124,12 +128,15 @@ class AdminMessagingService {
     final token = _traccarToken;
 
     if (gatewayUrl.isEmpty || token.isEmpty) {
-      debugPrint('[AdminMessagingService] Traccar gateway URL or token missing.');
+      debugPrint(
+          '[AdminMessagingService] Traccar gateway URL or token missing.');
       return false;
     }
 
     try {
-      final cleanUrl = gatewayUrl.endsWith('/') ? gatewayUrl.substring(0, gatewayUrl.length - 1) : gatewayUrl;
+      final cleanUrl = gatewayUrl.endsWith('/')
+          ? gatewayUrl.substring(0, gatewayUrl.length - 1)
+          : gatewayUrl;
       final uri = Uri.parse(cleanUrl);
 
       final headers = {
@@ -146,10 +153,12 @@ class AdminMessagingService {
       final response = await http.post(uri, headers: headers, body: body);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        debugPrint('[AdminMessagingService] Traccar SMS sent to $toPhone [${response.statusCode}]');
+        debugPrint(
+            '[AdminMessagingService] Traccar SMS sent to $toPhone [${response.statusCode}]');
         return true;
       } else {
-        debugPrint('[AdminMessagingService] Traccar SMS failed [${response.statusCode}]: ${response.body}');
+        debugPrint(
+            '[AdminMessagingService] Traccar SMS failed [${response.statusCode}]: ${response.body}');
         return false;
       }
     } catch (e) {
@@ -212,7 +221,8 @@ class AdminMessagingService {
           htmlContent: htmlContent,
         );
       } else {
-        final smsMessage = 'GDC Store: Your admin OTP verification code is $otp. Valid for 5 minutes.';
+        final smsMessage =
+            'GDC Store: Your admin OTP verification code is $otp. Valid for 5 minutes.';
         sent = await sendTraccarSms(
           toPhone: sanitizedContact,
           message: smsMessage,
@@ -226,15 +236,19 @@ class AdminMessagingService {
           'otp': otp,
         };
       } else {
-        if (isEmail && _lastBrevoError != null && _lastBrevoError!.contains('API Key is not enabled')) {
+        if (isEmail &&
+            _lastBrevoError != null &&
+            _lastBrevoError!.contains('API Key is not enabled')) {
           return {
             'success': false,
-            'message': 'Brevo API Key is not enabled on Brevo Dashboard (Error 401). Please activate Transactional Email on app.brevo.com or use SMS OTP.',
+            'message':
+                'Brevo API Key is not enabled on Brevo Dashboard (Error 401). Please activate Transactional Email on app.brevo.com or use SMS OTP.',
           };
         }
         return {
           'success': false,
-          'message': 'Failed to deliver OTP via ${isEmail ? "Email" : "SMS"}. Please try again.',
+          'message':
+              'Failed to deliver OTP via ${isEmail ? "Email" : "SMS"}. Please try again.',
         };
       }
     } catch (e) {
@@ -303,7 +317,10 @@ class AdminMessagingService {
     final sanitizedCode = enteredCode.trim();
 
     if (sanitizedContact.isEmpty || sanitizedCode.isEmpty) {
-      return {'success': false, 'message': 'Please enter the 6-digit verification code.'};
+      return {
+        'success': false,
+        'message': 'Please enter the 6-digit verification code.'
+      };
     }
 
     try {
@@ -313,7 +330,8 @@ class AdminMessagingService {
       if (!docSnap.exists) {
         return {
           'success': false,
-          'message': 'No pending OTP request found for $sanitizedContact. Please request a new code.',
+          'message':
+              'No pending OTP request found for $sanitizedContact. Please request a new code.',
         };
       }
 
@@ -326,7 +344,8 @@ class AdminMessagingService {
       if (attempts >= 5) {
         return {
           'success': false,
-          'message': 'Maximum verification attempts exceeded (5/5). Please request a new OTP code.',
+          'message':
+              'Maximum verification attempts exceeded (5/5). Please request a new OTP code.',
         };
       }
 
@@ -336,7 +355,8 @@ class AdminMessagingService {
         if (DateTime.now().isAfter(expiresAt)) {
           return {
             'success': false,
-            'message': 'OTP verification code has expired. Please request a new code.',
+            'message':
+                'OTP verification code has expired. Please request a new code.',
           };
         }
       }
@@ -359,12 +379,14 @@ class AdminMessagingService {
         if (remaining <= 0) {
           return {
             'success': false,
-            'message': 'Invalid OTP code. Maximum attempts reached. Please request a new code.',
+            'message':
+                'Invalid OTP code. Maximum attempts reached. Please request a new code.',
           };
         }
         return {
           'success': false,
-          'message': 'Invalid OTP code. $remaining ${remaining == 1 ? "attempt" : "attempts"} remaining.',
+          'message':
+              'Invalid OTP code. $remaining ${remaining == 1 ? "attempt" : "attempts"} remaining.',
         };
       }
     } catch (e) {
@@ -385,7 +407,8 @@ class AdminMessagingService {
     required String newStatus,
   }) async {
     final statusDisplay = newStatus.toUpperCase();
-    final messageText = 'GDC Store: Your pre-order #$orderId status is now $newStatus!';
+    final messageText =
+        'GDC Store: Your pre-order #$orderId status is now $newStatus!';
 
     // Send SMS via Traccar if customer phone is present
     if (customerPhone.trim().isNotEmpty) {
@@ -417,7 +440,8 @@ class AdminMessagingService {
 ''';
       sendBrevoEmail(
         toEmail: customerEmail.trim(),
-        subject: 'GDC Store: Your pre-order #$orderId status is now $newStatus!',
+        subject:
+            'GDC Store: Your pre-order #$orderId status is now $newStatus!',
         htmlContent: html,
       ).catchError((e) {
         debugPrint('[AdminMessagingService] Error sending customer email: $e');

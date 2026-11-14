@@ -31,9 +31,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final allRefunds = inventory.refundRequests;
 
     // Filter processed refunds (approved or rejected, or all for history)
-    final processedRefunds = allRefunds
-        .where((r) => r.status != RefundStatus.pending)
-        .toList();
+    final processedRefunds =
+        allRefunds.where((r) => r.status != RefundStatus.pending).toList();
 
     final approvedCount =
         allRefunds.where((r) => r.status == RefundStatus.approved).length;
@@ -599,9 +598,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     color: Colors.grey)),
             Text(val,
                 style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: color)),
+                    fontSize: 12, fontWeight: FontWeight.bold, color: color)),
           ],
         ),
       );
@@ -670,9 +667,7 @@ class _RefundHistoryCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            isApproved
-                ? Icons.check_circle_rounded
-                : Icons.cancel_rounded,
+            isApproved ? Icons.check_circle_rounded : Icons.cancel_rounded,
             color: isApproved ? Colors.green : Colors.red,
           ),
         ),

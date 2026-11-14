@@ -2,19 +2,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 enum OverrideType {
-  fullClosure,       // e.g., Dec 24 - Jan 1: Closed All Day ("Holidays")
-  customOpenHours,   // e.g., Dec 20 - Dec 23: Open 1:00 PM - 3:00 PM ("Preparing for Holidays")
+  fullClosure, // e.g., Dec 24 - Jan 1: Closed All Day ("Holidays")
+  customOpenHours, // e.g., Dec 20 - Dec 23: Open 1:00 PM - 3:00 PM ("Preparing for Holidays")
   maintenanceWindow, // e.g., Dec 20 - Dec 23: Closed 1:00 PM - 3:00 PM for maintenance
 }
 
 class ScheduleOverride {
   final String id;
   final DateTime startDate; // Normalized to 00:00:00 of start day
-  final DateTime endDate;   // Normalized to 23:59:59 of end day
+  final DateTime endDate; // Normalized to 23:59:59 of end day
   final OverrideType type;
-  final int? startMinutes;  // Minutes from midnight (e.g. 13 * 60 = 780 for 1:00 PM)
-  final int? endMinutes;    // Minutes from midnight (e.g. 15 * 60 = 900 for 3:00 PM)
-  final String reason;      // e.g. "Preparing for Holidays", "Holidays"
+  final int?
+      startMinutes; // Minutes from midnight (e.g. 13 * 60 = 780 for 1:00 PM)
+  final int?
+      endMinutes; // Minutes from midnight (e.g. 15 * 60 = 900 for 3:00 PM)
+  final String reason; // e.g. "Preparing for Holidays", "Holidays"
 
   const ScheduleOverride({
     required this.id,
@@ -27,14 +29,14 @@ class ScheduleOverride {
   });
 
   Map<String, dynamic> toMap() => {
-    'id': id,
-    'startDate': Timestamp.fromDate(startDate),
-    'endDate': Timestamp.fromDate(endDate),
-    'type': type.name,
-    'startMinutes': startMinutes,
-    'endMinutes': endMinutes,
-    'reason': reason,
-  };
+        'id': id,
+        'startDate': Timestamp.fromDate(startDate),
+        'endDate': Timestamp.fromDate(endDate),
+        'type': type.name,
+        'startMinutes': startMinutes,
+        'endMinutes': endMinutes,
+        'reason': reason,
+      };
 
   factory ScheduleOverride.fromMap(Map<String, dynamic> map) {
     DateTime parseDate(dynamic val) {
@@ -60,7 +62,8 @@ class ScheduleOverride {
   /// Checks if a given DateTime falls inside this override's date range
   bool appliesToDate(DateTime date) {
     final dayStart = DateTime(startDate.year, startDate.month, startDate.day);
-    final dayEnd = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+    final dayEnd =
+        DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
     return !date.isBefore(dayStart) && !date.isAfter(dayEnd);
   }
 
@@ -174,8 +177,8 @@ class StoreSettings {
     final rawOverrides = d['overrides'] as List?;
     final overridesList = rawOverrides != null
         ? rawOverrides
-            .map((item) =>
-                ScheduleOverride.fromMap(Map<String, dynamic>.from(item as Map)))
+            .map((item) => ScheduleOverride.fromMap(
+                Map<String, dynamic>.from(item as Map)))
             .toList()
         : const <ScheduleOverride>[];
 
@@ -230,7 +233,9 @@ class StoreSettings {
       'globalLowStockThreshold': globalLowStockThreshold,
       'masterCategories': masterCategories,
       'announcement': announcement,
-      'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : FieldValue.serverTimestamp(),
+      'updatedAt': updatedAt != null
+          ? Timestamp.fromDate(updatedAt!)
+          : FieldValue.serverTimestamp(),
     };
   }
 
@@ -354,7 +359,9 @@ class StoreSettings {
 
     for (final override in overrides) {
       if (override.appliesToDate(now)) {
-        final reason = override.reason.isNotEmpty ? override.reason : 'Holiday / Special Schedule';
+        final reason = override.reason.isNotEmpty
+            ? override.reason
+            : 'Holiday / Special Schedule';
         if (override.type == OverrideType.fullClosure) {
           return 'Closed: $reason';
         } else if (override.type == OverrideType.customOpenHours) {
@@ -441,7 +448,9 @@ class StoreSettings {
     final active = activeOverrideFor(now);
     if (active != null) {
       if (active.isDateTimeClosed(now)) {
-        return active.type == OverrideType.fullClosure ? 'HOLIDAY' : 'SPECIAL SCHEDULE';
+        return active.type == OverrideType.fullClosure
+            ? 'HOLIDAY'
+            : 'SPECIAL SCHEDULE';
       } else {
         return 'SPECIAL HOURS';
       }

@@ -97,7 +97,8 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
     // Categorize orders by pipeline stage
     final toPackOrders = orders
-        .where((o) => o.status == OrderStatus.pending || o.status == OrderStatus.staging)
+        .where((o) =>
+            o.status == OrderStatus.pending || o.status == OrderStatus.staging)
         .toList();
     final readyOrders =
         orders.where((o) => o.status == OrderStatus.ready).toList();
@@ -114,7 +115,8 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       PreOrderStage.ready => readyOrders,
       PreOrderStage.completed => completedOrders,
       PreOrderStage.refunds => <PreOrder>[],
-      PreOrderStage.all => orders.where((o) => o.status != OrderStatus.cancelled).toList(),
+      PreOrderStage.all =>
+        orders.where((o) => o.status != OrderStatus.cancelled).toList(),
     };
 
     final visibleOrders = filteredByStage.where((o) {
@@ -164,9 +166,8 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 1.2,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -234,8 +235,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                                       .withValues(alpha: 0.5),
                             ),
                             tooltip: 'Compact List View',
-                            onPressed: () =>
-                                setState(() => _isListView = true),
+                            onPressed: () => setState(() => _isListView = true),
                           ),
                         ],
                       ),
@@ -368,8 +368,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                                 isSelected: isSelected,
                                 onSelectToggle: () =>
                                     _toggleSelectOrder(order.id),
-                                onTap: () =>
-                                    _showOrderDetails(context, order),
+                                onTap: () => _showOrderDetails(context, order),
                               );
                             }).toList(),
                           )
@@ -384,8 +383,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
                                 isSelected: isSelected,
                                 onSelectToggle: () =>
                                     _toggleSelectOrder(order.id),
-                                onTap: () =>
-                                    _showOrderDetails(context, order),
+                                onTap: () => _showOrderDetails(context, order),
                               );
                             }).toList(),
                           ),
@@ -616,8 +614,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
     final pendingOrdersToPrint = visibleOrders
         .where((o) =>
-            _selectedOrderIds.contains(o.id) &&
-            o.status == OrderStatus.pending)
+            _selectedOrderIds.contains(o.id) && o.status == OrderStatus.pending)
         .toList();
 
     return Container(
@@ -1031,8 +1028,9 @@ class _PendingRefundCard extends StatelessWidget {
                           hintText:
                               'Explain why the refund request is declined...',
                           border: const OutlineInputBorder(),
-                          errorText:
-                              responseText.isEmpty ? 'Reason is required' : null,
+                          errorText: responseText.isEmpty
+                              ? 'Reason is required'
+                              : null,
                         ),
                       ),
                     ],
@@ -1046,7 +1044,8 @@ class _PendingRefundCard extends StatelessWidget {
                 ElevatedButton(
                   onPressed: isValid ? () => Navigator.pop(ctx, true) : null,
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red, foregroundColor: Colors.white),
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white),
                   child: const Text('REJECT REQUEST'),
                 ),
               ],
@@ -1392,7 +1391,8 @@ class _OrderCard extends StatelessWidget {
         order.status == OrderStatus.ready;
 
     final theme = Theme.of(context);
-    final outlineColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.35);
+    final outlineColor =
+        theme.colorScheme.outlineVariant.withValues(alpha: 0.35);
 
     return Card(
       elevation: 0,
@@ -1512,8 +1512,8 @@ class _OrderCard extends StatelessWidget {
                 Expanded(
                   child: SizedBox(
                     height: 40,
-                    child: _CardActionButton(
-                        order: order, canAdvance: canAdvance),
+                    child:
+                        _CardActionButton(order: order, canAdvance: canAdvance),
                   ),
                 ),
                 if (order.status != OrderStatus.pending) ...[
@@ -1985,8 +1985,7 @@ class _OrderDetailsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dateStr =
-        DateFormat('MMMM d, yyyy • h:mm a').format(order.createdAt);
+    final dateStr = DateFormat('MMMM d, yyyy • h:mm a').format(order.createdAt);
 
     return Container(
       constraints: BoxConstraints(
@@ -2166,7 +2165,8 @@ class _OrderDetailsSheet extends StatelessWidget {
                                 Text(
                                   item.name,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.w600, fontSize: 14),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14),
                                 ),
                                 if (item.variantName != null &&
                                     item.variantName!.isNotEmpty)

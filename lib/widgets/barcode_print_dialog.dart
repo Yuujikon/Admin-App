@@ -328,14 +328,14 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
                         Text(
                           'Barcode Print Options',
                           style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         Text(
                           '${widget.productName} (${_copies}x copies)',
                           style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -410,15 +410,15 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
                 ),
                 leading: CircleAvatar(
                   backgroundColor: Colors.orange.shade50,
-                  child: Icon(Icons.print_rounded,
-                      color: Colors.orange.shade900),
+                  child:
+                      Icon(Icons.print_rounded, color: Colors.orange.shade900),
                 ),
                 title: Text(
                   printer.connected
                       ? 'Bluetooth Thermal Printer (80mm Roll)'
                       : 'Bluetooth Thermal Printer - 80mm Roll',
-                  style:
-                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 subtitle: Text(
                   printer.connected
@@ -449,8 +449,8 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
                   printer.connected
                       ? 'Bluetooth Thermal Printer (58mm Roll)'
                       : 'Bluetooth Thermal Printer - 58mm Roll',
-                  style:
-                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 subtitle: Text(
                   printer.connected
