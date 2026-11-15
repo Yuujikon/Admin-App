@@ -156,30 +156,30 @@ class MoreManagementScreen extends StatelessWidget {
                 const SizedBox(height: 28),
 
                 // 1. Operational Tools
-                _sectionHeader(
-                  context,
-                  title: 'Operational Tools',
-                  subtitle: 'Daily Store Activity',
-                ),
-                _menuItemCard(
-                  context,
-                  icon: Icons.access_time_rounded,
-                  iconBg: GdcColors.creamActiveBackground,
-                  iconColor: GdcColors.darkEmerald,
-                  title: 'Shift & Cash Register',
-                  subtitle: 'X/Z Readings, Cash Drops & Opening Float',
-                  onTap: () {
-                    if (onNavigateToTab != null) {
-                      onNavigateToTab!(AppTab.shift);
-                    } else {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const ShiftScreen()));
-                    }
-                  },
-                ),
-                if (isAdmin || isTrusted) ...[
+                if (isAdmin) ...[
+                  _sectionHeader(
+                    context,
+                    title: 'Operational Tools',
+                    subtitle: 'Daily Store Activity',
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.access_time_rounded,
+                    iconBg: GdcColors.creamActiveBackground,
+                    iconColor: GdcColors.darkEmerald,
+                    title: 'Shift & Cash Register',
+                    subtitle: 'X/Z Readings, Cash Drops & Opening Float',
+                    onTap: () {
+                      if (onNavigateToTab != null) {
+                        onNavigateToTab!(AppTab.shift);
+                      } else {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const ShiftScreen()));
+                      }
+                    },
+                  ),
                   _menuItemCard(
                     context,
                     icon: Icons.access_time_rounded,
@@ -198,8 +198,8 @@ class MoreManagementScreen extends StatelessWidget {
                       }
                     },
                   ),
+                  const SizedBox(height: 24),
                 ],
-                const SizedBox(height: 24),
 
                 // 2. Inventory & Supply Chain
                 if (isAdmin || isTrusted) ...[
@@ -208,25 +208,28 @@ class MoreManagementScreen extends StatelessWidget {
                     title: 'Inventory & Supply Chain',
                     subtitle: 'Products, Deliveries And Partners',
                   ),
-                  _menuItemCard(
-                    context,
-                    icon: Icons.article_outlined,
-                    iconBg: GdcColors.creamActiveBackground,
-                    iconColor: GdcColors.darkEmerald,
-                    title: 'Inventory Records & Logs',
-                    subtitle: 'Delivery Logs, Batch Expiry & Stock Adjustments',
-                    onTap: () {
-                      if (onNavigateToTab != null) {
-                        onNavigateToTab!(AppTab.inventoryRecords);
-                      } else {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    const InventoryRecordsScreen()));
-                      }
-                    },
-                  ),
+                  if (isAdmin) ...[
+                    _menuItemCard(
+                      context,
+                      icon: Icons.article_outlined,
+                      iconBg: GdcColors.creamActiveBackground,
+                      iconColor: GdcColors.darkEmerald,
+                      title: 'Inventory Records & Logs',
+                      subtitle:
+                          'Delivery Logs, Batch Expiry & Stock Adjustments',
+                      onTap: () {
+                        if (onNavigateToTab != null) {
+                          onNavigateToTab!(AppTab.inventoryRecords);
+                        } else {
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const InventoryRecordsScreen()));
+                        }
+                      },
+                    ),
+                  ],
                   _menuItemCard(
                     context,
                     icon: Icons.local_shipping_outlined,

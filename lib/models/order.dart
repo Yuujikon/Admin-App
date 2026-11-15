@@ -225,7 +225,14 @@ class PreOrder {
           (e) => e.name == (d['status'] ?? 'pending'),
           orElse: () => OrderStatus.pending,
         ),
-        notes: d['notes']?.toString() ?? '',
+        notes: (d['notes'] ??
+                d['note'] ??
+                d['customerNote'] ??
+                d['customerNotes'] ??
+                d['orderNote'] ??
+                d['remarks'])
+            ?.toString() ??
+            '',
         location: d['location']?.toString() ?? '',
         pickupTime: d['pickupTime']?.toString() ?? '',
         createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),

@@ -1502,6 +1502,39 @@ class _OrderCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (order.notes.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.edit_note_rounded,
+                        size: 18, color: Colors.amber.shade900),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Note: ${order.notes}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.amber.shade900,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Divider(height: 1, thickness: 1, color: outlineColor),
             const SizedBox(height: 12),
@@ -1693,6 +1726,37 @@ class _OrderListRow extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (order.notes.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.amber.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit_note_rounded,
+                                  size: 14, color: Colors.amber.shade900),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Note: ${order.notes}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.amber.shade900,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,
@@ -1796,6 +1860,27 @@ class _OrderListRow extends StatelessWidget {
                                   color: Colors.amber.shade900,
                                 ),
                               ),
+                              if (order.notes.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.edit_note_rounded,
+                                  size: 13,
+                                  color: Colors.amber.shade900,
+                                ),
+                                const SizedBox(width: 2),
+                                Expanded(
+                                  child: Text(
+                                    'Note: ${order.notes}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ],
@@ -2212,24 +2297,44 @@ class _OrderDetailsSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (order.notes != null && order.notes!.isNotEmpty) ...[
+                if (order.notes.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
+                      color: Colors.amber.shade50,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade300),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Customer Note:',
-                            style: TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 2),
-                        Text(order.notes!,
-                            style: const TextStyle(fontSize: 13)),
+                        Row(
+                          children: [
+                            Icon(Icons.edit_note_rounded,
+                                size: 18, color: Colors.amber.shade900),
+                            const SizedBox(width: 6),
+                            Text(
+                              'CUSTOMER NOTE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          order.notes,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.amber.shade900,
+                          ),
+                        ),
                       ],
                     ),
                   ),

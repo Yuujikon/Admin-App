@@ -337,6 +337,14 @@ class ReceiptPrinterService {
             width: widthChars),
         styles: const PosStyles(
             bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
+    if (order.notes.isNotEmpty) {
+      bytes.addAll(generator.text('-' * widthChars,
+          styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('CUSTOMER NOTE:',
+          styles: const PosStyles(bold: true)));
+      bytes.addAll(
+          generator.text(order.notes, styles: const PosStyles(bold: false)));
+    }
     bytes.addAll(generator.feed(1));
 
     bytes.addAll(generator.text('Packed By:  __________________________'));

@@ -9,6 +9,7 @@ import '../../widgets/add_product_sheet.dart';
 import '../../widgets/receive_delivery_sheet.dart';
 import '../../widgets/batch_audit_sheet.dart';
 import '../../widgets/barcode_print_dialog.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/inventory_provider.dart';
 import '../../utils/barcode_routing.dart';
 import '../../utils/responsive.dart';
@@ -99,6 +100,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
           final double availableWidth = constraints.maxWidth;
           final bool isCompact = availableWidth < Responsive.compactBreakpoint;
 
+          final bool isAdmin =
+              context.watch<AppAuthProvider>().role == UserRole.admin;
+
           return Container(
             color: Theme.of(context).colorScheme.surface,
             child: RefreshIndicator(
@@ -127,25 +131,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const InventoryRecordsScreen(),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.history_edu_rounded,
-                                    size: 18),
-                                label: const Text('Records'),
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size(100, 44),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
+                              if (isAdmin)
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const InventoryRecordsScreen(),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.history_edu_rounded,
+                                      size: 18),
+                                  label: const Text('Records'),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(100, 44),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                  ),
                                 ),
-                              ),
                               ElevatedButton.icon(
                                 onPressed: () => _showAddProductSheet(context),
                                 icon: const Icon(Icons.add_rounded, size: 18),

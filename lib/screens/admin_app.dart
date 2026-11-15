@@ -50,6 +50,14 @@ class _AdminAppState extends State<AdminApp> {
   String? _inventoryCategory;
 
   void _navigateToDestination(String destinationId, {String? category}) {
+    final auth = context.read<AppAuthProvider>();
+    if (auth.role != UserRole.admin &&
+        (destinationId == AdminDestination.shiftId ||
+            destinationId == AdminDestination.reportsId ||
+            destinationId == AdminDestination.salesHistoryId ||
+            destinationId == AdminDestination.inventoryRecordsId)) {
+      destinationId = AdminDestination.dashboardId;
+    }
     setState(() {
       _activeDestinationId = destinationId;
       if (category != null) {
@@ -111,6 +119,15 @@ class _AdminAppState extends State<AdminApp> {
         if (role == UserRole.none &&
             _activeDestinationId == AdminDestination.dashboardId) {
           _activeDestinationId = AdminDestination.posId;
+        }
+
+        // Security Guard: Prevent non-admin roles from accessing restricted destinations
+        if (role != UserRole.admin &&
+            (_activeDestinationId == AdminDestination.shiftId ||
+                _activeDestinationId == AdminDestination.reportsId ||
+                _activeDestinationId == AdminDestination.salesHistoryId ||
+                _activeDestinationId == AdminDestination.inventoryRecordsId)) {
+          _activeDestinationId = AdminDestination.dashboardId;
         }
 
         // Build navigation items with badge for pre-orders

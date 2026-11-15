@@ -442,6 +442,40 @@ class PackingSlipPrinter {
                             fontWeight: pw.FontWeight.bold, fontSize: 13)),
                   ],
                 ),
+                if (order.notes.isNotEmpty) ...[
+                  pw.SizedBox(height: 6),
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(6),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.amber50,
+                      border:
+                          pw.Border.all(color: PdfColors.amber400, width: 0.5),
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'CUSTOMER NOTE:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.amber900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          order.notes,
+                          style: const pw.TextStyle(
+                            fontSize: 9,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 pw.SizedBox(height: 10),
 
                 // Signature & Audit Box

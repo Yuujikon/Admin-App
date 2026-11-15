@@ -51,7 +51,7 @@ class AdminDestination {
     required UserRole role,
     required bool isCompact,
   }) {
-    if (role == UserRole.admin || role == UserRole.trustedPartner) {
+    if (role == UserRole.admin) {
       return const [
         AdminDestination(
           id: dashboardId,
@@ -132,6 +132,57 @@ class AdminDestination {
           selectedIcon: Icons.more_horiz_rounded,
           route: '/more',
           priority: 10,
+        ),
+      ];
+    } else if (role == UserRole.trustedPartner) {
+      return const [
+        AdminDestination(
+          id: dashboardId,
+          label: 'Dashboard',
+          icon: Icons.grid_view_outlined,
+          selectedIcon: Icons.grid_view_rounded,
+          route: '/dashboard',
+          priority: 1,
+        ),
+        AdminDestination(
+          id: posId,
+          label: 'Point of Sale',
+          icon: Icons.shopping_cart_outlined,
+          selectedIcon: Icons.shopping_cart_rounded,
+          route: '/pos',
+          priority: 2,
+        ),
+        AdminDestination(
+          id: inventoryId,
+          label: 'Inventory',
+          icon: Icons.inventory_2_outlined,
+          selectedIcon: Icons.inventory_2_rounded,
+          route: '/inventory',
+          priority: 3,
+        ),
+        AdminDestination(
+          id: preOrdersId,
+          label: 'Pre-orders',
+          icon: Icons.assignment_outlined,
+          selectedIcon: Icons.assignment_rounded,
+          route: '/pre_orders',
+          priority: 4,
+        ),
+        AdminDestination(
+          id: suppliersId,
+          label: 'Suppliers',
+          icon: Icons.local_shipping_outlined,
+          selectedIcon: Icons.local_shipping_rounded,
+          route: '/suppliers',
+          priority: 5,
+        ),
+        AdminDestination(
+          id: moreId,
+          label: 'More',
+          icon: Icons.more_horiz_rounded,
+          selectedIcon: Icons.more_horiz_rounded,
+          route: '/more',
+          priority: 6,
         ),
       ];
     } else {
