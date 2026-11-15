@@ -48,6 +48,33 @@ class AdminApp extends StatefulWidget {
 class _AdminAppState extends State<AdminApp> {
   String _activeDestinationId = AdminDestination.dashboardId;
   String? _inventoryCategory;
+  DateTime? _lastBackPressTime;
+
+  void _handleBackPop(bool didPop) {
+    if (didPop) return;
+
+    if (_activeDestinationId != AdminDestination.dashboardId) {
+      setState(() {
+        _activeDestinationId = AdminDestination.dashboardId;
+      });
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastBackPressTime == null ||
+        now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+      _lastBackPressTime = now;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Press back again to exit application'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      SystemNavigator.pop();
+    }
+  }
 
   void _navigateToDestination(String destinationId, {String? category}) {
     final auth = context.read<AppAuthProvider>();
@@ -184,143 +211,149 @@ class _AdminAppState extends State<AdminApp> {
             ),
         };
 
-        return Scaffold(
-          backgroundColor: Theme.of(context).brightness == Brightness.dark
-              ? Theme.of(context).scaffoldBackgroundColor
-              : const Color(0xFFF1F5F9),
-          body: SafeArea(
-            child: Column(
-              children: [
-                // Global Top Utility Header
-                _AdminTopBar(
-                  auth: auth,
-                  isCompact: isCompact,
-                ),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Persistent Side Navigation Bar for Tablet/Medium & Desktop/Expanded
-                      if (!isCompact)
-                        Container(
-                          width: isExpanded ? 200 : 88,
-                          margin: const EdgeInsets.only(
-                              left: 12, top: 10, bottom: 12, right: 8),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outlineVariant
-                                  .withValues(alpha: 0.35),
-                            ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: destinations.map((d) {
-                                      final isSelected =
-                                          d.id == _activeDestinationId;
-                                      final badgeCount =
-                                          d.id == AdminDestination.preOrdersId
-                                              ? toProcessCount
-                                              : 0;
-
-                                      return _SideNavItem(
-                                        destination: d,
-                                        isSelected: isSelected,
-                                        isExpanded: isExpanded,
-                                        badgeCount: badgeCount,
-                                        onTap: () {
-                                          setState(() {
-                                            _activeDestinationId = d.id;
-                                          });
-                                        },
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ),
-                              Divider(
-                                height: 1,
-                                thickness: 1,
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            _handleBackPop(didPop);
+          },
+          child: Scaffold(
+            backgroundColor: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).scaffoldBackgroundColor
+                : const Color(0xFFF1F5F9),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  // Global Top Utility Header
+                  _AdminTopBar(
+                    auth: auth,
+                    isCompact: isCompact,
+                  ),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Persistent Side Navigation Bar for Tablet/Medium & Desktop/Expanded
+                        if (!isCompact)
+                          Container(
+                            width: isExpanded ? 200 : 88,
+                            margin: const EdgeInsets.only(
+                                left: 12, top: 10, bottom: 12, right: 8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
                                 color: Theme.of(context)
                                     .colorScheme
                                     .outlineVariant
-                                    .withValues(alpha: 0.3),
+                                    .withValues(alpha: 0.35),
                               ),
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: _SideLogoutButton(
-                                  isExpanded: isExpanded,
-                                  onTap: () => _confirmLogout(context, auth),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    padding:
+                                        const EdgeInsets.symmetric(vertical: 12),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: destinations.map((d) {
+                                        final isSelected =
+                                            d.id == _activeDestinationId;
+                                        final badgeCount =
+                                            d.id == AdminDestination.preOrdersId
+                                                ? toProcessCount
+                                                : 0;
 
-                      // Main Content Area Panel
-                      Expanded(
-                        child: Container(
-                          margin: isCompact
-                              ? EdgeInsets.zero
-                              : const EdgeInsets.only(
-                                  top: 10, bottom: 12, right: 12, left: 4),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: isCompact
-                                ? BorderRadius.zero
-                                : BorderRadius.circular(24),
-                            border: isCompact
-                                ? null
-                                : Border.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .outlineVariant
-                                        .withValues(alpha: 0.3),
+                                        return _SideNavItem(
+                                          destination: d,
+                                          isSelected: isSelected,
+                                          isExpanded: isExpanded,
+                                          badgeCount: badgeCount,
+                                          onTap: () {
+                                            setState(() {
+                                              _activeDestinationId = d.id;
+                                            });
+                                          },
+                                        );
+                                      }).toList(),
+                                    ),
                                   ),
+                                ),
+                                Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant
+                                      .withValues(alpha: 0.3),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: _SideLogoutButton(
+                                    isExpanded: isExpanded,
+                                    onTap: () => _confirmLogout(context, auth),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1280),
-                              child: activePage,
+
+                        // Main Content Area Panel
+                        Expanded(
+                          child: Container(
+                            margin: isCompact
+                                ? EdgeInsets.zero
+                                : const EdgeInsets.only(
+                                    top: 10, bottom: 12, right: 12, left: 4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: isCompact
+                                  ? BorderRadius.zero
+                                  : BorderRadius.circular(24),
+                              border: isCompact
+                                  ? null
+                                  : Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant
+                                          .withValues(alpha: 0.3),
+                                    ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 1280),
+                                child: activePage,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          // Bottom Navigation Bar for Compact Screens (<600dp)
-          bottomNavigationBar: isCompact
-              ? SafeArea(
-                  child: NavigationBar(
-                    selectedIndex: selectedRailIndex,
-                    onDestinationSelected: (idx) {
-                      if (idx >= 0 && idx < destinations.length) {
-                        setState(() {
-                          _activeDestinationId = destinations[idx].id;
-                        });
-                      }
-                    },
-                    destinations: navDestinations,
-                  ),
-                )
-              : null,
+            // Bottom Navigation Bar for Compact Screens (<600dp)
+            bottomNavigationBar: isCompact
+                ? SafeArea(
+                    child: NavigationBar(
+                      selectedIndex: selectedRailIndex,
+                      onDestinationSelected: (idx) {
+                        if (idx >= 0 && idx < destinations.length) {
+                          setState(() {
+                            _activeDestinationId = destinations[idx].id;
+                          });
+                        }
+                      },
+                      destinations: navDestinations,
+                    ),
+                  )
+                : null,
+          ),
         );
       },
     );
