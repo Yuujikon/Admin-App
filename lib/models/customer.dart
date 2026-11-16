@@ -157,6 +157,7 @@ class Customer {
 
   /// Returns a copy of [Customer] with modified properties.
   Customer copyWith({
+    String? id,
     String? name,
     String? email,
     String? phone,
@@ -172,7 +173,7 @@ class Customer {
     DateTime? appealSubmittedAt,
   }) {
     return Customer(
-      id: id,
+      id: id ?? this.id,
       name: name ?? this.name,
       email: email ?? this.email,
       phone: phone ?? this.phone,

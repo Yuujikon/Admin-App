@@ -14,6 +14,8 @@ import 'package:uuid/uuid.dart';
 import '../models/catalog_product.dart';
 import '../models/restock_inquiry.dart';
 import '../models/delivery_log.dart';
+import '../shared/services/time_service.dart';
+import '../shared/services/admin_messaging_service.dart';
 
 /// Payload model representing a single line item delivery payload received during stock reconciliation.
 class DeliveryItemPayload {
@@ -84,6 +86,7 @@ class FirestoreService {
   CollectionReference get _suppliers => _db.collection('suppliers');
   CollectionReference get _lossRecords => _db.collection('loss_records');
   CollectionReference get _customers => _db.collection('customers');
+  CollectionReference get _users => _db.collection('users');
   CollectionReference get _bundles => _db.collection('bundles');
   CollectionReference get _restockInquiries =>
       _db.collection('restock_inquiries');

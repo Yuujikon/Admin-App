@@ -464,11 +464,11 @@ class _CustomerRestrictionsScreenState
               ...c.offenseHistory.take(3).map((h) {
                 final String reason = h['reason']?.toString() ?? 'Ghosted order';
                 final String orderId = h['orderId']?.toString() ?? '';
-                final int num = (h['offenseNumber'] as num? ?? 1).toInt();
+                final int offenseNum = (h['offenseNumber'] as num? ?? 1).toInt();
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
-                    '• Offense #$num ($orderId): $reason',
+                    '• Offense #$offenseNum ($orderId): $reason',
                     style: TextStyle(
                       fontSize: 11,
                       color: theme.colorScheme.onSurfaceVariant,
