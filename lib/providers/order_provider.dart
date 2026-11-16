@@ -321,7 +321,7 @@ class OrderProvider extends BaseProvider {
     );
     await _fs.addTransaction(tx);
 
-    // 4. Notify customer
+    // 4. Notify customer and automatically send digital purchase receipt email
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -330,6 +330,22 @@ class OrderProvider extends BaseProvider {
       orderId: order.orderId,
       newStatus: OrderStatus.collected.name,
     );
+    if (order.customerEmail.isNotEmpty) {
+      AdminMessagingService().sendDigitalReceiptEmail(
+        customerEmail: order.customerEmail,
+        customerName: order.customerName,
+        orderId: order.orderId,
+        items: tx.items,
+        total: tx.total,
+        paymentMethod: tx.paymentMethod.name.toUpperCase(),
+        cashTendered: tx.cashTendered,
+        changeGiven: tx.changeGiven,
+        completedAt: tx.createdAt,
+      ).catchError((e) {
+        debugPrint('Error sending digital receipt email: $e');
+        return false;
+      });
+    }
   }
 
   /// Fast-checkout protocol for Click & Collect with strict cash tracking
@@ -374,7 +390,7 @@ class OrderProvider extends BaseProvider {
     );
     await _fs.addTransaction(tx);
 
-    // 5. Notify customer
+    // 5. Notify customer and automatically send digital purchase receipt email
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -383,6 +399,22 @@ class OrderProvider extends BaseProvider {
       orderId: order.orderId,
       newStatus: OrderStatus.collected.name,
     );
+    if (order.customerEmail.isNotEmpty) {
+      AdminMessagingService().sendDigitalReceiptEmail(
+        customerEmail: order.customerEmail,
+        customerName: order.customerName,
+        orderId: order.orderId,
+        items: tx.items,
+        total: tx.total,
+        paymentMethod: tx.paymentMethod.name.toUpperCase(),
+        cashTendered: tx.cashTendered,
+        changeGiven: tx.changeGiven,
+        completedAt: tx.createdAt,
+      ).catchError((e) {
+        debugPrint('Error sending digital receipt email: $e');
+        return false;
+      });
+    }
     return tx;
   }
 
@@ -440,7 +472,7 @@ class OrderProvider extends BaseProvider {
     );
     await _fs.addTransaction(tx);
 
-    // 5. Notify customer
+    // 5. Notify customer and automatically send digital purchase receipt email
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -449,6 +481,22 @@ class OrderProvider extends BaseProvider {
       orderId: order.orderId,
       newStatus: OrderStatus.collected.name,
     );
+    if (order.customerEmail.isNotEmpty) {
+      AdminMessagingService().sendDigitalReceiptEmail(
+        customerEmail: order.customerEmail,
+        customerName: order.customerName,
+        orderId: order.orderId,
+        items: tx.items,
+        total: tx.total,
+        paymentMethod: tx.paymentMethod.name.toUpperCase(),
+        cashTendered: tx.cashTendered,
+        changeGiven: tx.changeGiven,
+        completedAt: tx.createdAt,
+      ).catchError((e) {
+        debugPrint('Error sending digital receipt email: $e');
+        return false;
+      });
+    }
     return tx;
   }
 

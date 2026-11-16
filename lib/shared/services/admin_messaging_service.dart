@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import '../../models/order.dart';
 
 /// Messaging service handling Brevo transactional email, Traccar/ngrok SMS OTP,
 /// and automated customer order status notifications.
@@ -473,6 +475,134 @@ class AdminMessagingService {
       toEmail: recipientEmail.trim(),
       subject: title,
       htmlContent: htmlContent,
+    );
+  }
+
+  /// Sends an itemized digital purchase receipt email to a customer via Brevo upon successful pre-order pickup completion.
+  Future<bool> sendDigitalReceiptEmail({
+    required String customerEmail,
+    required String customerName,
+    required String orderId,
+    required List<CartItem> items,
+    required double total,
+    required String paymentMethod,
+    double cashTendered = 0,
+    double changeGiven = 0,
+    DateTime? completedAt,
+  }) async {
+    final sanitizedEmail = customerEmail.trim();
+    if (sanitizedEmail.isEmpty) return false;
+
+    final dateStr = DateFormat('MMM d, yyyy • h:mm a')
+        .format(completedAt ?? DateTime.now());
+
+    final String formatPeso(double amount) => '₱${amount.toStringAsFixed(2)}';
+
+    final StringBuffer itemsRowsHtml = StringBuffer();
+    for (final item in items) {
+      final String variantText =
+          (item.variantName != null && item.variantName!.isNotEmpty)
+              ? ' (${item.variantName})'
+              : '';
+      final double lineTotal = item.price * item.qty;
+
+      itemsRowsHtml.write('''
+<tr style="border-bottom: 1px solid #f1f5f9;">
+  <td style="padding: 10px 0; color: #1e293b; font-size: 14px;">
+    <strong>${item.qty}x</strong> ${item.name}$variantText
+  </td>
+  <td style="padding: 10px 0; color: #64748b; font-size: 13px; text-align: center;">
+    ${formatPeso(item.price)}
+  </td>
+  <td style="padding: 10px 0; color: #0f172a; font-size: 14px; font-weight: bold; text-align: right;">
+    ${formatPeso(lineTotal)}
+  </td>
+</tr>
+''');
+    }
+
+    final bool isCash = paymentMethod.toUpperCase() == 'CASH';
+
+    final htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    
+    <!-- Store Header -->
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #047857; margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">GDC SARI-SARI STORE</h2>
+      <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Official Digital Purchase Receipt</p>
+    </div>
+    
+    <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;">
+      <p style="margin: 0; color: #047857; font-size: 14px; font-weight: bold; text-align: center;">
+        ✓ PRE-ORDER FULFILLMENT COMPLETED & VERIFIED
+      </p>
+    </div>
+
+    <!-- Receipt Meta Details -->
+    <table style="width: 100%; margin-bottom: 20px; font-size: 13px; color: #475569;">
+      <tr>
+        <td style="padding: 4px 0;"><strong>Order ID:</strong> #$orderId</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Date:</strong> $dateStr</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Customer:</strong> ${customerName.isNotEmpty ? customerName : 'Valued Customer'}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Payment:</strong> <span style="background-color: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px; font-weight: bold;">$paymentMethod</span></td>
+      </tr>
+    </table>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+
+    <!-- Purchased Items Table -->
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b; font-size: 12px; text-transform: uppercase;">
+          <th style="padding: 8px 0; width: 60%;">Item</th>
+          <th style="padding: 8px 0; width: 20%; text-align: center;">Price</th>
+          <th style="padding: 8px 0; width: 20%; text-align: right;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        $itemsRowsHtml
+      </tbody>
+    </table>
+
+    <!-- Totals Summary Box -->
+    <div style="background-color: #f8fafc; border-radius: 10px; padding: 16px; margin-top: 16px;">
+      <table style="width: 100%; font-size: 14px;">
+        <tr>
+          <td style="color: #64748b; padding: 4px 0;">Total Amount Paid:</td>
+          <td style="color: #047857; font-weight: 900; font-size: 20px; text-align: right;">${formatPeso(total)}</td>
+        </tr>
+        ${isCash && cashTendered > 0 ? '''
+        <tr>
+          <td style="color: #64748b; padding: 4px 0; font-size: 13px;">Cash Tendered:</td>
+          <td style="color: #334155; font-size: 13px; text-align: right;">${formatPeso(cashTendered)}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 4px 0; font-size: 13px;">Change Returned:</td>
+          <td style="color: #16a34a; font-size: 13px; font-weight: bold; text-align: right;">${formatPeso(changeGiven)}</td>
+        </tr>
+        ''' : ''}
+      </table>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;" />
+
+    <!-- Footer -->
+    <div style="text-align: center; color: #94a3b8; font-size: 12px;">
+      <p style="margin: 0 0 4px 0;">Thank you for shopping at GDC Sari-Sari Store!</p>
+      <p style="margin: 0;">Please keep this digital receipt for your records.</p>
+    </div>
+  </div>
+</div>
+''';
+
+    return await sendBrevoEmail(
+      toEmail: sanitizedEmail,
+      subject: 'GDC Store - Official Purchase Receipt for Order #$orderId',
+      htmlContent: htmlContent,
+      recipientName: customerName,
     );
   }
 }
