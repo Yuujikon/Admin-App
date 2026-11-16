@@ -50,16 +50,22 @@ class _AdminAppState extends State<AdminApp> {
   String? _inventoryCategory;
   DateTime? _lastBackPressTime;
 
+  /// Navigation history stack tracking visited tab destinations.
+  final List<String> _navigationHistory = [AdminDestination.dashboardId];
+
   void _handleBackPop(bool didPop) {
     if (didPop) return;
 
-    if (_activeDestinationId != AdminDestination.dashboardId) {
+    // Pop back to the previously visited tab/page in history
+    if (_navigationHistory.length > 1) {
       setState(() {
-        _activeDestinationId = AdminDestination.dashboardId;
+        _navigationHistory.removeLast();
+        _activeDestinationId = _navigationHistory.last;
       });
       return;
     }
 
+    // Prompt exit when at root of navigation history
     final now = DateTime.now();
     if (_lastBackPressTime == null ||
         now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
@@ -85,6 +91,14 @@ class _AdminAppState extends State<AdminApp> {
             destinationId == AdminDestination.inventoryRecordsId)) {
       destinationId = AdminDestination.dashboardId;
     }
+
+    if (_activeDestinationId != destinationId) {
+      if (_navigationHistory.isEmpty ||
+          _navigationHistory.last != destinationId) {
+        _navigationHistory.add(destinationId);
+      }
+    }
+
     setState(() {
       _activeDestinationId = destinationId;
       if (category != null) {
@@ -270,11 +284,8 @@ class _AdminAppState extends State<AdminApp> {
                                           isSelected: isSelected,
                                           isExpanded: isExpanded,
                                           badgeCount: badgeCount,
-                                          onTap: () {
-                                            setState(() {
-                                              _activeDestinationId = d.id;
-                                            });
-                                          },
+                                          onTap: () =>
+                                              _navigateToDestination(d.id),
                                         );
                                       }).toList(),
                                     ),
@@ -344,9 +355,7 @@ class _AdminAppState extends State<AdminApp> {
                       selectedIndex: selectedRailIndex,
                       onDestinationSelected: (idx) {
                         if (idx >= 0 && idx < destinations.length) {
-                          setState(() {
-                            _activeDestinationId = destinations[idx].id;
-                          });
+                          _navigateToDestination(destinations[idx].id);
                         }
                       },
                       destinations: navDestinations,
