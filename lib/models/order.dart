@@ -349,16 +349,4 @@ class PreOrder {
       isPaid: isPaid ?? this.isPaid,
     );
   }
-      status: status ?? this.status,
-      notes: notes,
-      location: location,
-      pickupTime: pickupTime,
-      createdAt: createdAt,
-      expiresAt: expiresAt,
-      rejectionReason: rejectionReason ?? this.rejectionReason,
-      customerPhone: customerPhone,
-      statusTimeline: newTimeline,
-      processedBy: processedBy ?? this.processedBy,
-    );
-  }
 }
