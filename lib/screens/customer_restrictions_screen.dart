@@ -235,8 +235,9 @@ class _CustomerRestrictionsScreenState
   Widget _buildAppealCard(BuildContext context, Customer c) {
     final theme = Theme.of(context);
     final submittedDate = c.appealSubmittedAt != null
-        ? DateFormat('MMM d, yyyy h:mm a').format(c.appealSubmittedAt!)
+        ? DateFormat('MMM d, yyyy • h:mm a').format(c.appealSubmittedAt!)
         : 'Recently';
+    final regDate = DateFormat('MMM d, yyyy').format(c.createdAt);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -249,9 +250,11 @@ class _CustomerRestrictionsScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header Row: Customer Avatar, Name, Email, Phone & Lock Badge
             Row(
               children: [
                 CircleAvatar(
+                  radius: 22,
                   backgroundColor: Colors.red.shade100,
                   child: const Icon(Icons.no_accounts_rounded, color: Colors.red),
                 ),
@@ -263,14 +266,22 @@ class _CustomerRestrictionsScreenState
                       Text(
                         c.name,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15),
+                            fontWeight: FontWeight.bold, fontSize: 16),
                       ),
-                      if (c.email != null)
+                      if (c.email != null && c.email!.isNotEmpty)
                         Text(
                           c.email!,
                           style: TextStyle(
                               fontSize: 12,
                               color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      if (c.phone.isNotEmpty)
+                        Text(
+                          'Phone: ${c.phone}',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary),
                         ),
                     ],
                   ),
@@ -294,37 +305,87 @@ class _CustomerRestrictionsScreenState
               ],
             ),
             const SizedBox(height: 12),
+
+            // Customer Summary Row
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Registered: $regDate',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  Text(
+                    'Lifetime Spend: ${formatPeso(c.totalSpent)}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Appeal Reason Statement Box
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
+                color: Colors.red.shade50,
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade200),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Customer Statement ($submittedDate):',
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.bold),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'APPEAL REASON STATEMENT:',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.red.shade900),
+                      ),
+                      Text(
+                        submittedDate,
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.red.shade800,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
-                    c.appealMessage ?? 'No statement provided.',
-                    style: const TextStyle(fontSize: 13),
+                    c.appealMessage ?? 'No statement provided by customer.',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.red.shade950),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 14),
+
+            // Action Buttons: Reject vs Accept Appeal
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _confirmRejectAppeal(context, c),
                     icon: const Icon(Icons.close_rounded, size: 16),
-                    label: const Text('Reject Appeal'),
+                    label: const Text('REJECT APPEAL'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
                       side: const BorderSide(color: Colors.red),
@@ -336,7 +397,7 @@ class _CustomerRestrictionsScreenState
                   child: ElevatedButton.icon(
                     onPressed: () => _confirmApproveAppeal(context, c),
                     icon: const Icon(Icons.check_circle_rounded, size: 16),
-                    label: const Text('Approve & Unlock'),
+                    label: const Text('ACCEPT APPEAL'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: GdcColors.emeraldPrimary,
                       foregroundColor: Colors.white,

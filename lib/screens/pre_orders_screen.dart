@@ -822,69 +822,32 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
   void _handleCancel(BuildContext context, String orderId) async {
     final ctrl = TextEditingController();
-    bool isGhosting = true;
-
     final res = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Cancel Pre-Order'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: ctrl,
-                decoration: const InputDecoration(
-                  labelText: 'Reason for cancellation',
-                  hintText: 'e.g. Customer did not pick up order',
-                ),
-              ),
-              const SizedBox(height: 12),
-              CheckboxListTile(
-                value: isGhosting,
-                onChanged: (val) {
-                  setDialogState(() {
-                    isGhosting = val ?? false;
-                  });
-                },
-                title: const Text(
-                  'Flag as Ghosting / Uncollected',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                subtitle: const Text(
-                  'Applies escalating ordering restriction penalty to customer account.',
-                  style: TextStyle(fontSize: 11),
-                ),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                activeColor: Colors.red,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('BACK')),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('CANCEL ORDER',
-                  style:
-                      TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-            ),
-          ],
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel Order'),
+        content: TextField(
+          controller: ctrl,
+          decoration:
+              const InputDecoration(labelText: 'Reason for cancellation'),
         ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('BACK')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('CANCEL ORDER',
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
     if (res == true && context.mounted) {
-      final String reason = ctrl.text.trim();
-      final String fullReason = isGhosting
-          ? '${reason.isNotEmpty ? reason : "Uncollected pre-order"} (Ghosting)'
-          : reason;
-
       await context
           .read<OrderProvider>()
-          .cancelOrder(orderId, reason: fullReason);
+          .cancelOrder(orderId, reason: ctrl.text.trim());
       if (context.mounted) Navigator.pop(context);
     }
   }

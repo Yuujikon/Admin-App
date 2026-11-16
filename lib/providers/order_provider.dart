@@ -481,21 +481,9 @@ class OrderProvider extends BaseProvider {
       newStatus: OrderStatus.cancelled.name,
     );
 
-    if (isAuto ||
-        (reason != null &&
-            (reason.toLowerCase().contains('ghost') ||
-                reason.toLowerCase().contains('uncollected')))) {
+    if (isAuto) {
       await NotificationService.sendOrderAutoCancelled(
           order.orderId, order.customerEmail);
-
-      // Record Ghosting Offense & Apply Escalating Order Restriction Penalty
-      await _fs.recordCustomerOffense(
-        email: order.customerEmail,
-        customerName: order.customerName,
-        orderId: order.orderId,
-        reason: reason ?? 'Uncollected pre-order expired (Ghosting)',
-        isManualAdminFlag: !isAuto,
-      );
     }
   }
 

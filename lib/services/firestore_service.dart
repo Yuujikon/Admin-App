@@ -748,7 +748,7 @@ class FirestoreService {
     }
   }
 
-  /// Approves a customer's account unlock appeal, unlocking account and setting offense tier to 3.
+  /// Approves a customer's account unlock appeal, unlocking account and emailing confirmation.
   Future<void> approveCustomerAppeal(String customerId,
       {String? adminNotes}) async {
     final docRef = _customers.doc(customerId);
@@ -757,11 +757,11 @@ class FirestoreService {
 
     final data = snap.data() as Map<String, dynamic>? ?? {};
     final email = data['email'] as String?;
+    final name = data['name'] as String? ?? 'Customer';
 
     await docRef.update({
       'isPermanentlyLocked': false,
       'restrictedUntil': null,
-      'offenseCount': 3,
       'appealStatus': 'approved',
       'appealReviewedAt': Timestamp.now(),
     });
@@ -772,7 +772,6 @@ class FirestoreService {
         await uDoc.reference.update({
           'isPermanentlyLocked': false,
           'restrictedUntil': null,
-          'offenseCount': 3,
           'appealStatus': 'approved',
           'appealReviewedAt': Timestamp.now(),
         });
@@ -780,14 +779,14 @@ class FirestoreService {
 
       await AdminMessagingService().sendNotification(
         recipientEmail: email,
-        title: 'Account Unlock Appeal Approved',
+        title: 'GDC Store - Account Unlock Appeal ACCEPTED',
         body:
-            'Your appeal has been reviewed and approved by GDC Sari-Sari Store Management. Your account is now unlocked.',
+            'Hello $name,\n\nYour account unlock appeal has been reviewed and ACCEPTED by GDC Sari-Sari Store Management. Your account is now fully unlocked and you may resume placing pre-orders.\n\nThank you for your cooperation.',
       );
     }
   }
 
-  /// Rejects a customer's account unlock appeal.
+  /// Rejects a customer's account unlock appeal and emails decision.
   Future<void> rejectCustomerAppeal(String customerId,
       {String? adminNotes}) async {
     final docRef = _customers.doc(customerId);
@@ -796,6 +795,7 @@ class FirestoreService {
 
     final data = snap.data() as Map<String, dynamic>? ?? {};
     final email = data['email'] as String?;
+    final name = data['name'] as String? ?? 'Customer';
 
     await docRef.update({
       'appealStatus': 'rejected',
@@ -813,9 +813,9 @@ class FirestoreService {
 
       await AdminMessagingService().sendNotification(
         recipientEmail: email,
-        title: 'Account Unlock Appeal Result',
+        title: 'GDC Store - Account Unlock Appeal REJECTED',
         body:
-            'Your account unlock appeal was reviewed and rejected by GDC Sari-Sari Store Management.',
+            'Hello $name,\n\nYour account unlock appeal was reviewed and REJECTED by GDC Sari-Sari Store Management. Your account remains restricted due to uncollected order policy violations.',
       );
     }
   }
