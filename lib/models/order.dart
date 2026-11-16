@@ -177,6 +177,9 @@ class PreOrder {
   final String? customerPhone;
   final Map<String, DateTime> statusTimeline;
   final String? processedBy;
+  final String paymentMethod;
+  final String paymentStatus;
+  final bool isPaid;
 
   const PreOrder({
     required this.id,
@@ -197,7 +200,26 @@ class PreOrder {
     this.customerPhone,
     this.statusTimeline = const {},
     this.processedBy,
+    this.paymentMethod = 'cash',
+    this.paymentStatus = 'unpaid',
+    this.isPaid = false,
   });
+
+  /// True if the order was already paid online/cashless prior to store pickup.
+  bool get isPrePaid {
+    if (isPaid) return true;
+    final status = paymentStatus.toLowerCase();
+    if (status == 'paid' || status == 'completed') return true;
+    final method = paymentMethod.toLowerCase();
+    if (method.isNotEmpty &&
+        method != 'cash' &&
+        method != 'pay_at_store' &&
+        method != 'cash_on_pickup' &&
+        method != 'cod') {
+      return true;
+    }
+    return false;
+  }
 
   factory PreOrder.fromFirestore(DocumentSnapshot doc) {
     try {
@@ -241,6 +263,16 @@ class PreOrder {
         customerPhone: d['customerPhone']?.toString(),
         statusTimeline: timeline,
         processedBy: d['processedBy']?.toString(),
+        paymentMethod: d['paymentMethod']?.toString() ??
+            d['payment_method']?.toString() ??
+            'cash',
+        paymentStatus: d['paymentStatus']?.toString() ??
+            d['payment_status']?.toString() ??
+            'unpaid',
+        isPaid: d['isPaid'] == true ||
+            d['is_paid'] == true ||
+            (d['paymentStatus']?.toString().toLowerCase() == 'paid') ||
+            (d['payment_status']?.toString().toLowerCase() == 'paid'),
       );
     } catch (e) {
       debugPrint('Error parsing PreOrder ${doc.id}: $e');
@@ -274,6 +306,9 @@ class PreOrder {
         'statusTimeline':
             statusTimeline.map((k, v) => MapEntry(k, Timestamp.fromDate(v))),
         'processedBy': processedBy,
+        'paymentMethod': paymentMethod,
+        'paymentStatus': paymentStatus,
+        'isPaid': isPaid,
         if (rejectionReason != null) 'rejectionReason': rejectionReason,
       };
 
@@ -281,7 +316,10 @@ class PreOrder {
       {OrderStatus? status,
       Map<String, DateTime>? timeline,
       String? processedBy,
-      String? rejectionReason}) {
+      String? rejectionReason,
+      String? paymentMethod,
+      String? paymentStatus,
+      bool? isPaid}) {
     final newTimeline = timeline ?? Map.from(statusTimeline);
     if (status != null && status != this.status) {
       newTimeline[status.name] = DateTime.now();
@@ -296,6 +334,21 @@ class PreOrder {
       subtotal: subtotal,
       tax: tax,
       total: total,
+      status: status ?? this.status,
+      notes: notes,
+      location: location,
+      pickupTime: pickupTime,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      customerPhone: customerPhone,
+      statusTimeline: newTimeline,
+      processedBy: processedBy ?? this.processedBy,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      isPaid: isPaid ?? this.isPaid,
+    );
+  }
       status: status ?? this.status,
       notes: notes,
       location: location,

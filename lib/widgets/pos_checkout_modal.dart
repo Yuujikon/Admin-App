@@ -76,7 +76,13 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
   double get _changeDue =>
       (_cashTendered - _grandTotal) > 0 ? (_cashTendered - _grandTotal) : 0.0;
 
-  bool get _isCashValid => _cashTendered >= _grandTotal && _grandTotal > 0;
+  bool get _isCashValid {
+    if (widget.order.isPrePaid) {
+      if (_walkInItems.isEmpty) return true;
+      return _cashTendered >= _walkInTotal;
+    }
+    return _cashTendered >= _grandTotal && _grandTotal > 0;
+  }
 
   void _addQuickDenomination(double amount) {
     setState(() {
@@ -144,12 +150,20 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
       final orderProvider = context.read<OrderProvider>();
       final printerProvider = context.read<PrinterProvider>();
 
-      final tx = await orderProvider.completePickupWithCash(
-        orderId: widget.order.id,
-        cashTendered: _cashTendered,
-        changeGiven: _changeDue,
-        walkInItems: _walkInItems,
-      );
+      final StoreTransaction tx;
+      if (widget.order.isPrePaid) {
+        tx = await orderProvider.completePrePaidPickup(
+          orderId: widget.order.id,
+          walkInItems: _walkInItems,
+        );
+      } else {
+        tx = await orderProvider.completePickupWithCash(
+          orderId: widget.order.id,
+          cashTendered: _cashTendered,
+          changeGiven: _changeDue,
+          walkInItems: _walkInItems,
+        );
+      }
 
       // Attempt printing receipt if configured
       try {
@@ -160,7 +174,9 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
           change: tx.changeGiven,
           orderId: widget.order.orderId,
           customerName: widget.order.customerName,
-          orderType: "Click & Collect",
+          orderType: widget.order.isPrePaid
+              ? "Click & Collect (Cashless)"
+              : "Click & Collect",
         );
       } catch (e) {
         debugPrint('Printer error during checkout: $e');
@@ -371,7 +387,9 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
                         child: Text(
                           _isProcessing
                               ? 'Processing...'
-                              : 'Complete Sale (${formatPeso(_grandTotal)})',
+                              : widget.order.isPrePaid
+                                  ? 'Complete Pickup (Pre-Paid 💳)'
+                                  : 'Complete Sale (${formatPeso(_grandTotal)})',
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.bold),
                         ),
@@ -421,6 +439,48 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
               ),
             ],
           ),
+          if (widget.order.isPrePaid) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade300),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.credit_card_rounded,
+                      size: 20, color: Colors.green.shade800),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PRE-PAID CASHLESS (${widget.order.paymentMethod.toUpperCase()})',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.green.shade900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Order is already paid online. No cash input required.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
 
           // Digital pre-order items list

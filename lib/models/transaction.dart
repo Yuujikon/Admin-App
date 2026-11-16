@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'order.dart';
 
 /// Payment tender methods.
-enum PaymentMethod { cash }
+enum PaymentMethod { cash, gcash, maya, cashless, card, online }
 
 /// Transaction origin type.
 enum TransactionType { inStore, pickup }

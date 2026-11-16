@@ -386,6 +386,72 @@ class OrderProvider extends BaseProvider {
     return tx;
   }
 
+  /// Completes a pre-paid/cashless pickup order directly without requiring manual cash input
+  Future<StoreTransaction> completePrePaidPickup({
+    required String orderId,
+    List<CartItem> walkInItems = const [],
+  }) async {
+    final order = _orders.firstWhere((o) => o.id == orderId);
+
+    // 1. Deduct main stock and clear reservation for pre-order items
+    await _fs.fulfillOrderStockBatch(order.items);
+
+    // 2. Deduct main stock for walk-in items if any
+    if (walkInItems.isNotEmpty) {
+      await _fs.decrementStockBatch(walkInItems);
+    }
+
+    final allItems = [...order.items, ...walkInItems];
+    final grandTotal =
+        allItems.fold<double>(0.0, (s, i) => s + (i.price * i.qty));
+
+    final String pm = order.paymentMethod.toLowerCase();
+    PaymentMethod pMethod = PaymentMethod.cashless;
+    if (pm.contains('gcash')) {
+      pMethod = PaymentMethod.gcash;
+    } else if (pm.contains('maya')) {
+      pMethod = PaymentMethod.maya;
+    } else if (pm.contains('card')) {
+      pMethod = PaymentMethod.card;
+    } else if (pm.contains('online')) {
+      pMethod = PaymentMethod.online;
+    }
+
+    // 3. Update Order status to collected & paid
+    final updatedOrder = order.copyWith(
+      status: OrderStatus.collected,
+      paymentStatus: 'paid',
+      isPaid: true,
+      processedBy: _adminName,
+    );
+    await _fs.updateOrder(updatedOrder);
+
+    // 4. Record StoreTransaction for prepaid cashless pickup
+    final tx = StoreTransaction(
+      id: const Uuid().v4(),
+      items: allItems,
+      total: grandTotal,
+      cashTendered: grandTotal,
+      changeGiven: 0.0,
+      createdAt: DateTime.now(),
+      customerEmail: order.customerEmail,
+      paymentMethod: pMethod,
+      type: TransactionType.pickup,
+    );
+    await _fs.addTransaction(tx);
+
+    // 5. Notify customer
+    await NotificationService.sendOrderCollected(
+        order.orderId, order.customerEmail);
+    await AdminMessagingService().sendCustomerOrderStatusNotification(
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone ?? '',
+      orderId: order.orderId,
+      newStatus: OrderStatus.collected.name,
+    );
+    return tx;
+  }
+
   Future<void> advanceStatus(String orderId) async {
     if (_processingOrders.contains(orderId)) return;
     _processingOrders.add(orderId);

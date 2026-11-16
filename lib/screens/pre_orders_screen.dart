@@ -2009,7 +2009,22 @@ class _CardActionButtonState extends State<_CardActionButton> {
                   }
                 } else if (order.status == OrderStatus.ready) {
                   // Step 3: Complete pickup checkout
-                  await PosCheckoutModal.show(context, order);
+                  if (order.isPrePaid) {
+                    await orderProvider.completePrePaidPickup(
+                        orderId: order.id);
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                              'Pre-Paid Order #${order.orderId} pickup completed! 💳✅'),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } else {
+                    await PosCheckoutModal.show(context, order);
+                  }
                 }
               } catch (e) {
                 if (mounted) {
