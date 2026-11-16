@@ -449,4 +449,30 @@ class AdminMessagingService {
       });
     }
   }
+
+  /// Sends a branded transactional email notification to a customer or staff member via Brevo.
+  Future<bool> sendNotification({
+    required String recipientEmail,
+    required String title,
+    required String body,
+  }) async {
+    if (recipientEmail.trim().isEmpty) return false;
+
+    final htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 550px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+    <h2 style="color: #0f172a; margin-top: 0;">$title</h2>
+    <p style="color: #334155; font-size: 15px; line-height: 1.6;">$body</p>
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+    <p style="color: #94a3b8; font-size: 12px; margin: 0;">GDC Sari-Sari Store Management System</p>
+  </div>
+</div>
+''';
+
+    return await sendBrevoEmail(
+      toEmail: recipientEmail.trim(),
+      subject: title,
+      htmlContent: htmlContent,
+    );
+  }
 }
