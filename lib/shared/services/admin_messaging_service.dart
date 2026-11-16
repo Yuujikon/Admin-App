@@ -496,7 +496,7 @@ class AdminMessagingService {
     final dateStr = DateFormat('MMM d, yyyy • h:mm a')
         .format(completedAt ?? DateTime.now());
 
-    final String formatPeso(double amount) => '₱${amount.toStringAsFixed(2)}';
+    String formatPeso(double amount) => '₱${amount.toStringAsFixed(2)}';
 
     final StringBuffer itemsRowsHtml = StringBuffer();
     for (final item in items) {

@@ -371,7 +371,7 @@ class _CustomerRestrictionsScreenState
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
-                        color: Colors.red.shade950),
+                        color: Colors.red.shade900),
                   ),
                 ],
               ),
