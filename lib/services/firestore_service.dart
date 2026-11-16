@@ -642,6 +642,210 @@ class FirestoreService {
         snap.docs.first.id, snap.docs.first.data() as Map<String, dynamic>);
   }
 
+  /// Records a ghosting/uncollected order offense for a customer and applies restriction penalty.
+  /// 1st Offense: 2-hour order restriction
+  /// 2nd Offense: 24-hour order restriction
+  /// 3rd Offense: 72-hour (3-day) order restriction
+  /// 4th Offense: Permanent Account Lock (Can submit appeal)
+  Future<Customer?> recordCustomerOffense({
+    required String email,
+    required String customerName,
+    required String orderId,
+    required String reason,
+    bool isManualAdminFlag = false,
+  }) async {
+    if (email.isEmpty) return null;
+
+    Customer? customer = await getCustomerByEmail(email);
+
+    final now = TimeService.now;
+    final int newOffenseCount = ((customer?.offenseCount ?? 0) + 1);
+    final int hours = Customer.getRestrictionHoursForOffense(newOffenseCount);
+
+    final bool isPermanent = newOffenseCount >= 4;
+    final DateTime? newRestrictedUntil =
+        isPermanent ? null : now.add(Duration(hours: hours));
+
+    final newOffenseRecord = {
+      'offenseNumber': newOffenseCount,
+      'timestamp': Timestamp.fromDate(now),
+      'orderId': orderId,
+      'reason': reason,
+      'restrictionHours': hours,
+      'isPermanentLock': isPermanent,
+      'flaggedType':
+          isManualAdminFlag ? 'Manual Admin Flag' : 'Auto Cancellation',
+    };
+
+    final updatedHistory =
+        List<Map<String, dynamic>>.from(customer?.offenseHistory ?? [])
+          ..add(newOffenseRecord);
+
+    if (customer != null) {
+      final updatedCustomer = customer.copyWith(
+        offenseCount: newOffenseCount,
+        restrictedUntil: newRestrictedUntil,
+        isPermanentlyLocked: isPermanent,
+        offenseHistory: updatedHistory,
+      );
+      await updateCustomer(updatedCustomer);
+
+      final userQuery = await _users.where('email', isEqualTo: email).get();
+      for (final uDoc in userQuery.docs) {
+        await uDoc.reference.update({
+          'offenseCount': newOffenseCount,
+          'restrictedUntil': newRestrictedUntil != null
+              ? Timestamp.fromDate(newRestrictedUntil)
+              : null,
+          'isPermanentlyLocked': isPermanent,
+          'offenseHistory': updatedHistory,
+        });
+      }
+
+      final String penaltyText = isPermanent
+          ? 'Your account has been permanently locked due to multiple uncollected orders (4th offense). You may submit an appeal via the app.'
+          : 'Ordering has been temporarily restricted for $hours hours due to an uncollected order (Offense #$newOffenseCount).';
+
+      await AdminMessagingService().sendNotification(
+        recipientEmail: email,
+        title: isPermanent
+            ? 'Account Permanently Locked (4th Offense)'
+            : 'Order Restriction Notice (Offense #$newOffenseCount)',
+        body: penaltyText,
+      );
+
+      return updatedCustomer;
+    } else {
+      final newCustomer = Customer(
+        id: '',
+        name: customerName,
+        email: email,
+        phone: '',
+        createdAt: now,
+        offenseCount: newOffenseCount,
+        restrictedUntil: newRestrictedUntil,
+        isPermanentlyLocked: isPermanent,
+        offenseHistory: updatedHistory,
+      );
+      final ref = await _customers.add(newCustomer.toMap());
+
+      final userQuery = await _users.where('email', isEqualTo: email).get();
+      for (final uDoc in userQuery.docs) {
+        await uDoc.reference.update({
+          'offenseCount': newOffenseCount,
+          'restrictedUntil': newRestrictedUntil != null
+              ? Timestamp.fromDate(newRestrictedUntil)
+              : null,
+          'isPermanentlyLocked': isPermanent,
+          'offenseHistory': updatedHistory,
+        });
+      }
+
+      return newCustomer.copyWith(id: ref.id);
+    }
+  }
+
+  /// Approves a customer's account unlock appeal, unlocking account and setting offense tier to 3.
+  Future<void> approveCustomerAppeal(String customerId,
+      {String? adminNotes}) async {
+    final docRef = _customers.doc(customerId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+
+    final data = snap.data() as Map<String, dynamic>? ?? {};
+    final email = data['email'] as String?;
+
+    await docRef.update({
+      'isPermanentlyLocked': false,
+      'restrictedUntil': null,
+      'offenseCount': 3,
+      'appealStatus': 'approved',
+      'appealReviewedAt': Timestamp.now(),
+    });
+
+    if (email != null && email.isNotEmpty) {
+      final userQuery = await _users.where('email', isEqualTo: email).get();
+      for (final uDoc in userQuery.docs) {
+        await uDoc.reference.update({
+          'isPermanentlyLocked': false,
+          'restrictedUntil': null,
+          'offenseCount': 3,
+          'appealStatus': 'approved',
+          'appealReviewedAt': Timestamp.now(),
+        });
+      }
+
+      await AdminMessagingService().sendNotification(
+        recipientEmail: email,
+        title: 'Account Unlock Appeal Approved',
+        body:
+            'Your appeal has been reviewed and approved by GDC Sari-Sari Store Management. Your account is now unlocked.',
+      );
+    }
+  }
+
+  /// Rejects a customer's account unlock appeal.
+  Future<void> rejectCustomerAppeal(String customerId,
+      {String? adminNotes}) async {
+    final docRef = _customers.doc(customerId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+
+    final data = snap.data() as Map<String, dynamic>? ?? {};
+    final email = data['email'] as String?;
+
+    await docRef.update({
+      'appealStatus': 'rejected',
+      'appealReviewedAt': Timestamp.now(),
+    });
+
+    if (email != null && email.isNotEmpty) {
+      final userQuery = await _users.where('email', isEqualTo: email).get();
+      for (final uDoc in userQuery.docs) {
+        await uDoc.reference.update({
+          'appealStatus': 'rejected',
+          'appealReviewedAt': Timestamp.now(),
+        });
+      }
+
+      await AdminMessagingService().sendNotification(
+        recipientEmail: email,
+        title: 'Account Unlock Appeal Result',
+        body:
+            'Your account unlock appeal was reviewed and rejected by GDC Sari-Sari Store Management.',
+      );
+    }
+  }
+
+  /// Resets a customer's offense record and restrictions back to clean state.
+  Future<void> resetCustomerOffenses(String customerId) async {
+    final docRef = _customers.doc(customerId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+
+    final data = snap.data() as Map<String, dynamic>? ?? {};
+    final email = data['email'] as String?;
+
+    await docRef.update({
+      'offenseCount': 0,
+      'restrictedUntil': null,
+      'isPermanentlyLocked': false,
+      'appealStatus': 'none',
+    });
+
+    if (email != null && email.isNotEmpty) {
+      final userQuery = await _users.where('email', isEqualTo: email).get();
+      for (final uDoc in userQuery.docs) {
+        await uDoc.reference.update({
+          'offenseCount': 0,
+          'restrictedUntil': null,
+          'isPermanentlyLocked': false,
+          'appealStatus': 'none',
+        });
+      }
+    }
+  }
+
   // ── Refund Requests ────────────────────────────────────────────────────────
 
   Stream<List<RefundRequest>> refundRequestsStream() =>

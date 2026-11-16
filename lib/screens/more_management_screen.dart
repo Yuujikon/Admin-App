@@ -18,6 +18,7 @@ import 'reports_screen.dart';
 import 'category_bundle_management_screen.dart';
 import 'sales_history_screen.dart';
 import 'inventory_records_screen.dart';
+import 'customer_restrictions_screen.dart';
 import 'admin_app.dart';
 import '../widgets/responsive_layout.dart';
 
@@ -312,6 +313,20 @@ class MoreManagementScreen extends StatelessWidget {
                     subtitle:
                         'Set Pickup Time Limits For Perishable, Mixed & Standard Items',
                     onTap: () => _showOrderExpirationModal(context),
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.gavel_rounded,
+                    iconBg: const Color(0xFFFEE2E2),
+                    iconColor: const Color(0xFFDC2626),
+                    title: 'Customer Restrictions & Appeals',
+                    subtitle:
+                        'Manage Ghosting Offenses, Escalating Locks & Unlock Appeals',
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                const CustomerRestrictionsScreen())),
                   ),
                   const SizedBox(height: 24),
                 ],
