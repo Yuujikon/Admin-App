@@ -377,6 +377,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
 
   Widget _buildInquiryReceivingForm(
       BuildContext context, RestockInquiry inquiry, double maxHeight) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     double calcTotalReceived() {
       double sum = 0.0;
       for (var item in inquiry.items) {
@@ -402,16 +404,10 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
             maxHeight: maxHeight,
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context)
-                .colorScheme
-                .surfaceContainer
-                .withValues(alpha: 0.90),
+            color: colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             border: Border.all(
-              color: Theme.of(context)
-                  .colorScheme
-                  .outlineVariant
-                  .withValues(alpha: 0.4),
+              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
               width: 1.2,
             ),
           ),
@@ -419,7 +415,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
             bottom: MediaQuery.of(context).viewInsets.bottom + 16,
             left: 20,
             right: 20,
-            top: 20,
+            top: 16,
           ),
           child: SingleChildScrollView(
             child: MaxWidthContainer(
@@ -429,53 +425,90 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                 key: _formKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Center(
                       child: Container(
                         width: 44,
                         height: 5,
+                        margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant
-                              .withValues(alpha: 0.3),
+                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(3),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Verify Delivery #${inquiry.inquiryNumber}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w900, fontSize: 18),
+                                'Verify Delivery',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -0.3,
+                                    ),
                               ),
-                              Text(
-                                'Supplier: ${inquiry.supplierName}',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                    fontWeight: FontWeight.bold),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.primaryContainer
+                                          .withValues(alpha: 0.5),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '#${inquiry.inquiryNumber}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    Icons.storefront_outlined,
+                                    size: 14,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      'Supplier: ${inquiry.supplierName}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: colorScheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
-                        IconButton(
+                        IconButton.filledTonal(
                           onPressed: _handleClose,
                           icon: const Icon(Icons.close_rounded, size: 20),
                           tooltip: 'Close',
-                          visualDensity: VisualDensity.compact,
                         ),
                       ],
                     ),
-                    const Divider(height: 24),
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    const SizedBox(height: 16),
 
                     TextFormField(
                       controller: _invoiceCtrl,
@@ -486,62 +519,79 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                       ),
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Items to Verify (${inquiry.items.length})',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.fact_check_outlined,
+                              size: 18,
+                              color: colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Items to Verify (${inquiry.items.length})',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                  ),
+                            ),
+                          ],
                         ),
                         Wrap(
                           spacing: 6,
                           children: [
                             OutlinedButton.icon(
                               onPressed: () => _acceptAllInquiryQty(inquiry),
-                              icon:
-                                  const Icon(Icons.done_all_rounded, size: 14),
+                              icon: const Icon(Icons.done_all_rounded, size: 14),
                               label: const Text('Accept All Qty',
                                   style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 11.5,
                                       fontWeight: FontWeight.bold)),
                               style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 36),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                    horizontal: 10, vertical: 6),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
                             PopupMenuButton<int>(
                               tooltip: 'Set Expiry Date for All Items',
                               child: Container(
+                                height: 36,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
+                                    horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer,
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: colorScheme.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: colorScheme.primary
+                                        .withValues(alpha: 0.25),
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.event_available_rounded,
-                                        size: 14,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary),
+                                    Icon(
+                                      Icons.event_available_rounded,
+                                      size: 14,
+                                      color: colorScheme.primary,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       'Set All Expiry',
                                       style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: 11.5,
                                         fontWeight: FontWeight.bold,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
+                                        color: colorScheme.primary,
                                       ),
                                     ),
                                   ],
@@ -565,7 +615,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
 
                     ListView.builder(
                       shrinkWrap: true,
@@ -594,19 +644,23 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
 
                         Color badgeBg;
                         Color badgeText;
+                        Color badgeBorder;
                         String badgeLabel;
 
                         if (diff == 0) {
                           badgeBg = Colors.green.shade50;
                           badgeText = Colors.green.shade800;
+                          badgeBorder = Colors.green.shade200;
                           badgeLabel = 'Match ✅';
                         } else if (diff < 0) {
-                          badgeBg = Colors.orange.shade50;
-                          badgeText = Colors.orange.shade900;
+                          badgeBg = Colors.amber.shade50;
+                          badgeText = Colors.amber.shade900;
+                          badgeBorder = Colors.amber.shade300;
                           badgeLabel = '${diff.abs()} Short ⚠️';
                         } else {
                           badgeBg = Colors.blue.shade50;
                           badgeText = Colors.blue.shade900;
+                          badgeBorder = Colors.blue.shade300;
                           badgeLabel = '+$diff Surplus 📦';
                         }
 
@@ -626,452 +680,629 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                         final bool isBulk =
                             _inquiryBulkModes[item.productId] ?? false;
 
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          color:
-                              Theme.of(context).colorScheme.surfaceContainerLow,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outlineVariant
-                                    .withValues(alpha: 0.3)),
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant
+                                  .withValues(alpha: 0.35),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.02),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        item.productName,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      item.productName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                        letterSpacing: -0.2,
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: badgeBg,
-                                        borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: badgeBg,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: badgeBorder),
+                                    ),
+                                    child: Text(
+                                      badgeLabel,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: badgeText,
                                       ),
-                                      child: Text(
-                                        badgeLabel,
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: badgeText),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.shopping_bag_outlined,
+                                    size: 13,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Ordered: ${item.requestedQty} ${item.unit} @ ${formatPeso(item.costPrice)}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Segmented Button Toggle for Bulk vs Single UOM
+                              if (hasBulk) ...[
+                                SegmentedButton<bool>(
+                                  style: SegmentedButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    selectedBackgroundColor:
+                                        colorScheme.primaryContainer,
+                                    selectedForegroundColor:
+                                        colorScheme.primary,
+                                    side: BorderSide(
+                                      color: colorScheme.outline
+                                          .withValues(alpha: 0.2),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  segments: [
+                                    ButtonSegment<bool>(
+                                      value: false,
+                                      label: Text(
+                                        'Single (${prod.unit})',
+                                        style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                      icon: const Icon(
+                                          Icons.inventory_2_outlined,
+                                          size: 15),
+                                    ),
+                                    ButtonSegment<bool>(
+                                      value: true,
+                                      label: Text(
+                                        'Bulk (${prod.bulkUnit.toUpperCase()} of ${prod.piecesPerPack})',
+                                        style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                      icon: const Icon(
+                                          Icons.all_inbox_rounded,
+                                          size: 15),
+                                    ),
+                                  ],
+                                  selected: {isBulk},
+                                  onSelectionChanged: (Set<bool> set) {
+                                    setState(() {
+                                      final newIsBulk = set.first;
+                                      _inquiryBulkModes[item.productId] =
+                                          newIsBulk;
+                                      if (newIsBulk) {
+                                        final packCost = prod!.packCost ??
+                                            (prod.costPrice *
+                                                prod.piecesPerPack);
+                                        if (packCost > 0) {
+                                          _inquiryBulkCostControllers[
+                                                      item.productId]
+                                                  ?.text =
+                                              packCost.toStringAsFixed(2);
+                                        }
+                                        final int recQty =
+                                            int.tryParse(qtyCtrl.text) ??
+                                                item.requestedQty;
+                                        if (recQty >= prod.piecesPerPack) {
+                                          final bQty =
+                                              recQty ~/ prod.piecesPerPack;
+                                          final extra =
+                                              recQty % prod.piecesPerPack;
+                                          _inquiryBulkQtyControllers[
+                                                  item.productId]
+                                              ?.text = bQty.toString();
+                                          _inquiryExtraQtyControllers[
+                                                  item.productId]
+                                              ?.text = extra > 0
+                                              ? extra.toString()
+                                              : '';
+                                        } else {
+                                          _inquiryBulkQtyControllers[
+                                                  item.productId]
+                                              ?.text = '1';
+                                        }
+                                      }
+                                    });
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+
+                              if (hasBulk && isBulk) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primaryContainer
+                                        .withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: colorScheme.primary
+                                          .withValues(alpha: 0.25),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Top Header inside Bulk Panel: Pack Size Chip
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.all_inbox_rounded,
+                                                size: 15,
+                                                color: colorScheme.primary,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'Bulk Delivery Entry',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: colorScheme.onSurface,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme
+                                                  .surfaceContainerHighest,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: colorScheme
+                                                    .outlineVariant
+                                                    .withValues(alpha: 0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.inventory_2_outlined,
+                                                  size: 12,
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Pack Size: ${prod.piecesPerPack} ${prod.unit}/pack',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+
+                                      // 2-Column Row for Bulk Qty and Extra Loose (NO TRUNCATION!)
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller:
+                                                  _inquiryBulkQtyControllers[
+                                                          item.productId] ??=
+                                                      TextEditingController(),
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter
+                                                    .digitsOnly
+                                              ],
+                                              onChanged: (_) {
+                                                final bQty = int.tryParse(
+                                                        _inquiryBulkQtyControllers[
+                                                                item.productId]
+                                                            ?.text ??
+                                                        '') ??
+                                                    0;
+                                                final extra = int.tryParse(
+                                                        _inquiryExtraQtyControllers[
+                                                                item.productId]
+                                                            ?.text ??
+                                                        '') ??
+                                                    0;
+                                                final totalUnits = prod!
+                                                        .convertBulkToUnits(
+                                                            bQty) +
+                                                    extra;
+                                                qtyCtrl.text =
+                                                    totalUnits.toString();
+                                                setState(() {});
+                                              },
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'Bulk Qty (${prod.bulkUnit.toUpperCase()})',
+                                                hintText: 'e.g. 1',
+                                                isDense: true,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller:
+                                                  _inquiryExtraQtyControllers[
+                                                          item.productId] ??=
+                                                      TextEditingController(),
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter
+                                                    .digitsOnly
+                                              ],
+                                              onChanged: (_) {
+                                                final bQty = int.tryParse(
+                                                        _inquiryBulkQtyControllers[
+                                                                item.productId]
+                                                            ?.text ??
+                                                        '') ??
+                                                    0;
+                                                final extra = int.tryParse(
+                                                        _inquiryExtraQtyControllers[
+                                                                item.productId]
+                                                            ?.text ??
+                                                        '') ??
+                                                    0;
+                                                final totalUnits = prod!
+                                                        .convertBulkToUnits(
+                                                            bQty) +
+                                                    extra;
+                                                qtyCtrl.text =
+                                                    totalUnits.toString();
+                                                setState(() {});
+                                              },
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'Extra Loose (${prod.unit.toUpperCase()})',
+                                                hintText: 'e.g. 0',
+                                                isDense: true,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+
+                                      // Total Quantity Summary Banner
+                                      Builder(
+                                        builder: (_) {
+                                          final bQty = int.tryParse(
+                                                  _inquiryBulkQtyControllers[
+                                                          item.productId]
+                                                      ?.text ??
+                                                  '') ??
+                                              0;
+                                          final extra = int.tryParse(
+                                                  _inquiryExtraQtyControllers[
+                                                          item.productId]
+                                                      ?.text ??
+                                                  '') ??
+                                              0;
+                                          final totalUnits = prod!
+                                                  .convertBulkToUnits(bQty) +
+                                              extra;
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 7),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme.primaryContainer
+                                                  .withValues(alpha: 0.4),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: colorScheme.primary
+                                                    .withValues(alpha: 0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.info_outline_rounded,
+                                                  size: 15,
+                                                  color: colorScheme.primary,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text.rich(
+                                                    TextSpan(
+                                                      style: TextStyle(
+                                                        fontSize: 11.5,
+                                                        color:
+                                                            colorScheme.primary,
+                                                      ),
+                                                      children: [
+                                                        const TextSpan(
+                                                            text:
+                                                                'Item Quantity: '),
+                                                        TextSpan(
+                                                          text:
+                                                              '$bQty ${prod.bulkUnit}(s)',
+                                                          style: const TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold),
+                                                        ),
+                                                        if (extra > 0)
+                                                          TextSpan(
+                                                            text:
+                                                                ' + $extra loose',
+                                                            style: const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold),
+                                                          ),
+                                                        const TextSpan(
+                                                            text: ' = '),
+                                                        TextSpan(
+                                                          text:
+                                                              '$totalUnits ${prod.unit} total',
+                                                          style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w900,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: qtyCtrl,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        onChanged: (_) => setState(() {}),
+                                        decoration: InputDecoration(
+                                          labelText:
+                                              'Total Received Qty (${prod.unit})',
+                                          isDense: true,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: costCtrl,
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(decimal: true),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                              RegExp(r'^\d*\.?\d*'))
+                                        ],
+                                        onChanged: (_) => setState(() {}),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Actual Unit Cost',
+                                          isDense: true,
+                                          prefixText: '₱ ',
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                                Text(
-                                  'Ordered: ${item.requestedQty} ${item.unit} @ ${formatPeso(item.costPrice)}',
-                                  style: const TextStyle(
-                                      fontSize: 11, color: Colors.grey),
+                                const SizedBox(height: 12),
+                              ] else ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: qtyCtrl,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        onChanged: (_) => setState(() {}),
+                                        decoration: InputDecoration(
+                                          labelText: 'Actual Received Qty',
+                                          isDense: true,
+                                          suffixText: item.unit,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: costCtrl,
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(decimal: true),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                              RegExp(r'^\d*\.?\d*'))
+                                        ],
+                                        onChanged: (_) => setState(() {}),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Actual Unit Cost',
+                                          isDense: true,
+                                          prefixText: '₱ ',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 12),
+                              ],
 
-                                // Segmented Button Toggle for Bulk vs Single UOM
-                                if (hasBulk) ...[
-                                  SegmentedButton<bool>(
-                                    style: SegmentedButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                    segments: [
-                                      ButtonSegment<bool>(
-                                        value: false,
-                                        label: Text('Single (${prod.unit})',
-                                            style: const TextStyle(
-                                                fontSize: 11)),
-                                        icon: const Icon(
-                                            Icons.inventory_2_outlined,
-                                            size: 14),
-                                      ),
-                                      ButtonSegment<bool>(
-                                        value: true,
-                                        label: Text(
-                                          'Bulk (${prod.bulkUnit.toUpperCase()} of ${prod.piecesPerPack})',
-                                          style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                        icon: const Icon(
-                                            Icons.all_inbox_rounded,
-                                            size: 14),
-                                      ),
-                                    ],
-                                    selected: {isBulk},
-                                    onSelectionChanged: (Set<bool> set) {
-                                      setState(() {
-                                        final newIsBulk = set.first;
-                                        _inquiryBulkModes[item.productId] =
-                                            newIsBulk;
-                                        if (newIsBulk) {
-                                          final packCost = prod!.packCost ??
-                                              (prod.costPrice *
-                                                  prod.piecesPerPack);
-                                          if (packCost > 0) {
-                                            _inquiryBulkCostControllers[
-                                                        item.productId]
-                                                    ?.text =
-                                                packCost.toStringAsFixed(2);
-                                          }
-                                          final int recQty =
-                                              int.tryParse(qtyCtrl.text) ??
-                                                  item.requestedQty;
-                                          if (recQty >= prod.piecesPerPack) {
-                                            final bQty =
-                                                recQty ~/ prod.piecesPerPack;
-                                            final extra =
-                                                recQty % prod.piecesPerPack;
-                                            _inquiryBulkQtyControllers[
-                                                    item.productId]
-                                                ?.text = bQty.toString();
-                                            _inquiryExtraQtyControllers[
-                                                    item.productId]
-                                                ?.text = extra > 0
-                                                ? extra.toString()
-                                                : '';
-                                          } else {
-                                            _inquiryBulkQtyControllers[
-                                                    item.productId]
-                                                ?.text = '1';
-                                          }
-                                        }
-                                      });
-                                    },
+                              // Batch Expiration Date & Quick Preset Chips
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.4),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.3),
                                   ),
-                                  const SizedBox(height: 8),
-                                ],
-
-                                if (hasBulk && isBulk) ...[
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer
-                                          .withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(alpha: 0.25),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: TextFormField(
-                                                controller:
-                                                    _inquiryBulkQtyControllers[
-                                                            item.productId] ??=
-                                                        TextEditingController(),
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter
-                                                      .digitsOnly
-                                                ],
-                                                onChanged: (_) {
-                                                  final bQty = int.tryParse(
-                                                          _inquiryBulkQtyControllers[
-                                                                  item.productId]
-                                                              ?.text ??
-                                                          '') ??
-                                                      0;
-                                                  final extra = int.tryParse(
-                                                          _inquiryExtraQtyControllers[
-                                                                  item.productId]
-                                                              ?.text ??
-                                                          '') ??
-                                                      0;
-                                                  final totalUnits = prod!
-                                                          .convertBulkToUnits(
-                                                              bQty) +
-                                                      extra;
-                                                  qtyCtrl.text =
-                                                      totalUnits.toString();
-                                                  setState(() {});
-                                                },
-                                                decoration: InputDecoration(
-                                                  labelText:
-                                                      'Bulk Qty (${prod!.bulkUnit.toUpperCase()})',
-                                                  isDense: true,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: TextFormField(
-                                                initialValue:
-                                                    '${prod.piecesPerPack} ${prod.unit}/pack',
-                                                readOnly: true,
-                                                decoration: InputDecoration(
-                                                  labelText: 'Pack Size',
-                                                  isDense: true,
-                                                  fillColor: Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerHighest,
-                                                  filled: true,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: TextFormField(
-                                                controller:
-                                                    _inquiryExtraQtyControllers[
-                                                            item.productId] ??=
-                                                        TextEditingController(),
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter
-                                                      .digitsOnly
-                                                ],
-                                                onChanged: (_) {
-                                                  final bQty = int.tryParse(
-                                                          _inquiryBulkQtyControllers[
-                                                                  item.productId]
-                                                              ?.text ??
-                                                          '') ??
-                                                      0;
-                                                  final extra = int.tryParse(
-                                                          _inquiryExtraQtyControllers[
-                                                                  item.productId]
-                                                              ?.text ??
-                                                          '') ??
-                                                      0;
-                                                  final totalUnits = prod!
-                                                          .convertBulkToUnits(
-                                                              bQty) +
-                                                      extra;
-                                                  qtyCtrl.text =
-                                                      totalUnits.toString();
-                                                  setState(() {});
-                                                },
-                                                decoration: InputDecoration(
-                                                  labelText:
-                                                      'Extra Loose (${prod.unit})',
-                                                  isDense: true,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Builder(
-                                          builder: (_) {
-                                            final bQty = int.tryParse(
-                                                    _inquiryBulkQtyControllers[
-                                                            item.productId]
-                                                        ?.text ??
-                                                    '') ??
-                                                0;
-                                            final extra = int.tryParse(
-                                                    _inquiryExtraQtyControllers[
-                                                            item.productId]
-                                                        ?.text ??
-                                                    '') ??
-                                                0;
-                                            final totalUnits = prod!
-                                                    .convertBulkToUnits(bQty) +
-                                                extra;
-                                            return Text(
-                                              'Item Quantity: $bQty ${prod.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} = $totalUnits ${prod.unit} total',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary,
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: qtyCtrl,
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.digitsOnly
-                                          ],
-                                          onChanged: (_) => setState(() {}),
-                                          decoration: InputDecoration(
-                                            labelText: 'Total Received Qty (${prod!.unit})',
-                                            isDense: true,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: costCtrl,
-                                          keyboardType: const TextInputType
-                                              .numberWithOptions(decimal: true),
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.allow(
-                                                RegExp(r'^\d*\.?\d*'))
-                                          ],
-                                          onChanged: (_) => setState(() {}),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Actual Unit Cost',
-                                            isDense: true,
-                                            prefixText: 'P ',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                ] else ...[
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: qtyCtrl,
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.digitsOnly
-                                          ],
-                                          onChanged: (_) => setState(() {}),
-                                          decoration: InputDecoration(
-                                            labelText: 'Actual Received Qty',
-                                            isDense: true,
-                                            suffixText: item.unit,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: costCtrl,
-                                          keyboardType: const TextInputType
-                                              .numberWithOptions(decimal: true),
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.allow(
-                                                RegExp(r'^\d*\.?\d*'))
-                                          ],
-                                          onChanged: (_) => setState(() {}),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Actual Unit Cost',
-                                            isDense: true,
-                                            prefixText: 'P ',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                ],
-
-                                // Batch Expiration Date & Quick Preset Chips
-                                Column(
+                                ),
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Icon(
-                                          Icons.event_available_outlined,
-                                          size: 16,
-                                          color: expiryDate == null
-                                              ? Colors.red
-                                              : Colors.green.shade800,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        const Text('Batch Expiry Date ',
-                                            style: TextStyle(
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.event_available_outlined,
+                                              size: 16,
+                                              color: expiryDate == null
+                                                  ? colorScheme.error
+                                                  : Colors.green.shade700,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Text(
+                                              'Batch Expiry Date ',
+                                              style: TextStyle(
                                                 fontSize: 12,
-                                                fontWeight: FontWeight.bold)),
-                                        const Text('*',
-                                            style: TextStyle(
-                                                color: Colors.red,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            Text(
+                                              '*',
+                                              style: TextStyle(
+                                                color: colorScheme.error,
                                                 fontWeight: FontWeight.bold,
-                                                fontSize: 12)),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          expiryDate == null
-                                              ? 'Required'
-                                              : DateFormat('MMM dd, yyyy')
-                                                  .format(expiryDate),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
                                             color: expiryDate == null
-                                                ? Colors.red
-                                                : Colors.green.shade800,
+                                                ? colorScheme.errorContainer
+                                                : Colors.green.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: expiryDate == null
+                                                  ? colorScheme.error
+                                                      .withValues(alpha: 0.3)
+                                                  : Colors.green.shade300,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            expiryDate == null
+                                                ? 'Required'
+                                                : DateFormat('MMM dd, yyyy')
+                                                    .format(expiryDate),
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: expiryDate == null
+                                                  ? colorScheme.error
+                                                  : Colors.green.shade800,
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 6),
+                                    const SizedBox(height: 10),
                                     Wrap(
-                                      spacing: 6,
-                                      runSpacing: 4,
+                                      spacing: 8,
+                                      runSpacing: 8,
                                       children: [
-                                        ActionChip(
-                                          avatar:
-                                              const Icon(Icons.add, size: 14),
-                                          label: const Text('+90 Days',
-                                              style: TextStyle(fontSize: 11)),
-                                          onPressed: () => setState(() =>
+                                        _buildExpiryChip(
+                                          context: context,
+                                          icon: Icons.add_rounded,
+                                          label: '+90 Days',
+                                          onTap: () => setState(() =>
                                               _inquiryExpiryDates[
                                                       item.productId] =
                                                   DateTime.now().add(
                                                       const Duration(
                                                           days: 90))),
                                         ),
-                                        ActionChip(
-                                          avatar:
-                                              const Icon(Icons.add, size: 14),
-                                          label: const Text('+180 Days',
-                                              style: TextStyle(fontSize: 11)),
-                                          onPressed: () => setState(() =>
+                                        _buildExpiryChip(
+                                          context: context,
+                                          icon: Icons.add_rounded,
+                                          label: '+180 Days',
+                                          onTap: () => setState(() =>
                                               _inquiryExpiryDates[
                                                       item.productId] =
                                                   DateTime.now().add(
                                                       const Duration(
                                                           days: 180))),
                                         ),
-                                        ActionChip(
-                                          avatar:
-                                              const Icon(Icons.add, size: 14),
-                                          label: const Text('+1 Year',
-                                              style: TextStyle(fontSize: 11)),
-                                          onPressed: () => setState(() =>
+                                        _buildExpiryChip(
+                                          context: context,
+                                          icon: Icons.add_rounded,
+                                          label: '+1 Year',
+                                          onTap: () => setState(() =>
                                               _inquiryExpiryDates[
                                                       item.productId] =
                                                   DateTime.now().add(
                                                       const Duration(
                                                           days: 365))),
                                         ),
-                                        ActionChip(
-                                          avatar: const Icon(
-                                              Icons.calendar_month_outlined,
-                                              size: 14),
-                                          label: const Text('Pick Date',
-                                              style: TextStyle(fontSize: 11)),
-                                          onPressed: () async {
+                                        _buildExpiryChip(
+                                          context: context,
+                                          icon: Icons.calendar_month_outlined,
+                                          label: 'Pick Date',
+                                          isPrimary: true,
+                                          onTap: () async {
                                             final picked = await showDatePicker(
                                               context: context,
                                               useRootNavigator: true,
@@ -1094,35 +1325,43 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     ),
                                   ],
                                 ),
+                              ),
 
-                                if (diff != 0) ...[
-                                  const SizedBox(height: 8),
-                                  TextFormField(
-                                    controller: noteCtrl,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Discrepancy Note (Optional)',
-                                      hintText:
-                                          'e.g. 2 pcs damaged / short delivered',
-                                      isDense: true,
+                              if (diff != 0) ...[
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: noteCtrl,
+                                  decoration: InputDecoration(
+                                    labelText: 'Discrepancy Note (Optional)',
+                                    hintText:
+                                        'e.g. 2 pcs damaged / short delivered',
+                                    isDense: true,
+                                    prefixIcon: Icon(
+                                      Icons.error_outline_rounded,
+                                      size: 18,
+                                      color: colorScheme.error,
                                     ),
                                   ),
-                                ],
+                                ),
                               ],
-                            ),
+                            ],
                           ),
                         );
                       },
                     ),
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
 
                     // Total Financial Summary Box
                     Container(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.green.shade50.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.green.shade300),
+                        color: colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: colorScheme.outlineVariant
+                              .withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1130,29 +1369,55 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Total Ordered Value',
-                                  style: TextStyle(
-                                      fontSize: 11, color: Colors.grey)),
-                              Text(formatPeso(inquiry.totalOrderedValue),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13)),
+                              Text(
+                                'Total Ordered Value',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                formatPeso(inquiry.totalOrderedValue),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ],
                           ),
-                          const Icon(Icons.arrow_forward_rounded,
-                              size: 18, color: Colors.grey),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 16,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              const Text('Total Delivery Value',
-                                  style: TextStyle(
-                                      fontSize: 11, color: Colors.grey)),
+                              Text(
+                                'Total Delivery Value',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
                               Text(
                                 formatPeso(totalReceivedValue),
                                 style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                    color: Colors.green.shade900),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 17,
+                                  color: colorScheme.primary,
+                                ),
                               ),
                             ],
                           ),
@@ -1160,15 +1425,13 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                       ),
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
                     PrimaryButton(
                       onPressed:
                           _saving ? null : () => _saveInquiryDelivery(inquiry),
                       isLoading: _saving,
                       icon: Icons.check_circle_rounded,
-                      backgroundColor: Colors.green.shade800,
-                      foregroundColor: Colors.white,
                       minWidth: 200,
                       maxWidth: 350,
                       child: Text(_saving
@@ -1181,6 +1444,59 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpiryChip({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isPrimary = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: isPrimary
+          ? colorScheme.primaryContainer
+          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isPrimary
+                  ? colorScheme.primary.withValues(alpha: 0.3)
+                  : colorScheme.outline.withValues(alpha: 0.15),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 13,
+                color: isPrimary
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color:
+                      isPrimary ? colorScheme.primary : colorScheme.onSurface,
+                ),
+              ),
+            ],
           ),
         ),
       ),

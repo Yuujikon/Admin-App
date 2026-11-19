@@ -149,19 +149,49 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('INQUIRY ITEMS',
-                          style: TextStyle(
+                      Row(
+                        children: [
+                          Text(
+                            'INQUIRY ITEMS',
+                            style: TextStyle(
                               fontWeight: FontWeight.w900,
-                              color: Colors.grey,
-                              fontSize: 11,
-                              letterSpacing: 1)),
-                      TextButton.icon(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontSize: 12,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_items.length}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      OutlinedButton.icon(
                         onPressed: () =>
                             _showAddProductPicker(supplierProducts),
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('ADD ITEM',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('ADD ITEM'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -187,37 +217,82 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
   }
 
   Widget _buildHeader() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
       decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         border: Border(
-            bottom: BorderSide(
-                color: Theme.of(context)
-                    .colorScheme
-                    .outline
-                    .withValues(alpha: 0.1))),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Edit Restock Inquiry',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-              Text(widget.inquiry.inquiryNumber,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                      fontWeight: FontWeight.bold)),
-            ],
+          bottom: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           ),
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close_rounded),
-            style: IconButton.styleFrom(
-                backgroundColor:
-                    Theme.of(context).colorScheme.surfaceContainerLow),
+        ),
+      ),
+      child: Column(
+        children: [
+          Center(
+            child: Container(
+              width: 44,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Edit Restock Inquiry',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.receipt_long_outlined,
+                            size: 13,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.inquiry.inquiryNumber,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded, size: 20),
+                tooltip: 'Close',
+              ),
+            ],
           ),
         ],
       ),
@@ -227,6 +302,7 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
   Widget _itemRow(int index) {
     final item = _items[index];
     final inventory = context.read<InventoryProvider>();
+    final colorScheme = Theme.of(context).colorScheme;
     Product? prod;
     try {
       prod = inventory.products.firstWhere(
@@ -241,64 +317,134 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
     final bool isBulk = _itemBulkModes[item.productId] ?? hasBulk;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-            color:
-                Theme.of(context).colorScheme.outline.withValues(alpha: 0.1)),
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.productName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 14)),
                     Text(
-                        'SKU: ${item.sku} • Stock: ${item.currentStock} ${item.unit}',
-                        style:
-                            const TextStyle(fontSize: 10, color: Colors.grey)),
+                      item.productName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'SKU: ${item.sku}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Stock: ${item.currentStock} ${item.unit}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => _removeItem(index),
-                icon: const Icon(Icons.remove_circle_outline,
-                    color: Colors.red, size: 20),
-                visualDensity: VisualDensity.compact,
+              const SizedBox(width: 8),
+              Material(
+                color: colorScheme.error.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  onTap: () => _removeItem(index),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    child: Icon(
+                      Icons.delete_outline_rounded,
+                      color: colorScheme.error,
+                      size: 20,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
           if (hasBulk) ...[
             SegmentedButton<bool>(
               style: SegmentedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
+                selectedBackgroundColor: colorScheme.primaryContainer,
+                selectedForegroundColor: colorScheme.primary,
+                side: BorderSide(
+                  color: colorScheme.outline.withValues(alpha: 0.2),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               segments: [
                 ButtonSegment<bool>(
                   value: false,
-                  label: Text('Single (${prod!.unit})',
-                      style: const TextStyle(fontSize: 11)),
-                  icon: const Icon(Icons.inventory_2_outlined, size: 14),
+                  label: Text(
+                    'Single (${prod.unit})',
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                  ),
+                  icon: const Icon(Icons.inventory_2_outlined, size: 15),
                 ),
                 ButtonSegment<bool>(
                   value: true,
                   label: Text(
                     'Bulk (${prod.bulkUnit.toUpperCase()} of ${prod.piecesPerPack})',
                     style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.bold),
+                        fontSize: 11.5, fontWeight: FontWeight.bold),
                   ),
-                  icon: const Icon(Icons.all_inbox_rounded, size: 14),
+                  icon: const Icon(Icons.all_inbox_rounded, size: 15),
                 ),
               ],
               selected: {isBulk},
@@ -321,23 +467,17 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                 });
               },
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
           ],
 
           if (hasBulk && isBulk) ...[
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primaryContainer
-                    .withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(14),
+                color: colorScheme.primaryContainer.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.25),
+                  color: colorScheme.primary.withValues(alpha: 0.25),
                 ),
               ),
               child: Column(
@@ -346,12 +486,23 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Bulk Qty (${prod!.bulkUnit.toUpperCase()})',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.all_inbox_rounded,
+                            size: 15,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Bulk Qty (${prod.bulkUnit.toUpperCase()})',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
                       ),
                       QtyControl(
                         key: ValueKey('bulk_qty_${item.productId}_$index'),
@@ -367,16 +518,27 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Extra Loose (${prod.unit.toUpperCase()})',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.widgets_outlined,
+                            size: 15,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Extra Loose (${prod.unit.toUpperCase()})',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
                       ),
                       QtyControl(
                         key: ValueKey('extra_qty_${item.productId}_$index'),
@@ -393,18 +555,63 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Builder(
                     builder: (_) {
                       final bQty = _itemBulkQty[item.productId] ?? 1;
                       final extra = _itemExtraQty[item.productId] ?? 0;
                       final total = (bQty * prod!.piecesPerPack) + extra;
-                      return Text(
-                        'Total Request: $bQty ${prod.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} = $total ${prod.unit}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calculate_outlined,
+                              size: 16,
+                              color: colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.primary,
+                                  ),
+                                  children: [
+                                    const TextSpan(text: 'Total Request: '),
+                                    TextSpan(
+                                      text: '$bQty ${prod.bulkUnit}(s)',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    if (extra > 0)
+                                      TextSpan(
+                                        text: ' + $extra loose',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                    const TextSpan(text: ' = '),
+                                    TextSpan(
+                                      text: '$total ${prod.unit}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -413,29 +620,45 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
               ),
             ),
           ] else ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('REQUESTED QUANTITY',
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'REQUESTED QUANTITY',
                         style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey)),
-                    const SizedBox(height: 4),
-                    Text(item.unit.toUpperCase(),
-                        style: const TextStyle(
-                            fontSize: 10, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                QtyControl(
-                  key: ValueKey('qty_${item.productId}_$index'),
-                  qty: item.requestedQty,
-                  onChanged: (v) => _updateQty(index, v),
-                ),
-              ],
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.unit.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  QtyControl(
+                    key: ValueKey('qty_${item.productId}_$index'),
+                    qty: item.requestedQty,
+                    onChanged: (v) => _updateQty(index, v),
+                  ),
+                ],
+              ),
             ),
           ],
         ],

@@ -104,30 +104,40 @@ class _QtyControlState extends State<QtyControl> {
     final bool isDisabled =
         (delta > 0 && widget.qty >= _maxVal) || (delta < 0 && widget.qty <= widget.min);
 
+    final isMajorStep = delta == 5 || delta == -5;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: isDisabled ? null : () => _adjust(delta),
-        borderRadius: BorderRadius.circular(15),
-        child: Opacity(
-          opacity: isDisabled ? 0.3 : 1.0,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: isDisabled ? 0.35 : 1.0,
           child: Container(
-            width: 30,
-            height: 30,
+            width: isMajorStep ? 34 : 32,
+            height: 32,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainer,
-              shape: BoxShape.circle,
+              color: isMajorStep
+                  ? colorScheme.primaryContainer.withValues(alpha: 0.6)
+                  : colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isMajorStep
+                    ? colorScheme.primary.withValues(alpha: 0.25)
+                    : colorScheme.outline.withValues(alpha: 0.15),
+              ),
             ),
             alignment: Alignment.center,
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
+                fontSize: isMajorStep ? 11 : 13,
+                fontWeight: FontWeight.w800,
+                color: isMajorStep
+                    ? colorScheme.primary
+                    : colorScheme.onSurface,
               ),
             ),
           ),
@@ -138,57 +148,84 @@ class _QtyControlState extends State<QtyControl> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildStepButton('-5', -5),
-        const SizedBox(width: 4),
-        _buildStepButton('−', -1),
-        const SizedBox(width: 4),
-        SizedBox(
-          width: 50,
-          height: 36,
-          child: TextField(
-            controller: _ctrl,
-            focusNode: _focusNode,
-            textAlign: TextAlign.center,
-            keyboardType: const TextInputType.numberWithOptions(
-              decimal: false,
-              signed: false,
-            ),
-            textInputAction: TextInputAction.done,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-            ],
-            onChanged: _onTextChanged,
-            onSubmitted: (_) => _commit(),
-            onEditingComplete: _commit,
-            onTap: () {
-              _ctrl.selection =
-                  TextSelection.collapsed(offset: _ctrl.text.length);
-            },
-            decoration: InputDecoration(
-              contentPadding: EdgeInsets.zero,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(50),
-                borderSide: BorderSide(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outline
-                      .withValues(alpha: 0.15),
-                ),
-              ),
-              filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
-            ),
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
-        const SizedBox(width: 4),
-        _buildStepButton('+', 1),
-        const SizedBox(width: 4),
-        _buildStepButton('+5', 5),
-      ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildStepButton('-5', -5),
+          const SizedBox(width: 3),
+          _buildStepButton('−', -1),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 52,
+            height: 34,
+            child: TextField(
+              controller: _ctrl,
+              focusNode: _focusNode,
+              textAlign: TextAlign.center,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: false,
+                signed: false,
+              ),
+              textInputAction: TextInputAction.done,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+              ],
+              onChanged: _onTextChanged,
+              onSubmitted: (_) => _commit(),
+              onEditingComplete: _commit,
+              onTap: () {
+                _ctrl.selection =
+                    TextSelection.collapsed(offset: _ctrl.text.length);
+              },
+              decoration: InputDecoration(
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: colorScheme.outline.withValues(alpha: 0.2),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: colorScheme.outline.withValues(alpha: 0.2),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: colorScheme.primary,
+                    width: 1.5,
+                  ),
+                ),
+                filled: true,
+                fillColor: colorScheme.surface,
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _buildStepButton('+', 1),
+          const SizedBox(width: 3),
+          _buildStepButton('+5', 5),
+        ],
+      ),
     );
   }
 }
