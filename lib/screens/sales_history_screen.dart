@@ -437,12 +437,37 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   if (!tx.isRefunded) ...[
                     ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pop(ctx);
                         showDialog(
                           context: context,
-                          builder: (_) => _RefundOrderModal(
-                            tx: tx,
-                            inventory: inventory,
+                          builder: (confirmCtx) => AlertDialog(
+                            title: const Text('Initiate Refund Order?'),
+                            content: Text(
+                              'Are you sure you want to process a return/refund for Receipt #${tx.id.substring(0, tx.id.length > 8 ? 8 : tx.id.length).toUpperCase()}?',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(confirmCtx),
+                                child: const Text('CANCEL'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pop(confirmCtx);
+                                  Navigator.pop(ctx);
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => _RefundOrderModal(
+                                      tx: tx,
+                                      inventory: inventory,
+                                    ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('PROCEED TO REFUND'),
+                              ),
+                            ],
                           ),
                         );
                       },
@@ -986,14 +1011,45 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 if (!tx.isRefunded)
                   ElevatedButton.icon(
                     onPressed: () {
-                      Navigator.pop(dialogCtx);
-                      ReturnSwapDialog.show(context, tx);
+                      showDialog(
+                        context: context,
+                        builder: (confirmCtx) => AlertDialog(
+                          title: const Text('Initiate Refund Order?'),
+                          content: Text(
+                            'Are you sure you want to process a return/refund for Receipt #${tx.id.substring(0, tx.id.length > 8 ? 8 : tx.id.length).toUpperCase()}?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(confirmCtx),
+                              child: const Text('CANCEL'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(confirmCtx);
+                                Navigator.pop(dialogCtx);
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => _RefundOrderModal(
+                                    tx: tx,
+                                    inventory: context.read<InventoryProvider>(),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('PROCEED TO REFUND'),
+                            ),
+                          ],
+                        ),
+                      );
                     },
                     icon: const Icon(Icons.published_with_changes_rounded,
                         size: 16),
-                    label: const Text('Itemized Return / Swap'),
+                    label: const Text('REFUND ORDER'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
+                      backgroundColor: Colors.red,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
