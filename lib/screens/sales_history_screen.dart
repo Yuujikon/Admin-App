@@ -92,24 +92,49 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Search sales by receipt ID, customer...',
-                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      suffixIcon: _salesSearch.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () =>
-                                  setState(() => _salesSearch = ''),
-                            )
-                          : null,
-                    ),
-                    onChanged: (v) => setState(() => _salesSearch = v),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText:
+                                'Search sales by receipt ID, customer...',
+                            prefixIcon:
+                                const Icon(Icons.search_rounded, size: 20),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            suffixIcon: _salesSearch.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () =>
+                                        setState(() => _salesSearch = ''),
+                                  )
+                                : null,
+                          ),
+                          onChanged: (v) => setState(() => _salesSearch = v),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () =>
+                            _showReceiptLookupDialog(context, txs),
+                        icon: const Icon(
+                            Icons.published_with_changes_rounded,
+                            size: 18),
+                        label: const Text('Process Return / Swap'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -602,6 +627,291 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           ],
         ),
       );
+
+  void _showReceiptLookupDialog(
+      BuildContext context, List<StoreTransaction> txs) {
+    final searchCtrl = TextEditingController();
+    String query = '';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final cleanQuery = query.toLowerCase().trim();
+          List<StoreTransaction> matchedTxs = [];
+          if (cleanQuery.isNotEmpty) {
+            matchedTxs = txs.where((tx) {
+              return tx.id.toLowerCase().contains(cleanQuery) ||
+                  (tx.customerEmail != null &&
+                      tx.customerEmail!.toLowerCase().contains(cleanQuery));
+            }).toList();
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24)),
+            child: Container(
+              width: 580,
+              constraints: const BoxConstraints(maxHeight: 650),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.published_with_changes_rounded,
+                              color: Colors.teal, size: 24),
+                          SizedBox(width: 10),
+                          Text(
+                            'Process Return / Swap (Receipt Lookup)',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+
+                  // Receipt ID / Barcode Search Input
+                  TextField(
+                    controller: searchCtrl,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText:
+                          'Enter or scan Receipt ID (e.g. TX-1024 or scan thermal QR)...',
+                      prefixIcon: const Icon(Icons.qr_code_scanner_rounded),
+                      suffixIcon: query.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded),
+                              onPressed: () {
+                                searchCtrl.clear();
+                                setDialogState(() => query = '');
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (val) => setDialogState(() => query = val),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Expanded(
+                    child: cleanQuery.isEmpty
+                        ? SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'RECENT TRANSACTIONS AVAILABLE FOR RETURN:',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                ...txs.take(5).map((tx) => _buildTxLookupCard(
+                                    context, tx, ctx)),
+                              ],
+                            ),
+                          )
+                        : matchedTxs.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No receipt or transaction found matching "$query"',
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant),
+                                ),
+                              )
+                            : SingleChildScrollView(
+                                child: Column(
+                                  children: matchedTxs
+                                      .map((tx) => _buildTxLookupCard(
+                                          context, tx, ctx))
+                                      .toList(),
+                                ),
+                              ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTxLookupCard(
+      BuildContext context, StoreTransaction tx, BuildContext dialogCtx) {
+    final theme = Theme.of(context);
+    final dateStr = DateFormat('MMM d, yyyy • h:mm a').format(tx.createdAt);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Receipt Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Receipt #${tx.id.substring(0, tx.id.length > 12 ? 12 : tx.id.length).toUpperCase()}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                          fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: tx.isRefunded
+                        ? Colors.red.shade100
+                        : Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    tx.isRefunded ? 'FULLY REFUNDED' : 'PAID',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: tx.isRefunded ? Colors.red : Colors.green.shade900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+
+            // Itemized Products Breakdown Table
+            const Text(
+              'PURCHASED PRODUCTS & RETURN STATUS:',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: Colors.grey,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            ...tx.items.map((i) {
+              final availableQty = i.qty - i.returnedQty;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Text('${i.qty}x',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            i.name +
+                                (i.variantName != null
+                                    ? ' (${i.variantName})'
+                                    : ''),
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'Price: ${formatPeso(i.price)} • Returned: ${i.returnedQty} (Available: $availableQty)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: availableQty > 0
+                                  ? theme.colorScheme.onSurfaceVariant
+                                  : Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      formatPeso(i.price * i.qty),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total Amount: ${formatPeso(tx.total)}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                if (!tx.isRefunded)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(dialogCtx);
+                      ReturnSwapDialog.show(context, tx);
+                    },
+                    icon: const Icon(Icons.published_with_changes_rounded,
+                        size: 16),
+                    label: const Text('Itemized Return / Swap'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── REFUND HISTORY CARD ──────────────────────────────────────────────────────

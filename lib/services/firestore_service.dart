@@ -444,7 +444,18 @@ class FirestoreService {
               'Selected item was not found on this transaction receipt.');
         }
 
-        transaction.update(txRef, {'items': updatedTxItems});
+        // Check if all items on this transaction have now been fully returned
+        final bool allItemsFullyReturned = updatedTxItems.every((raw) {
+          if (raw is! Map) return true;
+          final int qty = (raw['qty'] as num? ?? 1).toInt();
+          final int retQty = (raw['returnedQty'] as num? ?? 0).toInt();
+          return retQty >= qty;
+        });
+
+        transaction.update(txRef, {
+          'items': updatedTxItems,
+          if (allItemsFullyReturned) 'isRefunded': true,
+        });
 
         // 2. Process items array for Orders (if linked pre-order)
         if (orderRef != null && orderSnap != null) {

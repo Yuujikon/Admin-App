@@ -132,6 +132,23 @@ class ReceiptPrinterService {
     bytes.addAll(generator.text("--------------------------------",
         styles: const PosStyles(align: PosAlign.center)));
 
+    // Receipt QR Code for Instant Return / Swap Scanning
+    if (invoiceId != null && invoiceId.isNotEmpty) {
+      bytes.addAll(generator.feed(1));
+      bytes.addAll(generator.text("SCAN QR FOR RETURN / SWAP",
+          styles: const PosStyles(align: PosAlign.center, bold: true)));
+      try {
+        bytes.addAll(generator.qrcode(
+          invoiceId.toUpperCase(),
+          size: QRSize.Size4,
+        ));
+      } catch (e) {
+        debugPrint('Error generating receipt QR code: $e');
+      }
+      bytes.addAll(generator.text("--------------------------------",
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+
     // 6. Footer & Auto-Cut
     bytes.addAll(generator.text("Salamat sa Pagbili!",
         styles: const PosStyles(align: PosAlign.center, bold: true)));
