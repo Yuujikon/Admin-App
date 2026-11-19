@@ -348,7 +348,11 @@ class _PosScreenState extends State<PosScreen> {
         );
       }
 
-      if (printer.connected) {
+      final bool isPrinterAvailable = printer.connected ||
+          await PrintBluetoothThermal.connectionStatus ||
+          printer.device != null;
+
+      if (isPrinterAvailable) {
         try {
           final success = await printer.printReceipt(
             items: items,
