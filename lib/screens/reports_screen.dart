@@ -359,23 +359,26 @@ class _ReportsScreenState extends State<ReportsScreen>
     // Filter transactions within selected range
     final filteredTx = inventory.transactions.where((t) {
       if (t.isRefunded) return false;
-      return t.createdAt
+      final txDate = t.createdAt.toLocal();
+      return txDate
               .isAfter(range.start.subtract(const Duration(seconds: 1))) &&
-          t.createdAt.isBefore(range.end.add(const Duration(seconds: 1)));
+          txDate.isBefore(range.end.add(const Duration(seconds: 1)));
     }).toList();
 
     // Filter expenses within selected range
     final filteredExp = expenses.where((e) {
-      return e.createdAt
+      final eDate = e.createdAt.toLocal();
+      return eDate
               .isAfter(range.start.subtract(const Duration(seconds: 1))) &&
-          e.createdAt.isBefore(range.end.add(const Duration(seconds: 1)));
+          eDate.isBefore(range.end.add(const Duration(seconds: 1)));
     }).toList();
 
     // Filter loss records within selected range
     final filteredLoss = inventory.lossRecords.where((l) {
-      return l.createdAt
+      final lDate = l.createdAt.toLocal();
+      return lDate
               .isAfter(range.start.subtract(const Duration(seconds: 1))) &&
-          l.createdAt.isBefore(range.end.add(const Duration(seconds: 1)));
+          lDate.isBefore(range.end.add(const Duration(seconds: 1)));
     }).toList();
 
     // 1. Core Metrics Aggregation
@@ -431,48 +434,61 @@ class _ReportsScreenState extends State<ReportsScreen>
     // 3. Product Movement Aggregation across filteredTx and inventory.products
     final Map<String, _ProductMovementData> itemMovements = {};
 
-    for (final tx in filteredTx) {
-      for (final item in tx.items) {
-        String cat = 'Others';
-        int currentStock = 0;
-        try {
-          final p = inventory.products.firstWhere(
-            (p) =>
-                p.name.trim().toLowerCase() == item.name.trim().toLowerCase() ||
-                p.id == item.productId,
-          );
-          cat = p.category;
-          currentStock = p.stock;
-        } catch (_) {}
-
-        final key = item.name.trim();
-        if (!itemMovements.containsKey(key)) {
-          itemMovements[key] = _ProductMovementData(
-            productId: item.productId,
-            name: item.name,
-            category: cat,
-            currentStock: currentStock,
-          );
-        }
-        itemMovements[key]!.qtySold += item.qty;
-        itemMovements[key]!.totalRevenue += (item.price * item.qty);
-      }
-    }
-
     for (final p in inventory.products) {
       if (p.status != ProductStatus.published) continue;
-      final key = p.name.trim();
-      if (!itemMovements.containsKey(key)) {
-        itemMovements[key] = _ProductMovementData(
-          productId: p.id,
-          name: p.name,
-          category: p.category,
-          currentStock: p.stock,
-          qtySold: 0,
-          totalRevenue: 0.0,
-        );
-      } else {
-        itemMovements[key]!.currentStock = p.stock;
+      itemMovements[p.id] = _ProductMovementData(
+        productId: p.id,
+        name: p.name,
+        category: p.category,
+        currentStock: p.stock,
+        qtySold: 0,
+        totalRevenue: 0.0,
+      );
+    }
+
+    for (final tx in filteredTx) {
+      if (tx.isRefunded) continue;
+      for (final item in tx.items) {
+        final int netQty = (item.qty - item.returnedQty).clamp(0, 999999);
+        if (netQty <= 0) continue;
+
+        Product? matchingProduct;
+        if (item.productId.isNotEmpty) {
+          try {
+            matchingProduct = inventory.products.firstWhere((p) => p.id == item.productId);
+          } catch (_) {}
+        }
+        if (matchingProduct == null) {
+          final normItemName = item.name.trim().toLowerCase();
+          try {
+            matchingProduct = inventory.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
+          } catch (_) {}
+        }
+
+        if (matchingProduct != null) {
+          if (!itemMovements.containsKey(matchingProduct.id)) {
+            itemMovements[matchingProduct.id] = _ProductMovementData(
+              productId: matchingProduct.id,
+              name: matchingProduct.name,
+              category: matchingProduct.category,
+              currentStock: matchingProduct.stock,
+            );
+          }
+          itemMovements[matchingProduct.id]!.qtySold += netQty;
+          itemMovements[matchingProduct.id]!.totalRevenue += (item.price * netQty);
+        } else {
+          final key = item.productId.isNotEmpty ? item.productId : item.name.trim();
+          if (!itemMovements.containsKey(key)) {
+            itemMovements[key] = _ProductMovementData(
+              productId: item.productId,
+              name: item.name,
+              category: 'Others',
+              currentStock: 0,
+            );
+          }
+          itemMovements[key]!.qtySold += netQty;
+          itemMovements[key]!.totalRevenue += (item.price * netQty);
+        }
       }
     }
 

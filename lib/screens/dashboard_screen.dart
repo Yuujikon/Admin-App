@@ -103,8 +103,9 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final endDate = params.endDate;
 
   final periodTx = params.transactions.where((t) {
-    return t.createdAt.compareTo(startDate) >= 0 &&
-        t.createdAt.compareTo(endDate) <= 0;
+    final txDate = t.createdAt.toLocal();
+    return txDate.isAfter(startDate.subtract(const Duration(milliseconds: 1))) &&
+        txDate.isBefore(endDate.add(const Duration(milliseconds: 1)));
   }).toList();
   periodTx.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -114,8 +115,9 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   });
 
   final periodLossRecords = params.lossRecords.where((l) {
-    return l.createdAt.compareTo(startDate) >= 0 &&
-        l.createdAt.compareTo(endDate) <= 0;
+    final lDate = l.createdAt.toLocal();
+    return lDate.isAfter(startDate.subtract(const Duration(milliseconds: 1))) &&
+        lDate.isBefore(endDate.add(const Duration(milliseconds: 1)));
   }).toList();
 
   final double loss = periodLossRecords.fold(0.0, (sum, l) {
@@ -138,8 +140,9 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
       (rawNetProfit.isNaN || rawNetProfit.isInfinite) ? 0.0 : rawNetProfit;
 
   final double exp = params.expenses.where((e) {
-    return e.createdAt.compareTo(startDate) >= 0 &&
-        e.createdAt.compareTo(endDate) <= 0;
+    final eDate = e.createdAt.toLocal();
+    return eDate.isAfter(startDate.subtract(const Duration(milliseconds: 1))) &&
+        eDate.isBefore(endDate.add(const Duration(milliseconds: 1)));
   }).fold(0.0, (sum, e) {
     final amt = e.amount;
     return sum + ((amt.isNaN || amt.isInfinite) ? 0.0 : amt);
@@ -151,8 +154,9 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final priorEnd = startDate.subtract(const Duration(milliseconds: 1));
 
   final priorTx = params.transactions.where((t) {
-    return t.createdAt.compareTo(priorStart) >= 0 &&
-        t.createdAt.compareTo(priorEnd) <= 0;
+    final pDate = t.createdAt.toLocal();
+    return pDate.isAfter(priorStart.subtract(const Duration(milliseconds: 1))) &&
+        pDate.isBefore(priorEnd.add(const Duration(milliseconds: 1)));
   });
 
   final double priorGross = priorTx.fold(0.0, (sum, t) {
@@ -181,9 +185,42 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
       .toList();
 
   final movementCounts = <String, int>{};
+  final Map<String, int> productIdMovementCounts = {};
+
+  for (final p in params.products) {
+    if (p.status == ProductStatus.published) {
+      productIdMovementCounts[p.id] = 0;
+    }
+  }
+
   for (final tx in periodTx) {
+    if (tx.isRefunded) continue;
     for (final item in tx.items) {
-      movementCounts[item.name] = (movementCounts[item.name] ?? 0) + item.qty;
+      final int netQty = (item.qty - item.returnedQty).clamp(0, 999999);
+      if (netQty <= 0) continue;
+
+      Product? matchingProduct;
+      if (item.productId.isNotEmpty) {
+        try {
+          matchingProduct = params.products.firstWhere((p) => p.id == item.productId);
+        } catch (_) {}
+      }
+      if (matchingProduct == null) {
+        final normItemName = item.name.trim().toLowerCase();
+        try {
+          matchingProduct = params.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
+        } catch (_) {}
+      }
+
+      if (matchingProduct != null) {
+        productIdMovementCounts[matchingProduct.id] =
+            (productIdMovementCounts[matchingProduct.id] ?? 0) + netQty;
+        movementCounts[matchingProduct.name] =
+            (movementCounts[matchingProduct.name] ?? 0) + netQty;
+      } else {
+        movementCounts[item.name.trim()] =
+            (movementCounts[item.name.trim()] ?? 0) + netQty;
+      }
     }
   }
 
@@ -194,10 +231,16 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
 
   final slowMoving = params.products
       .where((p) => p.status == ProductStatus.published)
-      .where((p) => (movementCounts[p.name] ?? 0) <= 2)
+      .where((p) {
+        final sold = productIdMovementCounts[p.id] ?? (movementCounts[p.name] ?? 0);
+        return sold <= 2;
+      })
       .toList();
-  slowMoving.sort((a, b) =>
-      (movementCounts[a.name] ?? 0).compareTo(movementCounts[b.name] ?? 0));
+  slowMoving.sort((a, b) {
+    final sA = productIdMovementCounts[a.id] ?? (movementCounts[a.name] ?? 0);
+    final sB = productIdMovementCounts[b.id] ?? (movementCounts[b.name] ?? 0);
+    return sA.compareTo(sB);
+  });
 
   final chartMetrics = _computeChartMetricsForPeriod(
     params.transactions,
@@ -244,7 +287,7 @@ List<_DailyMetric> _computeChartMetricsForPeriod(
 
     final dayTx = transactions.where((t) {
       try {
-        return DateFormat('yyyy-MM-dd').format(t.createdAt) == dayStr;
+        return DateFormat('yyyy-MM-dd').format(t.createdAt.toLocal()) == dayStr;
       } catch (_) {
         return false;
       }
@@ -252,7 +295,7 @@ List<_DailyMetric> _computeChartMetricsForPeriod(
 
     final dayLoss = lossRecords.where((l) {
       try {
-        return DateFormat('yyyy-MM-dd').format(l.createdAt) == dayStr;
+        return DateFormat('yyyy-MM-dd').format(l.createdAt.toLocal()) == dayStr;
       } catch (_) {
         return false;
       }
