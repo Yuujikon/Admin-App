@@ -1355,6 +1355,8 @@ class _RefundOrderModal extends StatefulWidget {
 
 class _RefundOrderModalState extends State<_RefundOrderModal> {
   final Map<int, int> _selectedRefundQtys = {};
+  final Map<int, String> _selectedConditions = {};
+  final Map<int, TextEditingController> _qtyTextCtrls = {};
   bool _isProcessing = false;
 
   @override
@@ -1362,7 +1364,16 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
     super.initState();
     for (int idx = 0; idx < widget.tx.items.length; idx++) {
       _selectedRefundQtys[idx] = 0;
+      _selectedConditions[idx] = 'restock';
     }
+  }
+
+  @override
+  void dispose() {
+    for (final ctrl in _qtyTextCtrls.values) {
+      ctrl.dispose();
+    }
+    super.dispose();
   }
 
   void _promptRefundConfirmation() {
@@ -1433,6 +1444,7 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
             'barcode': item.barcode,
             'qty': qty,
             'price': item.price,
+            'condition': _selectedConditions[idx] ?? 'restock',
           });
         }
       });
@@ -1490,6 +1502,131 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
         );
       }
     }
+  }
+
+  Widget _buildQtyControl(int idx, int availableQty) {
+    final currentQty = _selectedRefundQtys[idx] ?? 0;
+    final ctrl = _qtyTextCtrls[idx] ??=
+        TextEditingController(text: '$currentQty');
+
+    if (ctrl.text != '$currentQty') {
+      ctrl.text = '$currentQty';
+    }
+
+    return Container(
+      height: 38,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove, size: 16),
+            color: Colors.red,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 38),
+            onPressed: currentQty > 1
+                ? () {
+                    final newQty = currentQty - 1;
+                    setState(() {
+                      _selectedRefundQtys[idx] = newQty;
+                      ctrl.text = '$newQty';
+                    });
+                  }
+                : null,
+          ),
+          SizedBox(
+            width: 44,
+            child: TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                border: InputBorder.none,
+              ),
+              onChanged: (val) {
+                int parsed = int.tryParse(val) ?? 0;
+                if (parsed < 0) parsed = 0;
+                if (parsed > availableQty) parsed = availableQty;
+                setState(() {
+                  _selectedRefundQtys[idx] = parsed;
+                });
+              },
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: 16),
+            color: Colors.red,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 38),
+            onPressed: currentQty < availableQty
+                ? () {
+                    final newQty = currentQty + 1;
+                    setState(() {
+                      _selectedRefundQtys[idx] = newQty;
+                      ctrl.text = '$newQty';
+                    });
+                  }
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConditionDropdown(int idx) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedConditions[idx] ?? 'restock',
+          isDense: true,
+          icon: const Icon(Icons.arrow_drop_down, size: 20),
+          style: const TextStyle(
+              fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black),
+          items: const [
+            DropdownMenuItem(
+              value: 'restock',
+              child: Text('🟢 Unopened (Restock to Shelf)',
+                  style: TextStyle(color: Colors.green)),
+            ),
+            DropdownMenuItem(
+              value: 'damaged',
+              child: Text('🔴 Damaged / Package Broken',
+                  style: TextStyle(color: Colors.red)),
+            ),
+            DropdownMenuItem(
+              value: 'expired',
+              child: Text('🟠 Expired / Spoilage',
+                  style: TextStyle(color: Colors.deepOrange)),
+            ),
+            DropdownMenuItem(
+              value: 'other',
+              child: Text('⚪ Other Issue / Write-off',
+                  style: TextStyle(color: Colors.grey)),
+            ),
+          ],
+          onChanged: (val) {
+            if (val != null) {
+              setState(() {
+                _selectedConditions[idx] = val;
+              });
+            }
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -1574,7 +1711,7 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
                   final isSelected = currentRefundQty > 0;
 
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
+                    margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: isSelected
@@ -1588,92 +1725,79 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
                                 .withValues(alpha: 0.3),
                       ),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Checkbox(
-                          value: isSelected,
-                          activeColor: Colors.red,
-                          onChanged: (val) {
-                            setState(() {
-                              if (val == true) {
-                                _selectedRefundQtys[idx] = availableQty;
-                              } else {
-                                _selectedRefundQtys[idx] = 0;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.name +
-                                    (item.variantName != null
-                                        ? ' (${item.variantName})'
-                                        : ''),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 13),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: isSelected,
+                              activeColor: Colors.red,
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    _selectedRefundQtys[idx] = availableQty;
+                                    _qtyTextCtrls[idx]?.text = '$availableQty';
+                                  } else {
+                                    _selectedRefundQtys[idx] = 0;
+                                    _qtyTextCtrls[idx]?.text = '0';
+                                  }
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.name +
+                                        (item.variantName != null
+                                            ? ' (${item.variantName})'
+                                            : ''),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  Text(
+                                    '${formatPeso(item.price)} each • Available for refund: $availableQty unit(s)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                '${formatPeso(item.price)} each • Available for refund: $availableQty unit(s)',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
+                            ),
+                            if (isSelected) ...[
+                              const SizedBox(width: 8),
+                              _buildQtyControl(idx, availableQty),
                             ],
-                          ),
+                            const SizedBox(width: 8),
+                            Text(
+                              formatPeso(item.price * (isSelected ? currentRefundQty : availableQty)),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: isSelected ? Colors.red.shade900 : Colors.black,
+                              ),
+                            ),
+                          ],
                         ),
                         if (isSelected) ...[
-                          const SizedBox(width: 8),
+                          const SizedBox(height: 8),
                           Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline,
-                                    size: 20),
-                                color: Colors.red,
-                                onPressed: currentRefundQty > 1
-                                    ? () {
-                                        setState(() {
-                                          _selectedRefundQtys[idx] =
-                                              currentRefundQty - 1;
-                                        });
-                                      }
-                                    : null,
-                              ),
-                              Text(
-                                '$currentRefundQty',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline,
-                                    size: 20),
-                                color: Colors.red,
-                                onPressed: currentRefundQty < availableQty
-                                    ? () {
-                                        setState(() {
-                                          _selectedRefundQtys[idx] =
-                                              currentRefundQty + 1;
-                                        });
-                                      }
-                                    : null,
-                              ),
+                              const SizedBox(width: 48),
+                              const Text('Condition / Reason: ',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey)),
+                              const SizedBox(width: 6),
+                              Expanded(child: _buildConditionDropdown(idx)),
                             ],
                           ),
                         ],
-                        const SizedBox(width: 8),
-                        Text(
-                          formatPeso(item.price * (isSelected ? currentRefundQty : availableQty)),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: isSelected ? Colors.red.shade900 : Colors.black,
-                          ),
-                        ),
                       ],
                     ),
                   );

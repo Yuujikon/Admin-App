@@ -609,21 +609,41 @@ class FirestoreService {
         transaction.update(orderRef, {'items': updatedOrderItems});
       }
 
-      // Restock inventory for refunded items
+      // Restock or Log Spoilage/Loss for refunded items
       for (final refItem in itemsToRefund) {
         final String pid = refItem['productId']?.toString() ?? '';
         final String? vid = refItem['variantId']?.toString();
         final int rQty = (refItem['qty'] as num? ?? 0).toInt();
+        final String condition = refItem['condition']?.toString() ?? 'restock';
 
         if (pid.isNotEmpty && rQty > 0) {
           final productRef = _products.doc(pid);
-          if (vid != null && vid.isNotEmpty) {
-            transaction.update(productRef, {
-              'variants.$vid.stock': FieldValue.increment(rQty),
-            });
+          if (condition == 'restock') {
+            if (vid != null && vid.isNotEmpty) {
+              transaction.update(productRef, {
+                'variants.$vid.stock': FieldValue.increment(rQty),
+              });
+            } else {
+              transaction.update(productRef, {
+                'stock': FieldValue.increment(rQty),
+              });
+            }
           } else {
-            transaction.update(productRef, {
-              'stock': FieldValue.increment(rQty),
+            // Damaged/Expired/Write-off: Log inventory loss record
+            final lossRef = _db.collection('loss_records').doc();
+            final double price = (refItem['price'] as num? ?? 0.0).toDouble();
+            transaction.set(lossRef, {
+              'productId': pid,
+              if (vid != null) 'variantId': vid,
+              'productName': refItem['name'] ?? '',
+              'qty': rQty,
+              'unitLossCost': price,
+              'totalLoss': price * rQty,
+              'type': condition == 'expired' ? 'expired' : 'damaged',
+              'notes':
+                  'Refund Write-off ($condition) for Receipt #$transactionId',
+              'reportedBy': processedBy,
+              'createdAt': FieldValue.serverTimestamp(),
             });
           }
         }
