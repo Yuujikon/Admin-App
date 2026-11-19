@@ -58,8 +58,11 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
   }
 
   void _processScannedBarcode(String rawBarcode) {
-    final cleanBarcode = rawBarcode.trim();
-    if (cleanBarcode.isEmpty) return;
+    final cleanInput = rawBarcode.trim();
+    if (cleanInput.isEmpty) return;
+
+    final String normalized =
+        cleanInput.replaceAll('#', '').toLowerCase().trim();
 
     setState(() {
       _errorMessage = null;
@@ -67,29 +70,53 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
 
     final items = widget.transaction.items;
 
-    // 1. Try matching by item barcode
-    int matchingIndex = items.indexWhere((i) =>
-        i.barcode.isNotEmpty &&
-        i.barcode.toLowerCase() == cleanBarcode.toLowerCase());
+    // 1. Check if input matches Receipt # / Order ID / Transaction ID
+    final String txId =
+        widget.transaction.id.replaceAll('#', '').toLowerCase();
+    final String? orderId =
+        widget.orderId?.replaceAll('#', '').toLowerCase();
 
-    // 2. If no barcode match, try matching by transaction ID / receipt number or item name
+    final bool isReceiptMatch = normalized.isNotEmpty &&
+        (txId == normalized ||
+            txId.contains(normalized) ||
+            normalized.contains(txId) ||
+            (orderId != null &&
+                (orderId == normalized ||
+                    orderId.contains(normalized) ||
+                    normalized.contains(orderId))));
+
+    if (isReceiptMatch) {
+      final returnableItems =
+          items.where((i) => i.returnedQty < i.qty).toList();
+      _showItemPickerForReceipt(returnableItems);
+      return;
+    }
+
+    // 2. Match by Item Barcode
+    int matchingIndex = items.indexWhere((i) {
+      final b = i.barcode.replaceAll('#', '').toLowerCase();
+      return b.isNotEmpty && (b == normalized || b.contains(normalized));
+    });
+
+    // 3. Match by Product Name
     if (matchingIndex < 0) {
-      if (cleanBarcode.toLowerCase() == widget.transaction.id.toLowerCase() ||
-          (widget.orderId != null &&
-              cleanBarcode.toLowerCase() == widget.orderId!.toLowerCase())) {
-        _showUnbarcodedPicker();
-        return;
-      }
-
       matchingIndex = items.indexWhere(
-          (i) => i.name.toLowerCase().contains(cleanBarcode.toLowerCase()));
+          (i) => i.name.toLowerCase().contains(normalized));
     }
 
     if (matchingIndex < 0) {
+      // Fallback: If receipt has available returnable items, open item selection dialog
+      final returnableItems =
+          items.where((i) => i.returnedQty < i.qty).toList();
+      if (returnableItems.isNotEmpty) {
+        _showItemPickerForReceipt(returnableItems);
+        return;
+      }
+
       setState(() {
         _hasScanned = false;
         _errorMessage =
-            'Mismatch: Barcode/Number [$cleanBarcode] was not found on this receipt.';
+            'Mismatch: Barcode/Number "$cleanInput" was not found on this receipt.';
       });
       return;
     }
@@ -113,34 +140,44 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     });
   }
 
-  void _showUnbarcodedPicker() {
-    final unbarcodedItems = widget.transaction.items
-        .where((i) => i.barcode.isEmpty && i.returnedQty < i.qty)
-        .toList();
+  void _showItemPickerForReceipt([List<CartItem>? customItems]) {
+    final availableItems = customItems ??
+        widget.transaction.items
+            .where((i) => i.returnedQty < i.qty)
+            .toList();
 
-    if (unbarcodedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('No unbarcoded items available for return on this receipt.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    if (availableItems.isEmpty) {
+      setState(() {
+        _hasScanned = false;
+        _errorMessage =
+            'All items on this receipt have already been returned.';
+      });
+      return;
+    }
+
+    if (availableItems.length == 1) {
+      setState(() {
+        _hasScanned = true;
+        _matchedItem = availableItems.first;
+        _returnQty = 1;
+        _selectedCondition = null;
+        _errorMessage = null;
+      });
       return;
     }
 
     showDialog<CartItem>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Select Unbarcoded Item',
+        title: const Text('Select Item to Return / Swap',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: SizedBox(
-          width: 400,
+          width: 420,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: unbarcodedItems.length,
+            itemCount: availableItems.length,
             itemBuilder: (ctx, i) {
-              final item = unbarcodedItems[i];
+              final item = availableItems[i];
               final availableQty = item.qty - item.returnedQty;
               return ListTile(
                 title: Text(item.name,
@@ -163,6 +200,7 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     ).then((selected) {
       if (selected != null) {
         setState(() {
+          _hasScanned = true;
           _matchedItem = selected;
           _returnQty = 1;
           _selectedCondition = null;
@@ -171,6 +209,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
       }
     });
   }
+
+  void _showUnbarcodedPicker() => _showItemPickerForReceipt();
 
   Future<void> _confirmReturn() async {
     if (_matchedItem == null ||
