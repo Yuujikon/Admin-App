@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 /// and maximum quantity based on stock.
 class QtyControl extends StatefulWidget {
   final int qty;
+  final int min;
   final int? max;
   final ValueChanged<int> onChanged;
 
   const QtyControl({
     super.key,
     required this.qty,
+    this.min = 1,
     this.max,
     required this.onChanged,
   });
@@ -65,7 +67,7 @@ class _QtyControlState extends State<QtyControl> {
 
   void _commit() {
     final parsed = int.tryParse(_ctrl.text);
-    final clamped = (parsed ?? widget.qty).clamp(1, _maxVal);
+    final clamped = (parsed ?? widget.qty).clamp(widget.min, _maxVal);
     _ctrl.text = '$clamped';
     _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
     if (clamped != widget.qty) {
@@ -81,7 +83,7 @@ class _QtyControlState extends State<QtyControl> {
         _ctrl.text = '$_maxVal';
         _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
         widget.onChanged(_maxVal);
-      } else if (parsed >= 1) {
+      } else if (parsed >= widget.min) {
         if (parsed != widget.qty) {
           widget.onChanged(parsed);
         }
@@ -90,7 +92,7 @@ class _QtyControlState extends State<QtyControl> {
   }
 
   void _adjust(int delta) {
-    final target = (widget.qty + delta).clamp(1, _maxVal);
+    final target = (widget.qty + delta).clamp(widget.min, _maxVal);
     _ctrl.text = '$target';
     _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
     if (target != widget.qty) {
@@ -100,7 +102,7 @@ class _QtyControlState extends State<QtyControl> {
 
   Widget _buildStepButton(String label, int delta) {
     final bool isDisabled =
-        (delta > 0 && widget.qty >= _maxVal) || (delta < 0 && widget.qty <= 1);
+        (delta > 0 && widget.qty >= _maxVal) || (delta < 0 && widget.qty <= widget.min);
 
     return Material(
       color: Colors.transparent,

@@ -2116,12 +2116,36 @@ void showEmailSetupGuideDialog(BuildContext context,
 
 void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
     {bool updateStatus = true}) async {
+  final inventory = context.read<InventoryProvider>();
   final buffer = StringBuffer('Dear ${inquiry.supplierName},\n\n');
   buffer.writeln(
       'Good day! We would like to request a restock for the following items:\n');
   for (final item in inquiry.items) {
     buffer.writeln('• ${item.productName} (SKU: ${item.sku})');
-    buffer.writeln('  Requested Quantity: ${item.requestedQty} ${item.unit}');
+    Product? prod;
+    try {
+      prod = inventory.products.firstWhere(
+        (p) =>
+            p.id == item.productId ||
+            p.name.trim().toLowerCase() ==
+                item.productName.trim().toLowerCase(),
+      );
+    } catch (_) {}
+
+    if (prod != null && prod.hasBulkPacking) {
+      final int bQty = item.requestedQty ~/ prod.piecesPerPack;
+      final int extra = item.requestedQty % prod.piecesPerPack;
+      if (bQty > 0) {
+        final bulkStr =
+            '$bQty ${prod.bulkUnit}${bQty > 1 ? 's' : ''}${extra > 0 ? " + $extra ${prod.unit}" : ""}';
+        buffer.writeln(
+            '  Requested Quantity: $bulkStr (${item.requestedQty} ${item.unit} total)');
+      } else {
+        buffer.writeln('  Requested Quantity: ${item.requestedQty} ${item.unit}');
+      }
+    } else {
+      buffer.writeln('  Requested Quantity: ${item.requestedQty} ${item.unit}');
+    }
     buffer.writeln('');
   }
   buffer.writeln('\nReference Number: ${inquiry.inquiryNumber}');
@@ -2179,12 +2203,35 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
     return;
   }
 
+  final inventory = context.read<InventoryProvider>();
   final buffer = StringBuffer('Hello ${inquiry.supplierName},\n\n');
   buffer.writeln(
       'This is GDC Store regarding Restock Supply Inquiry #${inquiry.inquiryNumber}.\n');
   buffer.writeln('Requested supply items:');
   for (final item in inquiry.items) {
-    buffer.writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
+    Product? prod;
+    try {
+      prod = inventory.products.firstWhere(
+        (p) =>
+            p.id == item.productId ||
+            p.name.trim().toLowerCase() ==
+                item.productName.trim().toLowerCase(),
+      );
+    } catch (_) {}
+
+    if (prod != null && prod.hasBulkPacking) {
+      final int bQty = item.requestedQty ~/ prod.piecesPerPack;
+      final int extra = item.requestedQty % prod.piecesPerPack;
+      if (bQty > 0) {
+        final bulkStr =
+            '$bQty ${prod.bulkUnit}${bQty > 1 ? 's' : ''}${extra > 0 ? " + $extra ${prod.unit}" : ""} (${item.requestedQty} ${item.unit})';
+        buffer.writeln('• ${item.productName}: $bulkStr');
+      } else {
+        buffer.writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
+      }
+    } else {
+      buffer.writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
+    }
   }
   buffer
       .writeln('\nPlease confirm supply availability and pricing. Thank you!');

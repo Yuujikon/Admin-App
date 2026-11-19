@@ -19,10 +19,38 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
   late List<RestockInquiryItem> _items;
   bool _saving = false;
 
+  final Map<String, bool> _itemBulkModes = {};
+  final Map<String, int> _itemBulkQty = {};
+  final Map<String, int> _itemExtraQty = {};
+
   @override
   void initState() {
     super.initState();
     _items = List.from(widget.inquiry.items);
+    final inventory = context.read<InventoryProvider>();
+
+    for (final item in _items) {
+      try {
+        final prod = inventory.products.firstWhere(
+          (p) =>
+              p.id == item.productId ||
+              p.name.trim().toLowerCase() ==
+                  item.productName.trim().toLowerCase(),
+        );
+        if (prod.hasBulkPacking) {
+          _itemBulkModes[item.productId] = true;
+          if (item.requestedQty >= prod.piecesPerPack) {
+            _itemBulkQty[item.productId] =
+                item.requestedQty ~/ prod.piecesPerPack;
+            _itemExtraQty[item.productId] =
+                item.requestedQty % prod.piecesPerPack;
+          } else {
+            _itemBulkQty[item.productId] = 1;
+            _itemExtraQty[item.productId] = 0;
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   void _addItem(Product p) {
@@ -42,6 +70,17 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
         requestedQty: suggested,
         costPrice: p.costPrice,
       ));
+
+      if (p.hasBulkPacking) {
+        _itemBulkModes[p.id] = true;
+        if (suggested >= p.piecesPerPack) {
+          _itemBulkQty[p.id] = suggested ~/ p.piecesPerPack;
+          _itemExtraQty[p.id] = suggested % p.piecesPerPack;
+        } else {
+          _itemBulkQty[p.id] = 1;
+          _itemExtraQty[p.id] = 0;
+        }
+      }
     });
   }
 
@@ -187,6 +226,20 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
 
   Widget _itemRow(int index) {
     final item = _items[index];
+    final inventory = context.read<InventoryProvider>();
+    Product? prod;
+    try {
+      prod = inventory.products.firstWhere(
+        (p) =>
+            p.id == item.productId ||
+            p.name.trim().toLowerCase() ==
+                item.productName.trim().toLowerCase(),
+      );
+    } catch (_) {}
+
+    final bool hasBulk = prod != null && prod.hasBulkPacking;
+    final bool isBulk = _itemBulkModes[item.productId] ?? hasBulk;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -209,7 +262,8 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                     Text(item.productName,
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 14)),
-                    Text('SKU: ${item.sku}',
+                    Text(
+                        'SKU: ${item.sku} • Stock: ${item.currentStock} ${item.unit}',
                         style:
                             const TextStyle(fontSize: 10, color: Colors.grey)),
                   ],
@@ -223,31 +277,167 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
+          const SizedBox(height: 10),
+
+          if (hasBulk) ...[
+            SegmentedButton<bool>(
+              style: SegmentedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+              ),
+              segments: [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text('Single (${prod!.unit})',
+                      style: const TextStyle(fontSize: 11)),
+                  icon: const Icon(Icons.inventory_2_outlined, size: 14),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text(
+                    'Bulk (${prod.bulkUnit.toUpperCase()} of ${prod.piecesPerPack})',
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                  icon: const Icon(Icons.all_inbox_rounded, size: 14),
+                ),
+              ],
+              selected: {isBulk},
+              onSelectionChanged: (Set<bool> selection) {
+                setState(() {
+                  final newIsBulk = selection.first;
+                  _itemBulkModes[item.productId] = newIsBulk;
+                  if (newIsBulk) {
+                    final int req = item.requestedQty;
+                    final int bQty = req >= prod!.piecesPerPack
+                        ? req ~/ prod.piecesPerPack
+                        : 1;
+                    final int extra = req >= prod.piecesPerPack
+                        ? req % prod.piecesPerPack
+                        : 0;
+                    _itemBulkQty[item.productId] = bQty;
+                    _itemExtraQty[item.productId] = extra;
+                    _updateQty(index, (bQty * prod.piecesPerPack) + extra);
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+
+          if (hasBulk && isBulk) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.25),
+                ),
+              ),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('REQUESTED QUANTITY',
-                      style: TextStyle(
-                          fontSize: 9,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Bulk Qty (${prod!.bulkUnit.toUpperCase()})',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey),
+                      ),
+                      QtyControl(
+                        key: ValueKey('bulk_qty_${item.productId}_$index'),
+                        qty: _itemBulkQty[item.productId] ?? 1,
+                        onChanged: (v) {
+                          setState(() {
+                            _itemBulkQty[item.productId] = v;
+                            final extra = _itemExtraQty[item.productId] ?? 0;
+                            final total = (v * prod!.piecesPerPack) + extra;
+                            _updateQty(index, total);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Extra Loose (${prod.unit.toUpperCase()})',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey),
+                      ),
+                      QtyControl(
+                        key: ValueKey('extra_qty_${item.productId}_$index'),
+                        qty: _itemExtraQty[item.productId] ?? 0,
+                        min: 0,
+                        onChanged: (v) {
+                          setState(() {
+                            _itemExtraQty[item.productId] = v;
+                            final bQty = _itemBulkQty[item.productId] ?? 1;
+                            final total = (bQty * prod!.piecesPerPack) + v;
+                            _updateQty(index, total);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (_) {
+                      final bQty = _itemBulkQty[item.productId] ?? 1;
+                      final extra = _itemExtraQty[item.productId] ?? 0;
+                      final total = (bQty * prod!.piecesPerPack) + extra;
+                      return Text(
+                        'Total Request: $bQty ${prod.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} = $total ${prod.unit}',
+                        style: TextStyle(
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  Text(item.unit.toUpperCase(),
-                      style: const TextStyle(
-                          fontSize: 10, fontWeight: FontWeight.bold)),
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
-              QtyControl(
-                key: ValueKey('qty_${item.productId}_$index'),
-                qty: item.requestedQty,
-                onChanged: (v) => _updateQty(index, v),
-              ),
-            ],
-          ),
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('REQUESTED QUANTITY',
+                        style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    Text(item.unit.toUpperCase(),
+                        style: const TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                QtyControl(
+                  key: ValueKey('qty_${item.productId}_$index'),
+                  qty: item.requestedQty,
+                  onChanged: (v) => _updateQty(index, v),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
