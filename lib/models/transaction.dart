@@ -65,6 +65,18 @@ class StoreTransaction {
   factory StoreTransaction.fromFirestore(DocumentSnapshot doc) {
     try {
       final d = doc.data() as Map<String, dynamic>? ?? {};
+      DateTime parsedDate;
+      final rawCreated = d['createdAt'];
+      if (rawCreated is Timestamp) {
+        parsedDate = rawCreated.toDate();
+      } else if (rawCreated is String) {
+        parsedDate = DateTime.tryParse(rawCreated) ?? DateTime.now();
+      } else if (rawCreated is num) {
+        parsedDate = DateTime.fromMillisecondsSinceEpoch(rawCreated.toInt());
+      } else {
+        parsedDate = DateTime.now();
+      }
+
       return StoreTransaction(
         id: doc.id,
         items: (d['items'] as List? ?? [])
@@ -73,7 +85,7 @@ class StoreTransaction {
         total: (d['total'] as num? ?? 0).toDouble(),
         cashTendered: (d['cashTendered'] ?? d['cash'] as num? ?? 0).toDouble(),
         changeGiven: (d['changeGiven'] ?? d['change'] as num? ?? 0).toDouble(),
-        createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdAt: parsedDate,
         customerId: d['customerId']?.toString(),
         customerEmail: d['customerEmail']?.toString(),
         paymentMethod: PaymentMethod.values.firstWhere(

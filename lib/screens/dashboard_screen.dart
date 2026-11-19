@@ -213,6 +213,18 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
           matchingProduct = params.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
         } catch (_) {}
       }
+      if (matchingProduct == null) {
+        final normItemName = item.name.trim().toLowerCase();
+        for (final p in params.products) {
+          final pNorm = p.name.trim().toLowerCase();
+          if (pNorm == normItemName ||
+              normItemName.startsWith(pNorm) ||
+              pNorm.startsWith(normItemName)) {
+            matchingProduct = p;
+            break;
+          }
+        }
+      }
 
       if (matchingProduct != null) {
         productIdMovementCounts[matchingProduct.id] =

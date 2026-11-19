@@ -97,10 +97,16 @@ class CartItem {
             : const [];
 
     return CartItem(
-      productId: m['productId'] ?? '',
-      variantId: m['variantId'],
-      name: m['name'] ?? '',
-      variantName: m['variantName'],
+      productId: m['productId']?.toString() ??
+          m['id']?.toString() ??
+          m['product_id']?.toString() ??
+          '',
+      variantId: m['variantId']?.toString(),
+      name: m['name']?.toString() ??
+          m['productName']?.toString() ??
+          m['title']?.toString() ??
+          'Unknown Item',
+      variantName: m['variantName']?.toString(),
       barcode: m['barcode']?.toString() ?? '',
       price: (m['price'] as num? ?? 0).toDouble(),
       costPrice: effectiveCostPrice,

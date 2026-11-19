@@ -463,6 +463,18 @@ class _ReportsScreenState extends State<ReportsScreen>
             matchingProduct = inventory.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
           } catch (_) {}
         }
+        if (matchingProduct == null) {
+          final normItemName = item.name.trim().toLowerCase();
+          for (final p in inventory.products) {
+            final pNorm = p.name.trim().toLowerCase();
+            if (pNorm == normItemName ||
+                normItemName.startsWith(pNorm) ||
+                pNorm.startsWith(normItemName)) {
+              matchingProduct = p;
+              break;
+            }
+          }
+        }
 
         if (matchingProduct != null) {
           if (!itemMovements.containsKey(matchingProduct.id)) {
