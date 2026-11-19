@@ -1783,19 +1783,45 @@ class _InquiryCardState extends State<_InquiryCard> {
             padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
             child: Row(
               children: [
-                if (inquiry.status == RestockInquiryStatus.draft)
+                if (inquiry.status == RestockInquiryStatus.draft) ...[
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () => sendRestockEmail(context, inquiry),
                       icon: const Icon(Icons.send_rounded, size: 16),
-                      label: const Text('SEND INQUIRY'),
+                      label: const Text('SEND EMAIL'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: Colors.green.shade700,
                         foregroundColor: Colors.white,
                         elevation: 0,
                       ),
                     ),
-                  )
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await context
+                            .read<RestockProvider>()
+                            .sendInquiry(inquiry);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Inquiry #${inquiry.inquiryNumber} recorded as Sent.'),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.check_circle_rounded, size: 16),
+                      label: const Text('MARK AS SENT'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade700,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ]
                 else ...[
                   Expanded(
                     child: ElevatedButton.icon(
@@ -1935,7 +1961,7 @@ class _InquiryCardState extends State<_InquiryCard> {
 }
 
 void showEmailSetupGuideDialog(BuildContext context,
-    {String? email, String? subject, String? body}) {
+    {String? email, String? subject, String? body, RestockInquiry? inquiry}) {
   showDialog(
     context: context,
     builder: (ctx) {
@@ -2022,9 +2048,35 @@ void showEmailSetupGuideDialog(BuildContext context,
             },
             child: const Text('Copy Text'),
           ),
+          if (inquiry != null)
+            ElevatedButton.icon(
+              icon: const Icon(Icons.check_circle_rounded, size: 18),
+              label: const Text('Mark as Sent'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade800,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                if (body != null && body.isNotEmpty) {
+                  await Clipboard.setData(ClipboardData(text: body));
+                }
+                await context.read<RestockProvider>().sendInquiry(inquiry);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'Inquiry #${inquiry.inquiryNumber} recorded as Sent.'),
+                    ),
+                  );
+                }
+              },
+            ),
           ElevatedButton.icon(
             icon: const Icon(Icons.settings_outlined, size: 18),
-            label: const Text('Open Device Settings'),
+            label: const Text('Open Settings'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
               foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -2034,6 +2086,9 @@ void showEmailSetupGuideDialog(BuildContext context,
             onPressed: () async {
               if (body != null && body.isNotEmpty) {
                 await Clipboard.setData(ClipboardData(text: body));
+              }
+              if (inquiry != null) {
+                await context.read<RestockProvider>().sendInquiry(inquiry);
               }
               if (ctx.mounted) Navigator.pop(ctx);
               try {
@@ -2107,6 +2162,7 @@ void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
         email: email,
         subject: subject,
         body: 'Subject: $subject\n\n$body',
+        inquiry: inquiry,
       );
     }
   }
@@ -2145,20 +2201,30 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
       }
     } else {
       await Clipboard.setData(ClipboardData(text: msg));
+      if (updateStatus && context.mounted) {
+        await context.read<RestockProvider>().sendInquiry(inquiry);
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content:
-                  Text('Could not open SMS app. Details copied to clipboard!')),
+          SnackBar(
+            content: Text(
+                'SMS details copied to clipboard. Inquiry #${inquiry.inquiryNumber} recorded as Sent.'),
+          ),
         );
       }
     }
   } catch (e) {
     debugPrint('SMS Launch Error: $e');
     await Clipboard.setData(ClipboardData(text: msg));
+    if (updateStatus && context.mounted) {
+      await context.read<RestockProvider>().sendInquiry(inquiry);
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error launching SMS app.')));
+        SnackBar(
+            content: Text(
+                'Error launching SMS app. Inquiry #${inquiry.inquiryNumber} recorded as Sent.')),
+      );
     }
   }
 }
