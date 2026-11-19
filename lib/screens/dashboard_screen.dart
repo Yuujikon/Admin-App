@@ -42,13 +42,17 @@ class _DashboardData {
   final double todayCogs;
   final double todayNetProfit;
   final double todayExp;
+  final double priorGrossSales;
   final int toProcessOrders;
   final int restockPending;
   final List<StoreTransaction> todayTx;
   final List<Product> lowStockProducts;
   final List<MapEntry<String, int>> fastMoving;
   final List<Product> slowMoving;
+  final Map<String, int> movementCounts;
   final List<_DailyMetric> chartMetrics;
+  final String periodLabel;
+  final String daysLabel;
 
   const _DashboardData({
     required this.todayGrossSales,
@@ -56,13 +60,17 @@ class _DashboardData {
     required this.todayCogs,
     required this.todayNetProfit,
     required this.todayExp,
+    required this.priorGrossSales,
     required this.toProcessOrders,
     required this.restockPending,
     required this.todayTx,
     required this.lowStockProducts,
     required this.fastMoving,
     required this.slowMoving,
+    required this.movementCounts,
     required this.chartMetrics,
+    required this.periodLabel,
+    required this.daysLabel,
   });
 }
 
@@ -73,8 +81,9 @@ class _IsolateComputationParams {
   final List<LossRecord> lossRecords;
   final List<Product> products;
   final List<RestockInquiry> inquiries;
-  final List<MapEntry<String, int>> fastMoving;
-  final List<Product> slowMoving;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String periodLabel;
 
   const _IsolateComputationParams({
     required this.transactions,
@@ -83,51 +92,39 @@ class _IsolateComputationParams {
     required this.lossRecords,
     required this.products,
     required this.inquiries,
-    required this.fastMoving,
-    required this.slowMoving,
+    required this.startDate,
+    required this.endDate,
+    required this.periodLabel,
   });
 }
 
 _DashboardData _computeDashboardData(_IsolateComputationParams params) {
-  final today = DateFormat('yyyy-MM-dd').format(TimeService.now);
-  final currentMonth = DateFormat('yyyy-MM').format(TimeService.now);
+  final startDate = params.startDate;
+  final endDate = params.endDate;
 
-  // Filter today's transactions for the recent transaction list
-  final todayTx = params.transactions.where((t) {
-    try {
-      return DateFormat('yyyy-MM-dd').format(t.createdAt) == today;
-    } catch (_) {
-      return false;
-    }
+  final periodTx = params.transactions.where((t) {
+    return t.createdAt.compareTo(startDate) >= 0 &&
+        t.createdAt.compareTo(endDate) <= 0;
   }).toList();
+  periodTx.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  // Filter current month transactions for monthly metric aggregation
-  final monthTx = params.transactions.where((t) {
-    try {
-      return DateFormat('yyyy-MM').format(t.createdAt) == currentMonth;
-    } catch (_) {
-      return false;
-    }
-  }).toList();
-
-  final double gross = monthTx.fold(0.0, (sum, t) {
+  final double gross = periodTx.fold(0.0, (sum, t) {
     final val = t.total;
     return sum + ((val.isNaN || val.isInfinite) ? 0.0 : val);
   });
 
-  final double loss = params.lossRecords.where((l) {
-    try {
-      return DateFormat('yyyy-MM').format(l.createdAt) == currentMonth;
-    } catch (_) {
-      return false;
-    }
-  }).fold(0.0, (sum, l) {
+  final periodLossRecords = params.lossRecords.where((l) {
+    return l.createdAt.compareTo(startDate) >= 0 &&
+        l.createdAt.compareTo(endDate) <= 0;
+  }).toList();
+
+  final double loss = periodLossRecords.fold(0.0, (sum, l) {
     final unit = l.unitPrice;
     final safeUnit = (unit.isNaN || unit.isInfinite) ? 0.0 : unit;
     return sum + (safeUnit * l.qty);
   });
 
-  final double cogs = monthTx.fold(0.0, (sum, t) {
+  final double cogs = periodTx.fold(0.0, (sum, t) {
     return sum +
         t.items.fold(0.0, (itemSum, item) {
           final cost = item.costPrice;
@@ -141,14 +138,26 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
       (rawNetProfit.isNaN || rawNetProfit.isInfinite) ? 0.0 : rawNetProfit;
 
   final double exp = params.expenses.where((e) {
-    try {
-      return DateFormat('yyyy-MM').format(e.createdAt) == currentMonth;
-    } catch (_) {
-      return false;
-    }
+    return e.createdAt.compareTo(startDate) >= 0 &&
+        e.createdAt.compareTo(endDate) <= 0;
   }).fold(0.0, (sum, e) {
     final amt = e.amount;
     return sum + ((amt.isNaN || amt.isInfinite) ? 0.0 : amt);
+  });
+
+  final numDays = endDate.difference(startDate).inDays + 1;
+  final safeDays = numDays > 0 ? numDays : 1;
+  final priorStart = startDate.subtract(Duration(days: safeDays));
+  final priorEnd = startDate.subtract(const Duration(milliseconds: 1));
+
+  final priorTx = params.transactions.where((t) {
+    return t.createdAt.compareTo(priorStart) >= 0 &&
+        t.createdAt.compareTo(priorEnd) <= 0;
+  });
+
+  final double priorGross = priorTx.fold(0.0, (sum, t) {
+    final val = t.total;
+    return sum + ((val.isNaN || val.isInfinite) ? 0.0 : val);
   });
 
   final int toProcess = params.orders
@@ -171,8 +180,31 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
           p.totalStock <= p.lowStockThreshold)
       .toList();
 
-  final chartMetrics =
-      _computeChartMetrics(params.transactions, params.lossRecords);
+  final movementCounts = <String, int>{};
+  for (final tx in periodTx) {
+    for (final item in tx.items) {
+      movementCounts[item.name] = (movementCounts[item.name] ?? 0) + item.qty;
+    }
+  }
+
+  final fastMoving = movementCounts.entries
+      .where((e) => e.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final slowMoving = params.products
+      .where((p) => p.status == ProductStatus.published)
+      .where((p) => (movementCounts[p.name] ?? 0) <= 2)
+      .toList();
+  slowMoving.sort((a, b) =>
+      (movementCounts[a.name] ?? 0).compareTo(movementCounts[b.name] ?? 0));
+
+  final chartMetrics = _computeChartMetricsForPeriod(
+    params.transactions,
+    params.lossRecords,
+    startDate: startDate,
+    endDate: endDate,
+  );
 
   return _DashboardData(
     todayGrossSales: gross,
@@ -180,33 +212,35 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
     todayCogs: cogs,
     todayNetProfit: netProfit,
     todayExp: exp,
+    priorGrossSales: priorGross,
     toProcessOrders: toProcess,
     restockPending: pendingRestock,
-    todayTx: todayTx,
+    todayTx: periodTx,
     lowStockProducts: lowStock,
-    fastMoving: params.fastMoving,
-    slowMoving: params.slowMoving,
+    fastMoving: fastMoving,
+    slowMoving: slowMoving,
+    movementCounts: movementCounts,
     chartMetrics: chartMetrics,
+    periodLabel: params.periodLabel,
+    daysLabel: '${safeDays}d',
   );
 }
 
-Future<_DashboardData> _computeDashboardDataAsync(
-    _IsolateComputationParams params) async {
-  return Future.microtask(() => _computeDashboardData(params));
-}
-
-List<_DailyMetric> _computeChartMetrics(
+List<_DailyMetric> _computeChartMetricsForPeriod(
   List<StoreTransaction> transactions,
   List<LossRecord> lossRecords, {
-  int days = 7,
-  int offsetDays = 0,
+  required DateTime startDate,
+  required DateTime endDate,
 }) {
-  final now = TimeService.now.subtract(Duration(days: offsetDays));
   final List<_DailyMetric> list = [];
+  final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+  final endDay = DateTime(endDate.year, endDate.month, endDate.day);
+  final daysCount = endDay.difference(startDay).inDays + 1;
+  final safeDaysCount = daysCount <= 0 ? 1 : daysCount;
 
-  for (int i = days - 1; i >= 0; i--) {
-    final dayDate = now.subtract(Duration(days: i));
-    final dayStr = DateFormat('yyyy-MM-dd').format(dayDate);
+  for (int i = 0; i < safeDaysCount; i++) {
+    final currentDay = startDay.add(Duration(days: i));
+    final dayStr = DateFormat('yyyy-MM-dd').format(currentDay);
 
     final dayTx = transactions.where((t) {
       try {
@@ -239,7 +273,7 @@ List<_DailyMetric> _computeChartMetrics(
         (profit.isNaN || profit.isInfinite || profit < 0) ? 0.0 : profit;
 
     list.add(_DailyMetric(
-      date: dayDate,
+      date: currentDay,
       grossSales: safeGross,
       netProfit: safeProfit,
     ));
@@ -258,7 +292,430 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  _DashboardData? _cachedData;
+  ChartPeriod _selectedPeriod = ChartPeriod.thisWeek;
+  DateTimeRange? _customDateRange;
+
+  (DateTime start, DateTime end, String label) _calculatePeriodRange() {
+    final now = TimeService.now;
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
+
+    switch (_selectedPeriod) {
+      case ChartPeriod.thisWeek:
+        return (
+          todayStart.subtract(const Duration(days: 6)),
+          todayEnd,
+          'This week',
+        );
+      case ChartPeriod.thisMonth:
+        return (
+          todayStart.subtract(const Duration(days: 29)),
+          todayEnd,
+          'This month',
+        );
+      case ChartPeriod.custom:
+        if (_customDateRange != null) {
+          final s = DateTime(
+              _customDateRange!.start.year,
+              _customDateRange!.start.month,
+              _customDateRange!.start.day,
+              0,
+              0,
+              0,
+              0);
+          final e = DateTime(
+              _customDateRange!.end.year,
+              _customDateRange!.end.month,
+              _customDateRange!.end.day,
+              23,
+              59,
+              59,
+              999);
+          final labelStr =
+              '${DateFormat('MMM d').format(_customDateRange!.start)} - ${DateFormat('MMM d').format(_customDateRange!.end)}';
+          return (s, e, labelStr);
+        } else {
+          return (
+            todayStart.subtract(const Duration(days: 6)),
+            todayEnd,
+            'Custom Date',
+          );
+        }
+    }
+  }
+
+  String _getPeriodDisplayLabel() {
+    switch (_selectedPeriod) {
+      case ChartPeriod.thisWeek:
+        return 'This week';
+      case ChartPeriod.thisMonth:
+        return 'This month';
+      case ChartPeriod.custom:
+        if (_customDateRange != null) {
+          final startStr = DateFormat('MMM d').format(_customDateRange!.start);
+          final endStr = DateFormat('MMM d').format(_customDateRange!.end);
+          return '$startStr - $endStr';
+        }
+        return 'Custom Date';
+    }
+  }
+
+  Future<DateTimeRange?> _showCustomDateRangePicker(BuildContext context) async {
+    final now = TimeService.now;
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+
+    DateTimeRange selectedRange = _customDateRange ??
+        DateTimeRange(
+          start: todayStart.subtract(const Duration(days: 6)),
+          end: todayEnd,
+        );
+
+    return showDialog<DateTimeRange>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final startStr = DateFormat('MMM d, yyyy').format(selectedRange.start);
+            final endStr = DateFormat('MMM d, yyyy').format(selectedRange.end);
+
+            void setRange(DateTime s, DateTime e) {
+              final safeStart = DateTime(s.year, s.month, s.day, 0, 0, 0, 0);
+              var safeEnd = DateTime(e.year, e.month, e.day, 23, 59, 59, 999);
+              if (safeEnd.isAfter(todayEnd)) {
+                safeEnd = todayEnd;
+              }
+              if (safeStart.isAfter(safeEnd)) {
+                return;
+              }
+              setDialogState(() {
+                selectedRange = DateTimeRange(start: safeStart, end: safeEnd);
+              });
+            }
+
+            final List<int> years = [];
+            for (int y = now.year; y >= 2020; y--) {
+              years.add(y);
+            }
+
+            final months = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_month_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Select Custom Date Range',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.date_range_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              '$startStr  →  $endStr',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'QUICK PRESETS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ActionChip(
+                            label: const Text('Today', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(todayStart, todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('Yesterday', style: TextStyle(fontSize: 12)),
+                            onPressed: () {
+                              final y = todayStart.subtract(const Duration(days: 1));
+                              setRange(y, y);
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('Last 7 Days', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 6)), todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('This Month', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(DateTime(now.year, now.month, 1), todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('Last Month', style: TextStyle(fontSize: 12)),
+                            onPressed: () {
+                              final prevMonth = DateTime(now.year, now.month - 1, 1);
+                              final lastDayPrevMonth = DateTime(now.year, now.month, 0);
+                              setRange(prevMonth, lastDayPrevMonth);
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('Last 90 Days', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 89)), todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('This Year', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(DateTime(now.year, 1, 1), todayEnd),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 28),
+                      Text(
+                        'JUMP TO SPECIFIC MONTH',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: DropdownButtonFormField<int>(
+                              value: selectedRange.start.month,
+                              decoration: InputDecoration(
+                                labelText: 'Month',
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              items: List.generate(12, (index) {
+                                return DropdownMenuItem<int>(
+                                  value: index + 1,
+                                  child: Text(months[index], style: const TextStyle(fontSize: 13)),
+                                );
+                              }),
+                              onChanged: (monthVal) {
+                                if (monthVal != null) {
+                                  final year = selectedRange.start.year;
+                                  final start = DateTime(year, monthVal, 1);
+                                  final end = DateTime(year, monthVal + 1, 0);
+                                  setRange(start, end);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<int>(
+                              value: years.contains(selectedRange.start.year) ? selectedRange.start.year : now.year,
+                              decoration: InputDecoration(
+                                labelText: 'Year',
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              items: years.map((y) {
+                                return DropdownMenuItem<int>(
+                                  value: y,
+                                  child: Text('$y', style: const TextStyle(fontSize: 13)),
+                                );
+                              }).toList(),
+                              onChanged: (yearVal) {
+                                if (yearVal != null) {
+                                  final month = selectedRange.start.month;
+                                  final start = DateTime(yearVal, month, 1);
+                                  final end = DateTime(yearVal, month + 1, 0);
+                                  setRange(start, end);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 28),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                        label: const Text(
+                          'Open Calendar Picker...',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 44),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          final picked = await showDateRangePicker(
+                            context: context,
+                            firstDate: DateTime(2020),
+                            lastDate: todayEnd,
+                            initialDateRange: selectedRange,
+                            initialEntryMode: DatePickerEntryMode.calendar,
+                            helpText: 'Select Custom Date Range',
+                          );
+                          if (picked != null) {
+                            setRange(picked.start, picked.end);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.check_rounded, size: 18),
+                  label: const Text('Apply Range'),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                  onPressed: () => Navigator.pop(ctx, selectedRange),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPeriodDropdown(BuildContext context) {
+    return PopupMenuButton<ChartPeriod>(
+      initialValue: _selectedPeriod,
+      tooltip: 'Select Time Period',
+      onSelected: (ChartPeriod period) async {
+        if (period == ChartPeriod.custom) {
+          final picked = await _showCustomDateRangePicker(context);
+          if (picked != null) {
+            setState(() {
+              _selectedPeriod = period;
+              _customDateRange = picked;
+            });
+          }
+        } else {
+          setState(() {
+            _selectedPeriod = period;
+          });
+        }
+      },
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<ChartPeriod>>[
+        for (final period in ChartPeriod.values)
+          PopupMenuItem<ChartPeriod>(
+            value: period,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (period == _selectedPeriod) ...[
+                  Icon(
+                    Icons.check_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                ] else ...[
+                  const SizedBox(width: 24),
+                ],
+                Text(
+                  period == ChartPeriod.custom && _customDateRange != null
+                      ? 'Custom Date (${DateFormat('MMM d').format(_customDateRange!.start)} - ${DateFormat('MMM d').format(_customDateRange!.end)})'
+                      : period.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: period == _selectedPeriod
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          border: Border.all(
+            color: Theme.of(context)
+                .colorScheme
+                .outlineVariant
+                .withValues(alpha: 0.6),
+          ),
+          borderRadius: BorderRadius.circular(50),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.calendar_today_rounded,
+              size: 14,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              _getPeriodDisplayLabel(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -272,11 +729,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
         orderProvider.isLoading ||
         restockProvider.isLoading;
 
+    if (isSyncing && inventory.transactions.isEmpty && inventory.products.isEmpty) {
+      return Container(
+        color: Theme.of(context).colorScheme.surface,
+        alignment: Alignment.center,
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Loading Dashboard...',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      );
+    }
+
     final auth = context.watch<AppAuthProvider>();
     final categoryCount =
         inventory.products.map((p) => p.category).toSet().length;
 
-    // 2. ASYNCHRONOUS MATH PROCESSING
+    // 2. MATH PROCESSING (SYNCHRONOUS FOR INSTANT REACTIVITY)
+    final range = _calculatePeriodRange();
     final params = _IsolateComputationParams(
       transactions: inventory.transactions,
       orders: orderProvider.orders,
@@ -284,63 +765,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
       lossRecords: inventory.lossRecords,
       products: inventory.products,
       inquiries: restockProvider.inquiries,
-      fastMoving: inventory.fastMovingItems,
-      slowMoving: inventory.slowMovingItems,
+      startDate: range.$1,
+      endDate: range.$2,
+      periodLabel: range.$3,
     );
 
-    return FutureBuilder<_DashboardData>(
-      future: _computeDashboardDataAsync(params),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          _cachedData = snapshot.data;
-        }
+    final data = _computeDashboardData(params);
 
-        // Only show full loading spinner if we have no cached data at all
-        if (_cachedData == null &&
-            (isSyncing || snapshot.connectionState != ConnectionState.done)) {
-          return Container(
-            color: Theme.of(context).colorScheme.surface,
-            alignment: Alignment.center,
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
+    return Container(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Column(
               children: [
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'Loading Dashboard...',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final data = _cachedData!;
-        final bool isRefreshing =
-            isSyncing || snapshot.connectionState != ConnectionState.done;
-
-        return Container(
-          color: Theme.of(context).colorScheme.surface,
-          child: SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960),
-                child: Column(
-                  children: [
-                    // Subtle linear progress bar during background refresh
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      height: isRefreshing ? 3.0 : 0.0,
-                      child: isRefreshing
-                          ? LinearProgressIndicator(
-                              backgroundColor: Colors.transparent,
-                              valueColor: AlwaysStoppedAnimation<Color>(
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  height: isSyncing ? 3.0 : 0.0,
+                  child: isSyncing
+                      ? LinearProgressIndicator(
+                          backgroundColor: Colors.transparent,
+                          valueColor: AlwaysStoppedAnimation<Color>(
                                 Theme.of(context)
                                     .colorScheme
                                     .primary
@@ -362,7 +809,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 20),
                           children: [
-                            _buildHeader(context, inventory, isRefreshing),
+                            _buildHeader(context, inventory, isSyncing),
                             const SizedBox(height: 20),
                             _buildKpiGrid(context, data, auth.role),
                             const SizedBox(height: 16),
@@ -380,9 +827,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             const SizedBox(height: 24),
                             _buildChartSection(
                               context,
-                              data.chartMetrics,
-                              inventory.transactions,
-                              inventory.lossRecords,
+                              data,
                             ),
                             const SizedBox(height: 24),
                             Row(
@@ -399,7 +844,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             const SizedBox(height: 24),
                             _buildRecentTransactionsSection(
-                                context, data.todayTx),
+                                context, data),
                           ],
                         ),
                       ),
@@ -410,8 +855,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         );
-      },
-    );
   }
 
   // ── 3. MODULAR WIDGET COMPONENTS (BLAST DOORS) ─────────────────────────────
@@ -450,6 +893,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -485,20 +929,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
-          ActionChip(
-            backgroundColor: statusColor.withValues(alpha: 0.12),
-            side: BorderSide(color: statusColor.withValues(alpha: 0.25)),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-            avatar: Icon(statusIcon, size: 16, color: statusColor),
-            label: Text(
-              statusLabel,
-              style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11),
-            ),
-            onPressed: () => _showStatusDialog(context, inventory),
+          Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildPeriodDropdown(context),
+              ActionChip(
+                backgroundColor: statusColor.withValues(alpha: 0.12),
+                side: BorderSide(color: statusColor.withValues(alpha: 0.25)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(50)),
+                avatar: Icon(statusIcon, size: 16, color: statusColor),
+                label: Text(
+                  statusLabel,
+                  style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11),
+                ),
+                onPressed: () => _showStatusDialog(context, inventory),
+              ),
+            ],
           ),
         ],
       );
@@ -515,22 +968,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Color infoColor = Colors.blue.shade700;
       final Color errorColor = Theme.of(context).colorScheme.error;
 
-      final currentMonthName = DateFormat('MMMM').format(TimeService.now);
       final bool isAdmin = role == UserRole.admin;
       final items = isAdmin
           ? [
               _StatCard(
-                  "Gross Sales ($currentMonthName)",
+                  "Gross Sales (${data.periodLabel})",
                   formatPeso(data.todayGrossSales),
                   Icons.auto_graph_rounded,
                   successColor),
               _StatCard(
-                  "Net Profit ($currentMonthName)",
+                  "Net Profit (${data.periodLabel})",
                   formatPeso(data.todayNetProfit),
                   Icons.monetization_on_rounded,
                   infoColor),
               _StatCard(
-                  "Loss / Waste ($currentMonthName)",
+                  "Loss / Waste (${data.periodLabel})",
                   formatPeso(data.todayLoss),
                   Icons.delete_sweep_rounded,
                   errorColor),
@@ -662,15 +1114,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildChartSection(
     BuildContext context,
-    List<_DailyMetric> metrics,
-    List<StoreTransaction> transactions,
-    List<LossRecord> lossRecords,
+    _DashboardData data,
   ) {
     try {
       return _RevenueProfitChart(
-        initialMetrics: metrics,
-        transactions: transactions,
-        lossRecords: lossRecords,
+        data: data,
       );
     } catch (_) {
       return Card(
@@ -863,7 +1311,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Icon(Icons.bolt, size: 20, color: warningColor),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Fast Moving (30d)',
+                  child: Text('Fast Moving (${data.daysLabel})',
                       style: Theme.of(context)
                           .textTheme
                           .titleSmall
@@ -965,7 +1413,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Icon(Icons.hourglass_bottom, size: 20, color: infoColor),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Slow Moving (30d)',
+                  child: Text('Slow Moving (${data.daysLabel})',
                       style: Theme.of(context)
                           .textTheme
                           .titleSmall
@@ -990,7 +1438,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   itemCount: data.slowMoving.length,
                   itemBuilder: (context, index) {
                     final p = data.slowMoving[index];
-                    final sold = inventory.recentMovementCounts[p.name] ?? 0;
+                    final sold = data.movementCounts[p.name] ?? 0;
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -1048,7 +1496,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildRecentTransactionsSection(
-      BuildContext context, List<StoreTransaction> todayTx) {
+      BuildContext context, _DashboardData data) {
+    final todayTx = data.todayTx;
     try {
       return StatefulBuilder(
         builder: (context, setState) {
@@ -1803,7 +2252,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 enum ChartPeriod {
   thisWeek('This week', 7),
   thisMonth('This month', 30),
-  last90Days('Last 90 days', 90);
+  custom('Custom Date', 0);
 
   final String label;
   final int days;
@@ -1811,14 +2260,10 @@ enum ChartPeriod {
 }
 
 class _RevenueProfitChart extends StatefulWidget {
-  final List<_DailyMetric> initialMetrics;
-  final List<StoreTransaction> transactions;
-  final List<LossRecord> lossRecords;
+  final _DashboardData data;
 
   const _RevenueProfitChart({
-    required this.initialMetrics,
-    required this.transactions,
-    required this.lossRecords,
+    required this.data,
   });
 
   @override
@@ -1826,15 +2271,11 @@ class _RevenueProfitChart extends StatefulWidget {
 }
 
 class _RevenueProfitChartState extends State<_RevenueProfitChart> {
-  ChartPeriod _selectedPeriod = ChartPeriod.thisWeek;
   bool _isExpanded = false;
 
   @override
   Widget build(BuildContext context) {
-    final List<_DailyMetric> metrics = _selectedPeriod == ChartPeriod.thisWeek
-        ? widget.initialMetrics
-        : _computeChartMetrics(widget.transactions, widget.lossRecords,
-            days: _selectedPeriod.days);
+    final metrics = widget.data.chartMetrics;
 
     if (metrics.isEmpty) {
       return Card(
@@ -1877,17 +2318,8 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
       );
     }
 
-    final totalGross =
-        metrics.fold<double>(0.0, (sum, m) => sum + m.grossSales);
-
-    final priorMetrics = _computeChartMetrics(
-      widget.transactions,
-      widget.lossRecords,
-      days: _selectedPeriod.days,
-      offsetDays: _selectedPeriod.days,
-    );
-    final priorTotalGross =
-        priorMetrics.fold<double>(0.0, (sum, m) => sum + m.grossSales);
+    final totalGross = widget.data.todayGrossSales;
+    final priorTotalGross = widget.data.priorGrossSales;
 
     double percentChange;
     if (priorTotalGross > 0) {
@@ -1933,9 +2365,12 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
     final greenColor = const Color(0xFF10B981);
     final blueColor = const Color(0xFF3B82F6);
 
-    final double titleInterval = _selectedPeriod == ChartPeriod.thisWeek
-        ? 1
-        : (_selectedPeriod == ChartPeriod.thisMonth ? 5 : 15);
+    final int numDays = metrics.length;
+    final double titleInterval = numDays <= 7
+        ? 1.0
+        : (numDays <= 31
+            ? 5.0
+            : (numDays <= 90 ? 15.0 : (numDays / 6).ceilToDouble()));
 
     return Container(
       decoration: BoxDecoration(
@@ -2048,99 +2483,18 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                   ),
                 ),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  PopupMenuButton<ChartPeriod>(
-                    initialValue: _selectedPeriod,
-                    onSelected: (ChartPeriod period) {
-                      setState(() {
-                        _selectedPeriod = period;
-                      });
-                    },
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<ChartPeriod>>[
-                      for (final period in ChartPeriod.values)
-                        PopupMenuItem<ChartPeriod>(
-                          value: period,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (period == _selectedPeriod) ...[
-                                Icon(
-                                  Icons.check_rounded,
-                                  size: 16,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 8),
-                              ] else ...[
-                                const SizedBox(width: 24),
-                              ],
-                              Text(
-                                period.label,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: period == _selectedPeriod
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outlineVariant
-                              .withValues(alpha: 0.6),
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _selectedPeriod.label,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 16,
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _isExpanded = !_isExpanded;
-                      });
-                    },
-                    icon: Icon(
-                      _isExpanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _isExpanded = !_isExpanded;
+                  });
+                },
+                icon: Icon(
+                  _isExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -2334,8 +2688,7 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                                         index < metrics.length &&
                                         (val - index).abs() < 0.1) {
                                       final date = metrics[index].date;
-                                      final labelStr = _selectedPeriod ==
-                                              ChartPeriod.thisWeek
+                                      final labelStr = numDays <= 7
                                           ? DateFormat('E').format(date)
                                           : DateFormat('MMM d').format(date);
                                       return SideTitleWidget(
@@ -2371,7 +2724,7 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                                 barWidth: 3.5,
                                 isStrokeCapRound: true,
                                 dotData: FlDotData(
-                                  show: _selectedPeriod == ChartPeriod.thisWeek,
+                                  show: numDays <= 7,
                                   getDotPainter:
                                       (spot, percent, barData, index) =>
                                           FlDotCirclePainter(
@@ -2401,7 +2754,7 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
                                 barWidth: 3.0,
                                 isStrokeCapRound: true,
                                 dotData: FlDotData(
-                                  show: _selectedPeriod == ChartPeriod.thisWeek,
+                                  show: numDays <= 7,
                                   getDotPainter:
                                       (spot, percent, barData, index) =>
                                           FlDotCirclePainter(
