@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/expense_provider.dart';
 import '../models/loss_record.dart';
+import '../models/product.dart';
 import '../utils/format.dart';
 import '../config/theme.dart';
 
@@ -26,13 +27,17 @@ class _ReportsScreenState extends State<ReportsScreen>
   ReportPeriod _selectedPeriod = ReportPeriod.thisMonth;
   DateTimeRange? _customRange;
 
+  String _movementSearchQuery = '';
+  String _movementSelectedCategory = 'All';
+  _MovementFilterMode _movementFilterMode = _MovementFilterMode.fastMoving;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 2,
+      length: 3,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 1),
+      initialIndex: widget.initialTab.clamp(0, 2),
     );
   }
 
@@ -198,6 +203,69 @@ class _ReportsScreenState extends State<ReportsScreen>
     final sortedCategories = categoryPerformance.values.toList()
       ..sort((a, b) => b.grossSales.compareTo(a.grossSales));
 
+    // 3. Product Movement Aggregation across filteredTx and inventory.products
+    final Map<String, _ProductMovementData> itemMovements = {};
+
+    for (final tx in filteredTx) {
+      for (final item in tx.items) {
+        String cat = 'Others';
+        int currentStock = 0;
+        try {
+          final p = inventory.products.firstWhere(
+            (p) =>
+                p.name.trim().toLowerCase() == item.name.trim().toLowerCase() ||
+                p.id == item.productId,
+          );
+          cat = p.category;
+          currentStock = p.stock;
+        } catch (_) {}
+
+        final key = item.name.trim();
+        if (!itemMovements.containsKey(key)) {
+          itemMovements[key] = _ProductMovementData(
+            productId: item.productId,
+            name: item.name,
+            category: cat,
+            currentStock: currentStock,
+          );
+        }
+        itemMovements[key]!.qtySold += item.qty;
+        itemMovements[key]!.totalRevenue += (item.price * item.qty);
+      }
+    }
+
+    for (final p in inventory.products) {
+      if (p.status != ProductStatus.published) continue;
+      final key = p.name.trim();
+      if (!itemMovements.containsKey(key)) {
+        itemMovements[key] = _ProductMovementData(
+          productId: p.id,
+          name: p.name,
+          category: p.category,
+          currentStock: p.stock,
+          qtySold: 0,
+          totalRevenue: 0.0,
+        );
+      } else {
+        itemMovements[key]!.currentStock = p.stock;
+      }
+    }
+
+    final allMovements = itemMovements.values.toList();
+
+    final fastMovingList = allMovements.where((m) => m.qtySold > 0).toList()
+      ..sort((a, b) => b.qtySold.compareTo(a.qtySold));
+
+    final slowMovingList = allMovements.where((m) => m.qtySold <= 2).toList()
+      ..sort((a, b) => a.qtySold.compareTo(b.qtySold));
+
+    final categoriesList = inventory.products
+        .map((p) => p.category)
+        .where((c) => c.isNotEmpty)
+        .toSet()
+        .toList();
+    categoriesList.sort();
+
     final periodLabel = _getPeriodLabel(range);
 
     return Scaffold(
@@ -227,6 +295,22 @@ class _ReportsScreenState extends State<ReportsScreen>
                     Badge(
                       label: Text('${filteredLoss.length}'),
                       backgroundColor: Theme.of(context).colorScheme.error,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Tab(
+              icon: const Icon(Icons.bolt_rounded, size: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Fast & Slow Moving'),
+                  if (fastMovingList.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Badge(
+                      label: Text('${fastMovingList.length}'),
+                      backgroundColor: Colors.orange.shade800,
                     ),
                   ],
                 ],
@@ -362,6 +446,16 @@ class _ReportsScreenState extends State<ReportsScreen>
                   filteredLoss: filteredLoss,
                   allLossRecords: inventory.lossRecords,
                   totalLossInPeriod: totalLoss,
+                ),
+
+                // TAB 3: FAST & SLOW MOVING
+                _buildProductMovementTab(
+                  context,
+                  periodLabel: periodLabel,
+                  allMovements: allMovements,
+                  fastMovingList: fastMovingList,
+                  slowMovingList: slowMovingList,
+                  categories: categoriesList,
                 ),
               ],
             ),
@@ -1016,6 +1110,558 @@ class _ReportsScreenState extends State<ReportsScreen>
         filename:
             'GDC_Financial_Report_${periodLabel.replaceAll(' ', '_')}.pdf');
   }
+
+  Widget _buildProductMovementTab(
+    BuildContext context, {
+    required String periodLabel,
+    required List<_ProductMovementData> allMovements,
+    required List<_ProductMovementData> fastMovingList,
+    required List<_ProductMovementData> slowMovingList,
+    required List<String> categories,
+  }) {
+    List<_ProductMovementData> baseList;
+    switch (_movementFilterMode) {
+      case _MovementFilterMode.fastMoving:
+        baseList = fastMovingList;
+        break;
+      case _MovementFilterMode.slowMoving:
+        baseList = slowMovingList;
+        break;
+      case _MovementFilterMode.allProducts:
+        baseList = List.from(allMovements)
+          ..sort((a, b) => b.qtySold.compareTo(a.qtySold));
+        break;
+    }
+
+    if (_movementSelectedCategory != 'All') {
+      baseList = baseList
+          .where((m) => m.category == _movementSelectedCategory)
+          .toList();
+    }
+
+    if (_movementSearchQuery.trim().isNotEmpty) {
+      final q = _movementSearchQuery.trim().toLowerCase();
+      baseList = baseList.where((m) {
+        return m.name.toLowerCase().contains(q) ||
+            m.category.toLowerCase().contains(q);
+      }).toList();
+    }
+
+    final int totalUnitsSoldInPeriod =
+        allMovements.fold(0, (sum, m) => sum + m.qtySold);
+    final double totalMovementRevenue =
+        allMovements.fold(0.0, (sum, m) => sum + m.totalRevenue);
+
+    final warningColor = Colors.orange.shade700;
+    final infoColor = Colors.blue.shade700;
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        // ── MOVEMENT KPI OVERVIEW ───────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'PRODUCT MOVEMENT SUMMARY ($periodLabel)'.toUpperCase(),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.primary,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _movementStatBox(
+                      context,
+                      title: 'Units Sold',
+                      value: '$totalUnitsSoldInPeriod',
+                      icon: Icons.shopping_bag_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _movementStatBox(
+                      context,
+                      title: 'Fast Moving',
+                      value: '${fastMovingList.length}',
+                      icon: Icons.bolt_rounded,
+                      color: warningColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _movementStatBox(
+                      context,
+                      title: 'Slow Moving',
+                      value: '${slowMovingList.length}',
+                      icon: Icons.hourglass_bottom_rounded,
+                      color: infoColor,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // ── SEGMENTED FILTER BUTTONS ─────────────────────────────────────
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<_MovementFilterMode>(
+            style: SegmentedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
+            segments: [
+              ButtonSegment(
+                value: _MovementFilterMode.fastMoving,
+                label: Text('Fast (${fastMovingList.length})',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                icon: Icon(Icons.bolt, size: 16, color: warningColor),
+              ),
+              ButtonSegment(
+                value: _MovementFilterMode.slowMoving,
+                label: Text('Slow (${slowMovingList.length})',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                icon: Icon(Icons.hourglass_bottom, size: 16, color: infoColor),
+              ),
+              ButtonSegment(
+                value: _MovementFilterMode.allProducts,
+                label: Text('All (${allMovements.length})',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.inventory_2_rounded, size: 16),
+              ),
+            ],
+            selected: {_movementFilterMode},
+            onSelectionChanged: (set) {
+              setState(() => _movementFilterMode = set.first);
+            },
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── SEARCH BAR & CATEGORY FILTER ──────────────────────────────────
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search product or category...',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  suffixIcon: _movementSearchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          onPressed: () =>
+                              setState(() => _movementSearchQuery = ''),
+                        )
+                      : null,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+                onChanged: (val) =>
+                    setState(() => _movementSearchQuery = val),
+              ),
+            ),
+            const SizedBox(width: 10),
+            DropdownButtonHideUnderline(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withValues(alpha: 0.4),
+                  ),
+                ),
+                child: DropdownButton<String>(
+                  value: categories.contains(_movementSelectedCategory)
+                      ? _movementSelectedCategory
+                      : 'All',
+                  icon: const Icon(Icons.filter_list_rounded, size: 18),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  onChanged: (cat) {
+                    if (cat != null) {
+                      setState(() => _movementSelectedCategory = cat);
+                    }
+                  },
+                  items: ['All', ...categories].map((c) {
+                    return DropdownMenuItem<String>(
+                      value: c,
+                      child: Text(c == 'All' ? 'All Categories' : c),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── PRODUCT MOVEMENT LIST ───────────────────────────────────────
+        if (baseList.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(36),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.search_off_rounded,
+                        size: 44,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.5)),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No matching products found',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Try clearing search filters or changing the time period.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.3),
+              ),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: baseList.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final item = baseList[index];
+                final isFast = item.qtySold > 0;
+                final badgeColor = isFast ? warningColor : infoColor;
+                final rank = index + 1;
+
+                return ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: badgeColor.withValues(alpha: 0.15),
+                    child: Text(
+                      '#$rank',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: badgeColor,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    item.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          item.category,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Stock: ${item.currentStock}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: item.currentStock <= 5
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: item.currentStock <= 5
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        item.qtySold == 0 ? 'No sales' : '${item.qtySold} sold',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                          color: isFast
+                              ? badgeColor
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        formatPeso(item.totalRevenue),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+        const SizedBox(height: 24),
+
+        // ── EXPORT PDF BUTTON FOR MOVEMENT REPORT ─────────────────────
+        ElevatedButton.icon(
+          onPressed: () => _exportMovementToPdf(
+            context,
+            periodLabel: periodLabel,
+            fastMoving: fastMovingList,
+            slowMoving: slowMovingList,
+            totalUnits: totalUnitsSoldInPeriod,
+            totalRevenue: totalMovementRevenue,
+          ),
+          icon: const Icon(Icons.picture_as_pdf_rounded),
+          label: const Text('EXPORT PRODUCT MOVEMENT REPORT AS PDF'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: warningColor,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _movementStatBox(
+    BuildContext context, {
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportMovementToPdf(
+    BuildContext context, {
+    required String periodLabel,
+    required List<_ProductMovementData> fastMoving,
+    required List<_ProductMovementData> slowMoving,
+    required int totalUnits,
+    required double totalRevenue,
+  }) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Header(
+                  level: 0,
+                  child: pw.Text('GDC Sari-Sari Store - Product Movement Report',
+                      style: pw.TextStyle(
+                          fontSize: 20, fontWeight: pw.FontWeight.bold))),
+              pw.SizedBox(height: 4),
+              pw.Text('Period: $periodLabel',
+                  style: const pw.TextStyle(fontSize: 12)),
+              pw.Divider(height: 20),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Total Units Sold: $totalUnits'),
+                  pw.Text('Total Movement Revenue: ${formatPeso(totalRevenue)}',
+                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text('Fast Moving Products (${fastMoving.length})',
+                  style: pw.TextStyle(
+                      fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 6),
+              ...fastMoving.take(20).map((m) => pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('${m.name} (${m.category})'),
+                        pw.Text('${m.qtySold} sold - ${formatPeso(m.totalRevenue)}',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ],
+                    ),
+                  )),
+              pw.SizedBox(height: 20),
+              pw.Text('Slow Moving / Low Activity Products (${slowMoving.length})',
+                  style: pw.TextStyle(
+                      fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 6),
+              ...slowMoving.take(20).map((m) => pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('${m.name} (${m.category})'),
+                        pw.Text('${m.qtySold} sold - Stock: ${m.currentStock}',
+                            style: const pw.TextStyle(color: PdfColors.grey700)),
+                      ],
+                    ),
+                  )),
+              pw.Spacer(),
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(
+                    'Generated on ${DateFormat('MMMM dd, yyyy HH:mm').format(DateTime.now())}',
+                    style: const pw.TextStyle(color: PdfColors.grey)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.sharePdf(
+        bytes: await pdf.save(),
+        filename:
+            'GDC_Product_Movement_${periodLabel.replaceAll(' ', '_')}.pdf');
+  }
+}
+
+enum _MovementFilterMode {
+  fastMoving('Fast Moving'),
+  slowMoving('Slow Moving'),
+  allProducts('All Products');
+
+  final String label;
+  const _MovementFilterMode(this.label);
+}
+
+class _ProductMovementData {
+  final String productId;
+  final String name;
+  final String category;
+  int currentStock;
+  int qtySold;
+  double totalRevenue;
+
+  _ProductMovementData({
+    required this.productId,
+    required this.name,
+    required this.category,
+    required this.currentStock,
+    this.qtySold = 0,
+    this.totalRevenue = 0.0,
+  });
 }
 
 class _CategoryPerformance {

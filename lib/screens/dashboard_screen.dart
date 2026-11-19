@@ -1319,6 +1319,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                 ),
+                InkWell(
+                  onTap: () => widget.onTabChange(AppTab.reports),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('FULL REPORT',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary)),
+                        const SizedBox(width: 2),
+                        Icon(Icons.arrow_forward_rounded,
+                            size: 12, color: Theme.of(context).colorScheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -1420,6 +1440,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ?.copyWith(fontWeight: FontWeight.bold),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
+                ),
+                InkWell(
+                  onTap: () => widget.onTabChange(AppTab.reports),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('FULL REPORT',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary)),
+                        const SizedBox(width: 2),
+                        Icon(Icons.arrow_forward_rounded,
+                            size: 12, color: Theme.of(context).colorScheme.primary),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
