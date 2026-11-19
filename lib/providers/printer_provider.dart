@@ -122,14 +122,16 @@ class PrinterProvider extends ChangeNotifier {
         return false;
       }
 
-      bool isConnected = await PrintBluetoothThermal.connectionStatus;
+      bool isConnected = await PrintBluetoothThermal.connectionStatus
+          .timeout(const Duration(seconds: 2), onTimeout: () => false);
       if (!isConnected) {
         debugPrint("Printer not connected, attempting to reconnect...");
         if (_device != null) {
           await PrintBluetoothThermal.connect(
                   macPrinterAddress: _device!.macAdress)
-              .timeout(const Duration(seconds: 5), onTimeout: () => false);
-          isConnected = await PrintBluetoothThermal.connectionStatus;
+              .timeout(const Duration(seconds: 3), onTimeout: () => false);
+          isConnected = await PrintBluetoothThermal.connectionStatus
+              .timeout(const Duration(seconds: 2), onTimeout: () => false);
         }
 
         if (!isConnected) {
@@ -137,8 +139,9 @@ class PrinterProvider extends ChangeNotifier {
           final savedMac = prefs.getString('last_printer_mac');
           if (savedMac != null) {
             await PrintBluetoothThermal.connect(macPrinterAddress: savedMac)
-                .timeout(const Duration(seconds: 5), onTimeout: () => false);
-            isConnected = await PrintBluetoothThermal.connectionStatus;
+                .timeout(const Duration(seconds: 3), onTimeout: () => false);
+            isConnected = await PrintBluetoothThermal.connectionStatus
+                .timeout(const Duration(seconds: 2), onTimeout: () => false);
           }
         }
 

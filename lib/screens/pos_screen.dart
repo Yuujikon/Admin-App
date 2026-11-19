@@ -349,41 +349,7 @@ class _PosScreenState extends State<PosScreen> {
         );
       }
 
-      final bool isPrinterAvailable = printer.connected ||
-          await PrintBluetoothThermal.connectionStatus ||
-          printer.device != null;
-
-      if (isPrinterAvailable) {
-        try {
-          final success = await printer.printReceipt(
-            items: items,
-            total: total,
-            cash: cash,
-            change: change,
-            orderId: tx.id,
-            customerName: _selectedCustomer?.name,
-            orderType: "In-store",
-            breakdown: breakdown,
-          );
-          if (!success && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text(
-                      "Failed to print receipt. Check printer connection.")),
-            );
-          }
-        } catch (e) {
-          debugPrint("Printing error: $e");
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text(
-                      "Failed to print receipt. Check printer connection.")),
-            );
-          }
-        }
-      }
-
+      // 1. Immediately transition POS UI to completed success state
       if (mounted) {
         setState(() {
           _lastTotal = total;
@@ -394,6 +360,23 @@ class _PosScreenState extends State<PosScreen> {
           _done = true;
           _saving = false;
           _showCart = true;
+        });
+      }
+
+      // 2. Asynchronously trigger Bluetooth thermal printing in background
+      if (printer.connected || printer.device != null) {
+        printer.printReceipt(
+          items: items,
+          total: total,
+          cash: cash,
+          change: change,
+          orderId: tx.id,
+          customerName: _selectedCustomer?.name,
+          orderType: "In-store",
+          breakdown: breakdown,
+        ).catchError((e) {
+          debugPrint("Background thermal printing error: $e");
+          return false;
         });
       }
     } catch (e) {
