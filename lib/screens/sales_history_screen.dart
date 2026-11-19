@@ -13,6 +13,7 @@ import '../widgets/return_swap_dialog.dart';
 import '../widgets/scanner_dialog.dart';
 import '../services/firestore_service.dart';
 import '../shared/services/admin_messaging_service.dart';
+import '../utils/barcode_routing.dart';
 
 enum RefundHistoryFilter { all, approved, rejected }
 
@@ -27,6 +28,121 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   RefundHistoryFilter _refundFilter = RefundHistoryFilter.all;
   String _salesSearch = '';
   String _refundSearch = '';
+  late final TextEditingController _salesSearchCtrl;
+  late final FocusNode _salesSearchFocus;
+
+  @override
+  void initState() {
+    super.initState();
+    _salesSearchCtrl = TextEditingController();
+    _salesSearchFocus = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    _salesSearchCtrl.dispose();
+    _salesSearchFocus.dispose();
+    super.dispose();
+  }
+
+  String _parseScannedReceiptCode(String rawCode) {
+    var clean = rawCode.trim();
+    if (clean.isEmpty) return '';
+
+    // Extract from JSON payload if present (e.g. {"transactionId": "TX-1024"}, {"orderId": "GDC-1024"})
+    if (clean.startsWith('{') && clean.endsWith('}')) {
+      try {
+        final decoded = jsonDecode(clean);
+        if (decoded is Map) {
+          final possibleKeys = [
+            'transactionId',
+            'txId',
+            'invoiceId',
+            'receiptId',
+            'orderId',
+            'id',
+            'code',
+          ];
+          for (final k in possibleKeys) {
+            if (decoded[k] != null && decoded[k].toString().trim().isNotEmpty) {
+              clean = decoded[k].toString().trim();
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Extract ID using regex patterns
+    final txMatch =
+        RegExp(r'TX-[A-Z0-9-]+', caseSensitive: false).firstMatch(clean);
+    if (txMatch != null) {
+      return txMatch.group(0)!.toUpperCase().replaceAll('#', '');
+    }
+
+    final gdcMatch =
+        RegExp(r'GDC-[A-Z0-9-]+', caseSensitive: false).firstMatch(clean);
+    if (gdcMatch != null) {
+      return gdcMatch.group(0)!.toUpperCase().replaceAll('#', '');
+    }
+
+    final riMatch =
+        RegExp(r'RI-[A-Z0-9-]+', caseSensitive: false).firstMatch(clean);
+    if (riMatch != null) {
+      return riMatch.group(0)!.toUpperCase().replaceAll('#', '');
+    }
+
+    return clean.replaceAll('"', '').replaceAll("'", '').replaceAll('#', '').trim();
+  }
+
+  void _handleBarcodeScan(
+      String rawCode, List<StoreTransaction> txs, InventoryProvider inventory) {
+    final clean = _parseScannedReceiptCode(rawCode);
+    if (clean.isEmpty) return;
+
+    // Auto-clear previous text & request focus
+    _salesSearchCtrl.clear();
+    _salesSearchCtrl.text = clean;
+    _salesSearchCtrl.selection = TextSelection.collapsed(offset: clean.length);
+    _salesSearchFocus.requestFocus();
+
+    setState(() {
+      _salesSearch = clean;
+    });
+
+    // Lookup matching transaction
+    final cleanLower = clean.toLowerCase();
+    final matchingTx = txs.firstWhere(
+      (tx) {
+        final txId = tx.id.replaceAll('#', '').toLowerCase();
+        if (txId == cleanLower || txId.contains(cleanLower)) return true;
+        return tx.items.any((i) =>
+            i.barcode.isNotEmpty &&
+            i.barcode.replaceAll('#', '').toLowerCase() == cleanLower);
+      },
+      orElse: () => StoreTransaction(
+        id: '',
+        items: [],
+        total: 0,
+        cashTendered: 0,
+        changeGiven: 0,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    if (matchingTx.id.isNotEmpty) {
+      _showTxDetails(context, matchingTx, inventory);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No transaction found matching barcode/QR "$clean"'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,73 +186,78 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           r.reason.toLowerCase().contains(q);
     }).toList();
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        appBar: AppBar(
-          title: const Text('Sales & Refund History'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(
-                icon: Icon(Icons.receipt_long_rounded, size: 20),
-                text: 'Sales History',
-              ),
-              Tab(
-                icon: Icon(Icons.history_edu_rounded, size: 20),
-                text: 'Refund History',
-              ),
-            ],
+    return BarcodeInterceptor(
+      barcodeFocus: _salesSearchFocus,
+      onBarcodeDetected: (code) => _handleBarcodeScan(code, txs, inventory),
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          appBar: AppBar(
+            title: const Text('Sales & Refund History'),
+            bottom: const TabBar(
+              tabs: [
+                Tab(
+                  icon: Icon(Icons.receipt_long_rounded, size: 20),
+                  text: 'Sales History',
+                ),
+                Tab(
+                  icon: Icon(Icons.history_edu_rounded, size: 20),
+                  text: 'Refund History',
+                ),
+              ],
+            ),
           ),
-        ),
-        body: TabBarView(
-          children: [
-            // ── TAB 1: SALES HISTORY ──────────────────────────────────────────
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: TextField(
-                    controller: TextEditingController.fromValue(
-                        TextEditingValue(
-                            text: _salesSearch,
-                            selection: TextSelection.collapsed(
-                                offset: _salesSearch.length))),
-                    decoration: InputDecoration(
-                      hintText:
-                          'Search by receipt ID, barcode, or customer...',
-                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.qr_code_scanner_rounded,
-                                size: 20),
-                            tooltip: 'Scan Receipt Barcode / QR',
-                            onPressed: () => _scanBarcodeAndOpenReceipt(
-                                context, filteredTxs, inventory),
-                          ),
-                          if (_salesSearch.isNotEmpty)
+          body: TabBarView(
+            children: [
+              // ── TAB 1: SALES HISTORY ──────────────────────────────────────────
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: TextField(
+                      controller: _salesSearchCtrl,
+                      focusNode: _salesSearchFocus,
+                      decoration: InputDecoration(
+                        hintText:
+                            'Search by receipt ID, barcode, or customer...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () =>
-                                  setState(() => _salesSearch = ''),
+                              icon: const Icon(Icons.qr_code_scanner_rounded,
+                                  size: 20),
+                              tooltip: 'Scan Receipt Barcode / QR',
+                              onPressed: () => _scanBarcodeAndOpenReceipt(
+                                  context, txs, inventory),
                             ),
-                        ],
+                            if (_salesSearch.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _salesSearchCtrl.clear();
+                                  setState(() => _salesSearch = '');
+                                  _salesSearchFocus.requestFocus();
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    onChanged: (v) {
-                      setState(() => _salesSearch = v);
-                      final clean = v.trim().replaceAll('#', '').toLowerCase();
-                      if (clean.length >= 6) {
-                        final exactMatches = filteredTxs.where((tx) =>
-                            tx.id.replaceAll('#', '').toLowerCase() == clean).toList();
-                        if (exactMatches.length == 1) {
+                      onChanged: (v) {
+                        final parsed = _parseScannedReceiptCode(v);
+                        final finalQuery = parsed.isNotEmpty ? parsed : v;
+                        setState(() => _salesSearch = finalQuery);
+                        final clean = finalQuery.trim().replaceAll('#', '').toLowerCase();
+                        if (clean.length >= 6) {
+                          final exactMatches = txs.where((tx) =>
+                              tx.id.replaceAll('#', '').toLowerCase() == clean).toList();
+                          if (exactMatches.length == 1) {
                           _showTxDetails(context, exactMatches.first, inventory);
                         }
                       }
@@ -284,8 +405,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _filterChip(String label, RefundHistoryFilter filter) {
     final selected = _refundFilter == filter;
@@ -757,37 +879,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
 
     if (scannedCode != null && scannedCode.isNotEmpty && context.mounted) {
-      final clean = scannedCode.trim();
-      setState(() => _salesSearch = clean);
-
-      final cleanLower = clean.replaceAll('#', '').toLowerCase();
-
-      final matchingTx = txs.firstWhere((tx) {
-        final txId = tx.id.replaceAll('#', '').toLowerCase();
-        if (txId == cleanLower || txId.contains(cleanLower)) return true;
-        return tx.items.any((i) =>
-            i.barcode.isNotEmpty &&
-            i.barcode.replaceAll('#', '').toLowerCase() == cleanLower);
-      },
-          orElse: () => StoreTransaction(
-                id: '',
-                items: [],
-                total: 0,
-                cashTendered: 0,
-                changeGiven: 0,
-                createdAt: DateTime.now(),
-              ));
-
-      if (matchingTx.id.isNotEmpty) {
-        _showTxDetails(context, matchingTx, inventory);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('No transaction found matching barcode "$clean"'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _handleBarcodeScan(scannedCode, txs, inventory);
     }
   }
 
@@ -869,7 +961,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         borderSide: BorderSide.none,
                       ),
                     ),
-                    onChanged: (val) => setDialogState(() => query = val),
+                    onChanged: (val) {
+                      final clean = _parseScannedReceiptCode(val);
+                      final finalVal = clean.isNotEmpty ? clean : val;
+                      setDialogState(() => query = finalVal);
+                    },
                   ),
                   const SizedBox(height: 16),
 
