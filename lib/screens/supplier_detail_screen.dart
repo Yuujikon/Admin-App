@@ -278,7 +278,7 @@ class _OverviewTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  onPressed: () => _launchAction('tel:${supplier.phone}'),
+                  onPressed: () => _launchAction(context, 'tel:${supplier.phone}'),
                   icon: Icon(Icons.call_rounded, color: semantic.success),
                   tooltip: 'Call Supplier',
                 ),
@@ -287,7 +287,7 @@ class _OverviewTab extends StatelessWidget {
                     final msg =
                         'Hello ${supplier.name}, this is GDC Store regarding inventory supply restocking.';
                     _launchAction(
-                        'sms:${supplier.phone}?body=${Uri.encodeComponent(msg)}');
+                        context, 'sms:${supplier.phone}?body=${Uri.encodeComponent(msg)}');
                   },
                   icon: Icon(Icons.message_rounded, color: semantic.info),
                   tooltip: 'Send SMS',
@@ -296,7 +296,7 @@ class _OverviewTab extends StatelessWidget {
             )),
         _infoTile(context, Icons.email_outlined, 'Email', supplier.email,
             trailing: IconButton(
-              onPressed: () => _launchAction('mailto:${supplier.email}'),
+              onPressed: () => _launchAction(context, 'mailto:${supplier.email}'),
               icon: Icon(Icons.email_rounded, color: semantic.info),
             )),
         const SizedBox(height: 24),
@@ -385,9 +385,28 @@ class _OverviewTab extends StatelessWidget {
     );
   }
 
-  void _launchAction(String url) async {
+  void _launchAction(BuildContext context, String url) async {
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (_) {}
+
+    if (uri.scheme == 'mailto') {
+      final email = uri.path;
+      await Clipboard.setData(ClipboardData(text: email));
+      if (context.mounted) {
+        showEmailSetupGuideDialog(context, email: email);
+      }
+    } else if (uri.scheme == 'sms' || uri.scheme == 'tel') {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch ${uri.scheme.toUpperCase()} app.')),
+        );
+      }
+    }
   }
 
   void _showEditSheet(BuildContext context) {
@@ -1915,6 +1934,131 @@ class _InquiryCardState extends State<_InquiryCard> {
   }
 }
 
+void showEmailSetupGuideDialog(BuildContext context,
+    {String? email, String? subject, String? body}) {
+  showDialog(
+    context: context,
+    builder: (ctx) {
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Icon(Icons.mark_email_unread_rounded,
+                color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Set Up Default Email App',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your device needs a default Email app (e.g. Gmail, Outlook, Samsung Mail) to open emails directly.',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primaryContainer
+                      .withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text('How to set default Email app on Android:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12)),
+                    SizedBox(height: 8),
+                    Text('1. Go to Device Settings → Apps.',
+                        style: TextStyle(fontSize: 12)),
+                    SizedBox(height: 4),
+                    Text('2. Tap Default Apps → Email app.',
+                        style: TextStyle(fontSize: 12)),
+                    SizedBox(height: 4),
+                    Text('3. Select Gmail, Outlook, or your preferred Mail client.',
+                        style: TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+              if (body != null && body.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Restock inquiry details have been copied to your clipboard.',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: Theme.of(context).colorScheme.primary),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              if (body != null && body.isNotEmpty) {
+                await Clipboard.setData(ClipboardData(text: body));
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Copy Text'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.settings_outlined, size: 18),
+            label: const Text('Open Device Settings'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              if (body != null && body.isNotEmpty) {
+                await Clipboard.setData(ClipboardData(text: body));
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+              try {
+                final Uri defaultAppsUri = Uri.parse(
+                    'intent:#Intent;action=android.settings.MANAGE_DEFAULT_APPS_SETTINGS;end');
+                if (await canLaunchUrl(defaultAppsUri)) {
+                  await launchUrl(defaultAppsUri);
+                  return;
+                }
+              } catch (_) {}
+              try {
+                final Uri appSettingsUri = Uri.parse(
+                    'intent:#Intent;action=android.settings.SETTINGS;end');
+                if (await canLaunchUrl(appSettingsUri)) {
+                  await launchUrl(appSettingsUri);
+                }
+              } catch (_) {}
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
 void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
     {bool updateStatus = true}) async {
   final buffer = StringBuffer('Dear ${inquiry.supplierName},\n\n');
@@ -1933,51 +2077,37 @@ void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
   final subject = 'Restock Request: ${inquiry.inquiryNumber}';
   final email = inquiry.supplierContact ?? '';
 
-  final String gmailIntent =
-      'intent:#Intent;action=android.intent.action.SENDTO;dat=mailto:$email;sub=${Uri.encodeComponent(subject)};body=${Uri.encodeComponent(body)};package=com.google.android.gm;end';
-
   final Uri mailtoUri = Uri(
     scheme: 'mailto',
     path: email,
-    query:
-        'subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(body)}',
+    queryParameters: {
+      'subject': subject,
+      'body': body,
+    },
   );
 
+  bool launched = false;
   try {
-    bool launched = false;
-
-    if (Theme.of(context).platform == TargetPlatform.android) {
-      final Uri intentUri = Uri.parse(gmailIntent);
-      if (await canLaunchUrl(intentUri)) {
-        launched = await launchUrl(intentUri);
-      }
-    }
-
-    if (!launched) {
-      if (await canLaunchUrl(mailtoUri)) {
-        launched =
-            await launchUrl(mailtoUri, mode: LaunchMode.externalApplication);
-      }
-    }
-
-    if (launched) {
-      if (updateStatus && context.mounted) {
-        context.read<RestockProvider>().sendInquiry(inquiry);
-      }
-    } else {
-      await Clipboard.setData(ClipboardData(text: body));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content:
-                Text('Could not open Gmail. Details copied to clipboard.')));
-      }
+    if (await canLaunchUrl(mailtoUri)) {
+      launched = await launchUrl(mailtoUri, mode: LaunchMode.externalApplication);
     }
   } catch (e) {
-    debugPrint('Gmail Launch Error: $e');
-    await Clipboard.setData(ClipboardData(text: body));
+    debugPrint('Email Launch Error: $e');
+  }
+
+  if (launched) {
+    if (updateStatus && context.mounted) {
+      context.read<RestockProvider>().sendInquiry(inquiry);
+    }
+  } else {
+    await Clipboard.setData(ClipboardData(text: 'Subject: $subject\n\n$body'));
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error opening email app.')));
+      showEmailSetupGuideDialog(
+        context,
+        email: email,
+        subject: subject,
+        body: 'Subject: $subject\n\n$body',
+      );
     }
   }
 }
