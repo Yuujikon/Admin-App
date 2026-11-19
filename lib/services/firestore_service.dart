@@ -987,15 +987,20 @@ class FirestoreService {
     final snap = await docRef.get();
     String? email;
     String name = 'Customer';
+    int? nextOffenseCount;
 
     if (snap.exists) {
       final data = snap.data() as Map<String, dynamic>? ?? {};
       email = data['email'] as String?;
       name = data['name'] as String? ?? 'Customer';
+      
+      final currentOffenses = (data['offenseCount'] as num? ?? 0).toInt();
+      nextOffenseCount = currentOffenses > 0 ? currentOffenses - 1 : 0;
 
       await docRef.update({
         'isPermanentlyLocked': false,
         'restrictedUntil': null,
+        'offenseCount': nextOffenseCount,
         'appealStatus': 'approved',
         'appealReviewedAt': Timestamp.now(),
       });
@@ -1007,19 +1012,28 @@ class FirestoreService {
       final uData = userSnap.data() as Map<String, dynamic>? ?? {};
       email ??= uData['email'] as String?;
       name = uData['name'] as String? ?? name;
+      
+      final currentOffenses = (uData['offenseCount'] as num? ?? 0).toInt();
+      final newOffenseCount = nextOffenseCount ?? (currentOffenses > 0 ? currentOffenses - 1 : 0);
 
       await userDocRef.update({
         'isPermanentlyLocked': false,
         'restrictedUntil': null,
+        'offenseCount': newOffenseCount,
         'appealStatus': 'approved',
         'appealReviewedAt': Timestamp.now(),
       });
     } else if (email != null && email.isNotEmpty) {
       final userQuery = await _users.where('email', isEqualTo: email).get();
       for (final uDoc in userQuery.docs) {
+        final uData = uDoc.data() as Map<String, dynamic>? ?? {};
+        final currentOffenses = (uData['offenseCount'] as num? ?? 0).toInt();
+        final newOffenseCount = nextOffenseCount ?? (currentOffenses > 0 ? currentOffenses - 1 : 0);
+
         await uDoc.reference.update({
           'isPermanentlyLocked': false,
           'restrictedUntil': null,
+          'offenseCount': newOffenseCount,
           'appealStatus': 'approved',
           'appealReviewedAt': Timestamp.now(),
         });
