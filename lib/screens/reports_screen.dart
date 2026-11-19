@@ -10,6 +10,7 @@ import '../models/loss_record.dart';
 import '../models/product.dart';
 import '../utils/format.dart';
 import '../config/theme.dart';
+import '../shared/services/time_service.dart';
 
 enum ReportPeriod { today, thisWeek, thisMonth, custom }
 
@@ -48,26 +49,24 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
   DateTimeRange get _activeDateRange {
-    final now = DateTime.now();
+    final now = TimeService.now;
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+
     switch (_selectedPeriod) {
       case ReportPeriod.today:
-        final start = DateTime(now.year, now.month, now.day);
-        final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
-        return DateTimeRange(start: start, end: end);
+        return DateTimeRange(start: todayStart, end: todayEnd);
       case ReportPeriod.thisWeek:
-        final start = now.subtract(Duration(days: now.weekday - 1));
-        final startDay = DateTime(start.year, start.month, start.day);
-        final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
-        return DateTimeRange(start: startDay, end: end);
+        final start = todayStart.subtract(const Duration(days: 6));
+        return DateTimeRange(start: start, end: todayEnd);
       case ReportPeriod.thisMonth:
-        final start = DateTime(now.year, now.month, 1);
-        final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-        return DateTimeRange(start: start, end: end);
+        final start = todayStart.subtract(const Duration(days: 29));
+        return DateTimeRange(start: start, end: todayEnd);
       case ReportPeriod.custom:
         return _customRange ??
             DateTimeRange(
-              start: DateTime(now.year, now.month, 1),
-              end: DateTime(now.year, now.month, now.day, 23, 59, 59),
+              start: todayStart.subtract(const Duration(days: 6)),
+              end: todayEnd,
             );
     }
   }

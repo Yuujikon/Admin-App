@@ -84,6 +84,7 @@ class _IsolateComputationParams {
   final DateTime startDate;
   final DateTime endDate;
   final String periodLabel;
+  final String daysLabel;
 
   const _IsolateComputationParams({
     required this.transactions,
@@ -95,6 +96,7 @@ class _IsolateComputationParams {
     required this.startDate,
     required this.endDate,
     required this.periodLabel,
+    required this.daysLabel,
   });
 }
 
@@ -265,7 +267,7 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
     movementCounts: movementCounts,
     chartMetrics: chartMetrics,
     periodLabel: params.periodLabel,
-    daysLabel: '${safeDays}d',
+    daysLabel: params.daysLabel,
   );
 }
 
@@ -338,23 +340,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ChartPeriod _selectedPeriod = ChartPeriod.thisWeek;
   DateTimeRange? _customDateRange;
 
-  (DateTime start, DateTime end, String label) _calculatePeriodRange() {
+  (DateTime start, DateTime end, String label, String daysLabel) _calculatePeriodRange() {
     final now = TimeService.now;
     final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
     final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
 
     switch (_selectedPeriod) {
+      case ChartPeriod.today:
+        return (
+          todayStart,
+          todayEnd,
+          'Today',
+          'Today',
+        );
       case ChartPeriod.thisWeek:
         return (
           todayStart.subtract(const Duration(days: 6)),
           todayEnd,
           'This week',
+          '7d',
         );
       case ChartPeriod.thisMonth:
         return (
           todayStart.subtract(const Duration(days: 29)),
           todayEnd,
           'This month',
+          '30d',
         );
       case ChartPeriod.custom:
         if (_customDateRange != null) {
@@ -376,12 +387,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
               999);
           final labelStr =
               '${DateFormat('MMM d').format(_customDateRange!.start)} - ${DateFormat('MMM d').format(_customDateRange!.end)}';
-          return (s, e, labelStr);
+          final numDays = e.difference(s).inDays + 1;
+          final dLabel = numDays <= 1 ? '1d' : '${numDays}d';
+          return (s, e, labelStr, dLabel);
         } else {
           return (
             todayStart.subtract(const Duration(days: 6)),
             todayEnd,
             'Custom Date',
+            '7d',
           );
         }
     }
@@ -389,6 +403,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _getPeriodDisplayLabel() {
     switch (_selectedPeriod) {
+      case ChartPeriod.today:
+        return 'Today';
       case ChartPeriod.thisWeek:
         return 'This week';
       case ChartPeriod.thisMonth:
@@ -811,6 +827,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       startDate: range.$1,
       endDate: range.$2,
       periodLabel: range.$3,
+      daysLabel: range.$4,
     );
 
     final data = _computeDashboardData(params);
@@ -2333,6 +2350,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 enum ChartPeriod {
+  today('Today', 1),
   thisWeek('This week', 7),
   thisMonth('This month', 30),
   custom('Custom Date', 0);
