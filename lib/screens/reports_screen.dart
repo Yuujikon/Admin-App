@@ -74,43 +74,268 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   Future<void> _selectCustomDateRange() async {
     final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
 
-    // Clean date-only boundaries for picker to prevent Flutter DateRangePicker assertion errors
-    final firstAllowed = DateTime(2020, 1, 1);
-    final lastAllowed = DateTime(now.year + 5, 12, 31);
+    DateTimeRange selectedRange = _customRange ??
+        DateTimeRange(
+          start: DateTime(now.year, now.month, 1, 0, 0, 0, 0),
+          end: todayEnd,
+        );
 
-    final DateTime rawStart =
-        _customRange?.start ?? DateTime(now.year, now.month, 1);
-    final DateTime rawEnd = _customRange?.end ?? now;
-
-    final DateTime initialStart =
-        DateTime(rawStart.year, rawStart.month, rawStart.day);
-    final DateTime initialEnd =
-        DateTime(rawEnd.year, rawEnd.month, rawEnd.day);
-
-    final validStart = initialStart.isBefore(firstAllowed)
-        ? firstAllowed
-        : (initialStart.isAfter(lastAllowed) ? lastAllowed : initialStart);
-    final validEnd = initialEnd.isBefore(validStart)
-        ? validStart
-        : (initialEnd.isAfter(lastAllowed) ? lastAllowed : initialEnd);
-
-    final picked = await showDateRangePicker(
+    final picked = await showDialog<DateTimeRange>(
       context: context,
-      firstDate: firstAllowed,
-      lastDate: lastAllowed,
-      initialDateRange: DateTimeRange(start: validStart, end: validEnd),
-      helpText: 'Select Custom Date Range',
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final startStr = DateFormat('MMM d, yyyy').format(selectedRange.start);
+            final endStr = DateFormat('MMM d, yyyy').format(selectedRange.end);
+
+            void setRange(DateTime s, DateTime e) {
+              final safeStart = DateTime(s.year, s.month, s.day, 0, 0, 0, 0);
+              var safeEnd = DateTime(e.year, e.month, e.day, 23, 59, 59, 999);
+              if (safeEnd.isAfter(todayEnd)) {
+                safeEnd = todayEnd;
+              }
+              if (safeStart.isAfter(safeEnd)) {
+                return;
+              }
+              setDialogState(() {
+                selectedRange = DateTimeRange(start: safeStart, end: safeEnd);
+              });
+            }
+
+            final List<int> years = [];
+            for (int y = now.year; y >= 2020; y--) {
+              years.add(y);
+            }
+
+            final months = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_month_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Select Custom Date Range',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.date_range_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              '$startStr  →  $endStr',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'QUICK PRESETS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ActionChip(
+                            label: const Text('Today', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(todayStart, todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('Yesterday', style: TextStyle(fontSize: 12)),
+                            onPressed: () {
+                              final y = todayStart.subtract(const Duration(days: 1));
+                              setRange(y, y);
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('Last 7 Days', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 6)), todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('This Month', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(DateTime(now.year, now.month, 1), todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('Last Month', style: TextStyle(fontSize: 12)),
+                            onPressed: () {
+                              final prevMonth = DateTime(now.year, now.month - 1, 1);
+                              final lastDayPrevMonth = DateTime(now.year, now.month, 0);
+                              setRange(prevMonth, lastDayPrevMonth);
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('Last 90 Days', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 89)), todayEnd),
+                          ),
+                          ActionChip(
+                            label: const Text('This Year', style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(DateTime(now.year, 1, 1), todayEnd),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 28),
+                      Text(
+                        'JUMP TO SPECIFIC MONTH',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: DropdownButtonFormField<int>(
+                              value: selectedRange.start.month,
+                              decoration: InputDecoration(
+                                labelText: 'Month',
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              items: List.generate(12, (index) {
+                                return DropdownMenuItem<int>(
+                                  value: index + 1,
+                                  child: Text(months[index], style: const TextStyle(fontSize: 13)),
+                                );
+                              }),
+                              onChanged: (monthVal) {
+                                if (monthVal != null) {
+                                  final year = selectedRange.start.year;
+                                  final start = DateTime(year, monthVal, 1);
+                                  final end = DateTime(year, monthVal + 1, 0);
+                                  setRange(start, end);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<int>(
+                              value: years.contains(selectedRange.start.year) ? selectedRange.start.year : now.year,
+                              decoration: InputDecoration(
+                                labelText: 'Year',
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              items: years.map((y) {
+                                return DropdownMenuItem<int>(
+                                  value: y,
+                                  child: Text('$y', style: const TextStyle(fontSize: 13)),
+                                );
+                              }).toList(),
+                              onChanged: (yearVal) {
+                                if (yearVal != null) {
+                                  final month = selectedRange.start.month;
+                                  final start = DateTime(yearVal, month, 1);
+                                  final end = DateTime(yearVal, month + 1, 0);
+                                  setRange(start, end);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 28),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                        label: const Text(
+                          'Open Calendar Picker...',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 44),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          final picked = await showDateRangePicker(
+                            context: context,
+                            firstDate: DateTime(2020),
+                            lastDate: todayEnd,
+                            initialDateRange: selectedRange,
+                            initialEntryMode: DatePickerEntryMode.calendar,
+                            helpText: 'Select Custom Date Range',
+                          );
+                          if (picked != null) {
+                            setRange(picked.start, picked.end);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.check_rounded, size: 18),
+                  label: const Text('Apply Range'),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                  onPressed: () => Navigator.pop(ctx, selectedRange),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     if (picked != null) {
-      final normalizedStart =
-          DateTime(picked.start.year, picked.start.month, picked.start.day, 0, 0, 0);
-      final normalizedEnd = DateTime(
-          picked.end.year, picked.end.month, picked.end.day, 23, 59, 59);
       setState(() {
-        _customRange =
-            DateTimeRange(start: normalizedStart, end: normalizedEnd);
+        _customRange = picked;
         _selectedPeriod = ReportPeriod.custom;
       });
     }
