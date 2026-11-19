@@ -12,6 +12,7 @@ import '../../models/order.dart';
 class AdminMessagingService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   String? _lastBrevoError;
+  String? _lastSmsError;
 
   /// Singleton instance
   static final AdminMessagingService _instance =
@@ -155,15 +156,28 @@ class AdminMessagingService {
       final response = await http.post(uri, headers: headers, body: body);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
+        _lastSmsError = null;
         debugPrint(
             '[AdminMessagingService] Traccar SMS sent to $toPhone [${response.statusCode}]');
         return true;
       } else {
+        final bodyText = response.body;
+        if (response.statusCode == 502 ||
+            bodyText.contains('8012') ||
+            bodyText.contains('connection refused') ||
+            bodyText.contains('upstream web service')) {
+          _lastSmsError =
+              'Traccar Gateway Service (localhost:8082) is offline or unreachable via ngrok (HTTP 502 Bad Gateway).';
+        } else {
+          _lastSmsError =
+              'Traccar SMS failed [${response.statusCode}]: $bodyText';
+        }
         debugPrint(
-            '[AdminMessagingService] Traccar SMS failed [${response.statusCode}]: ${response.body}');
+            '[AdminMessagingService] Traccar SMS failed [${response.statusCode}]: $bodyText');
         return false;
       }
     } catch (e) {
+      _lastSmsError = 'Exception sending Traccar SMS: $e';
       debugPrint('[AdminMessagingService] Exception sending Traccar SMS: $e');
       return false;
     }
@@ -245,6 +259,15 @@ class AdminMessagingService {
             'success': false,
             'message':
                 'Brevo API Key is not enabled on Brevo Dashboard (Error 401). Please activate Transactional Email on app.brevo.com or use SMS OTP.',
+          };
+        }
+        if (!isEmail &&
+            _lastSmsError != null &&
+            _lastSmsError!.contains('localhost:8082')) {
+          return {
+            'success': false,
+            'message':
+                'SMS Gateway service (localhost:8082) is offline or unreachable via ngrok tunnel (HTTP 502 Bad Gateway). Please start the Traccar SMS Gateway service or use Email OTP.',
           };
         }
         return {
