@@ -11,6 +11,7 @@ import '../widgets/qty_control.dart';
 import '../widgets/scanner_dialog.dart';
 import '../utils/barcode_routing.dart';
 import '../utils/format.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../models/customer.dart';
 import '../providers/printer_provider.dart';
 import '../providers/order_provider.dart';

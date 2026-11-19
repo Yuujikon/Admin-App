@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:intl/intl.dart';
 import '../models/order.dart';
@@ -140,7 +141,6 @@ class ReceiptPrinterService {
       try {
         bytes.addAll(generator.qrcode(
           invoiceId.toUpperCase(),
-          size: QRSize.Size4,
         ));
       } catch (e) {
         debugPrint('Error generating receipt QR code: $e');
