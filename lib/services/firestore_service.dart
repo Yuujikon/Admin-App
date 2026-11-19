@@ -521,6 +521,150 @@ class FirestoreService {
     }
   }
 
+  /// Processes a multi-item refund for a transaction, restocking item inventory,
+  /// updating returned quantities on transaction & linked order, and logging a Refund Record in Firestore.
+  Future<void> processMultiItemRefund({
+    required String transactionId,
+    required List<Map<String, dynamic>> itemsToRefund,
+    required double totalRefundAmount,
+    required String processedBy,
+    String? customerEmail,
+    String? orderId,
+  }) async {
+    if (itemsToRefund.isEmpty) return;
+
+    final txRef = _transactions.doc(transactionId);
+    final orderRef = (orderId != null && orderId.isNotEmpty) ? _orders.doc(orderId) : null;
+    final refundLogRef = _db.collection('refund_records').doc();
+
+    await _db.runTransaction((transaction) async {
+      final txSnap = await transaction.get(txRef);
+      if (!txSnap.exists) throw Exception('Transaction record not found.');
+
+      DocumentSnapshot? orderSnap;
+      if (orderRef != null) {
+        orderSnap = await transaction.get(orderRef);
+      }
+
+      final txData = txSnap.data() as Map<String, dynamic>? ?? {};
+      final rawItems = (txData['items'] as List? ?? []);
+
+      final updatedTxItems = rawItems.map((raw) {
+        if (raw is! Map) return raw;
+        final itemMap = Map<String, dynamic>.from(raw);
+        final String itemPid = itemMap['productId']?.toString() ?? '';
+        final String? itemVid = itemMap['variantId']?.toString();
+
+        final refundEntry = itemsToRefund.firstWhere(
+          (r) =>
+              r['productId'] == itemPid &&
+              (r['variantId'] == itemVid || (r['variantId'] == null && itemVid == null)),
+          orElse: () => {},
+        );
+
+        if (refundEntry.isNotEmpty) {
+          final int returnQty = (refundEntry['qty'] as num? ?? 0).toInt();
+          final int currentReturned = (itemMap['returnedQty'] as num? ?? 0).toInt();
+          itemMap['returnedQty'] = currentReturned + returnQty;
+        }
+        return itemMap;
+      }).toList();
+
+      final bool allItemsFullyReturned = updatedTxItems.every((raw) {
+        if (raw is! Map) return true;
+        final int qty = (raw['qty'] as num? ?? 1).toInt();
+        final int retQty = (raw['returnedQty'] as num? ?? 0).toInt();
+        return retQty >= qty;
+      });
+
+      transaction.update(txRef, {
+        'items': updatedTxItems,
+        if (allItemsFullyReturned) 'isRefunded': true,
+      });
+
+      if (orderRef != null && orderSnap != null && orderSnap.exists) {
+        final orderData = orderSnap.data() as Map<String, dynamic>? ?? {};
+        final rawOrderItems = (orderData['items'] as List? ?? []);
+        final updatedOrderItems = rawOrderItems.map((raw) {
+          if (raw is! Map) return raw;
+          final itemMap = Map<String, dynamic>.from(raw);
+          final String itemPid = itemMap['productId']?.toString() ?? '';
+          final String? itemVid = itemMap['variantId']?.toString();
+
+          final refundEntry = itemsToRefund.firstWhere(
+            (r) =>
+                r['productId'] == itemPid &&
+                (r['variantId'] == itemVid || (r['variantId'] == null && itemVid == null)),
+            orElse: () => {},
+          );
+
+          if (refundEntry.isNotEmpty) {
+            final int returnQty = (refundEntry['qty'] as num? ?? 0).toInt();
+            final int currentReturned = (itemMap['returnedQty'] as num? ?? 0).toInt();
+            itemMap['returnedQty'] = currentReturned + returnQty;
+          }
+          return itemMap;
+        }).toList();
+
+        transaction.update(orderRef, {'items': updatedOrderItems});
+      }
+
+      // Restock inventory for refunded items
+      for (final refItem in itemsToRefund) {
+        final String pid = refItem['productId']?.toString() ?? '';
+        final String? vid = refItem['variantId']?.toString();
+        final int rQty = (refItem['qty'] as num? ?? 0).toInt();
+
+        if (pid.isNotEmpty && rQty > 0) {
+          final productRef = _products.doc(pid);
+          if (vid != null && vid.isNotEmpty) {
+            transaction.update(productRef, {
+              'variants.$vid.stock': FieldValue.increment(rQty),
+            });
+          } else {
+            transaction.update(productRef, {
+              'stock': FieldValue.increment(rQty),
+            });
+          }
+        }
+      }
+
+      // Log Refund Record in refund_records collection
+      transaction.set(refundLogRef, {
+        'transactionId': transactionId,
+        'orderId': orderId,
+        'customerEmail': customerEmail ?? txData['customerEmail'] ?? '',
+        'refundedAt': FieldValue.serverTimestamp(),
+        'items': itemsToRefund,
+        'totalAmount': totalRefundAmount,
+        'processedBy': processedBy,
+      });
+    });
+  }
+
+  /// Streams list of recorded item refunds from Firestore for Inventory Records
+  Stream<List<Map<String, dynamic>>> refundRecordsStream() {
+    return _db
+        .collection('refund_records')
+        .orderBy('refundedAt', descending: true)
+        .snapshots()
+        .map((s) => s.docs.map((d) {
+              final data = d.data();
+              return {
+                'id': d.id,
+                'transactionId': data['transactionId'] ?? '',
+                'orderId': data['orderId'],
+                'customerEmail': data['customerEmail'] ?? '',
+                'refundedAt': (data['refundedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                'items': (data['items'] as List? ?? [])
+                    .map((e) => Map<String, dynamic>.from(e is Map ? e : {}))
+                    .toList(),
+                'totalAmount': (data['totalAmount'] as num? ?? 0.0).toDouble(),
+                'processedBy': data['processedBy'] ?? 'Admin',
+              };
+            }).toList());
+  }
+
   // ── Suppliers ──────────────────────────────────────────────────────────────
 
   Stream<List<Supplier>> suppliersStream() => _suppliers

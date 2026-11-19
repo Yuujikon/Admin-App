@@ -13,6 +13,7 @@ import '../providers/restock_provider.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/premium_components.dart';
+import '../services/firestore_service.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
 
@@ -20,6 +21,7 @@ enum _RecordTab {
   deliveryLogs,
   batchLots,
   lossWaste,
+  refundRecords,
   registerShifts,
   supplierInquiries,
   allTimeline
@@ -431,6 +433,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     _buildTabChip('Loss & Spoilage (${filteredLosses.length})',
                         _RecordTab.lossWaste, Icons.delete_outline_rounded),
                     const SizedBox(width: 6),
+                    _buildTabChip('Refund Records', _RecordTab.refundRecords,
+                        Icons.published_with_changes_rounded),
+                    const SizedBox(width: 6),
                     _buildTabChip('Register Shifts (${filteredShifts.length})',
                         _RecordTab.registerShifts, Icons.point_of_sale_rounded),
                     const SizedBox(width: 6),
@@ -694,6 +699,54 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           itemCount: filteredLosses.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (ctx, i) => _buildLossRecordRow(ctx, filteredLosses[i]),
+        );
+
+      case _RecordTab.refundRecords:
+        return StreamBuilder<List<Map<String, dynamic>>>(
+          stream: FirestoreService().refundRecordsStream(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                  child: Text('Error loading refund records: ${snapshot.error}'));
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final allLogs = snapshot.data ?? [];
+            final filteredLogs = allLogs.where((log) {
+              final date = log['refundedAt'] as DateTime;
+              if (!_matchesDateFilter(date)) return false;
+
+              if (_searchQuery.isEmpty) return true;
+              final q = _searchQuery.toLowerCase();
+              final txId =
+                  (log['transactionId']?.toString() ?? '').toLowerCase();
+              final email =
+                  (log['customerEmail']?.toString() ?? '').toLowerCase();
+              final processedBy =
+                  (log['processedBy']?.toString() ?? '').toLowerCase();
+              return txId.contains(q) ||
+                  email.contains(q) ||
+                  processedBy.contains(q);
+            }).toList();
+
+            if (filteredLogs.isEmpty) {
+              return const PremiumEmptyState(
+                icon: Icons.published_with_changes_rounded,
+                title: 'No Refund Records Found',
+                subtitle:
+                    'No itemized refund records match your search or date filter.',
+              );
+            }
+
+            return ListView.separated(
+              itemCount: filteredLogs.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (ctx, i) =>
+                  _buildRefundRecordRow(ctx, filteredLogs[i]),
+            );
+          },
         );
 
       case _RecordTab.registerShifts:
@@ -1753,6 +1806,121 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRefundRecordRow(
+      BuildContext context, Map<String, dynamic> log) {
+    final theme = Theme.of(context);
+    final dateStr = DateFormat('MMM d, yyyy • h:mm a')
+        .format(log['refundedAt'] as DateTime);
+    final items = (log['items'] as List? ?? []);
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.published_with_changes_rounded,
+                          color: Colors.red, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Refund Receipt #${(log['transactionId']?.toString() ?? '').toUpperCase()}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        Text(
+                          dateStr,
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    formatPeso(log['totalAmount'] as double? ?? 0.0),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.red.shade900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+
+            Text(
+              'Customer: ${(log['customerEmail']?.toString() ?? '').isNotEmpty ? log['customerEmail'] : "Walk-in"} • Processed By: ${log['processedBy']}',
+              style: TextStyle(
+                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+
+            ...items.map((raw) {
+              final m = raw is Map ? raw : {};
+              final qty = (m['qty'] as num? ?? 1).toInt();
+              final name = m['name']?.toString() ?? 'Item';
+              final price = (m['price'] as num? ?? 0.0).toDouble();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '• ${qty}x $name',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      formatPeso(price * qty),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red.shade900),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }

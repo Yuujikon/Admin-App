@@ -10,6 +10,9 @@ import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/return_swap_dialog.dart';
+import '../widgets/scanner_dialog.dart';
+import '../services/firestore_service.dart';
+import '../shared/services/admin_messaging_service.dart';
 
 enum RefundHistoryFilter { all, approved, rejected }
 
@@ -93,49 +96,51 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText:
-                                'Search sales by receipt ID, customer...',
-                            prefixIcon:
-                                const Icon(Icons.search_rounded, size: 20),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 10),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            suffixIcon: _salesSearch.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () =>
-                                        setState(() => _salesSearch = ''),
-                                  )
-                                : null,
+                  child: TextField(
+                    controller: TextEditingController.fromValue(
+                        TextEditingValue(
+                            text: _salesSearch,
+                            selection: TextSelection.collapsed(
+                                offset: _salesSearch.length))),
+                    decoration: InputDecoration(
+                      hintText:
+                          'Search by receipt ID, barcode, or customer...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.qr_code_scanner_rounded,
+                                size: 20),
+                            tooltip: 'Scan Receipt Barcode / QR',
+                            onPressed: () => _scanBarcodeAndOpenReceipt(
+                                context, filteredTxs, inventory),
                           ),
-                          onChanged: (v) => setState(() => _salesSearch = v),
-                        ),
+                          if (_salesSearch.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () =>
+                                  setState(() => _salesSearch = ''),
+                            ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () =>
-                            _showReceiptLookupDialog(context, txs),
-                        icon: const Icon(
-                            Icons.published_with_changes_rounded,
-                            size: 18),
-                        label: const Text('Process Return / Swap'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ],
+                    ),
+                    onChanged: (v) {
+                      setState(() => _salesSearch = v);
+                      final clean = v.trim().replaceAll('#', '').toLowerCase();
+                      if (clean.length >= 6) {
+                        final exactMatches = filteredTxs.where((tx) =>
+                            tx.id.replaceAll('#', '').toLowerCase() == clean).toList();
+                        if (exactMatches.length == 1) {
+                          _showTxDetails(context, exactMatches.first, inventory);
+                        }
+                      }
+                    },
                   ),
                 ),
                 Expanded(
@@ -433,12 +438,18 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     ElevatedButton.icon(
                       onPressed: () {
                         Navigator.pop(ctx);
-                        ReturnSwapDialog.show(context, tx);
+                        showDialog(
+                          context: context,
+                          builder: (_) => _RefundOrderModal(
+                            tx: tx,
+                            inventory: inventory,
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.published_with_changes_rounded),
-                      label: const Text('PROCESS RETURN / SWAP'),
+                      label: const Text('REFUND ORDER'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
+                        backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
                         minimumSize: const Size(double.infinity, 54),
                         shape: RoundedRectangleBorder(
@@ -711,6 +722,48 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
 
     return widgets;
+  }
+
+  void _scanBarcodeAndOpenReceipt(BuildContext context,
+      List<StoreTransaction> txs, InventoryProvider inventory) async {
+    final String? scannedCode = await showDialog<String>(
+      context: context,
+      builder: (ctx) => const ScannerDialog(),
+    );
+
+    if (scannedCode != null && scannedCode.isNotEmpty && context.mounted) {
+      final clean = scannedCode.trim();
+      setState(() => _salesSearch = clean);
+
+      final cleanLower = clean.replaceAll('#', '').toLowerCase();
+
+      final matchingTx = txs.firstWhere((tx) {
+        final txId = tx.id.replaceAll('#', '').toLowerCase();
+        if (txId == cleanLower || txId.contains(cleanLower)) return true;
+        return tx.items.any((i) =>
+            i.barcode.isNotEmpty &&
+            i.barcode.replaceAll('#', '').toLowerCase() == cleanLower);
+      },
+          orElse: () => StoreTransaction(
+                id: '',
+                items: [],
+                total: 0,
+                cashTendered: 0,
+                changeGiven: 0,
+                createdAt: DateTime.now(),
+              ));
+
+      if (matchingTx.id.isNotEmpty) {
+        _showTxDetails(context, matchingTx, inventory);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No transaction found matching barcode "$clean"'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showReceiptLookupDialog(
@@ -1223,6 +1276,393 @@ class _DashedDivider extends StatelessWidget {
             color: Colors.grey.shade300,
             margin: const EdgeInsets.symmetric(horizontal: 2),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── REFUND ORDER MODAL GUI ───────────────────────────────────────────────────
+
+class _RefundOrderModal extends StatefulWidget {
+  final StoreTransaction tx;
+  final InventoryProvider inventory;
+
+  const _RefundOrderModal({
+    required this.tx,
+    required this.inventory,
+  });
+
+  @override
+  State<_RefundOrderModal> createState() => _RefundOrderModalState();
+}
+
+class _RefundOrderModalState extends State<_RefundOrderModal> {
+  final Map<int, int> _selectedRefundQtys = {};
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (int idx = 0; idx < widget.tx.items.length; idx++) {
+      final item = widget.tx.items[idx];
+      final availableQty = item.qty - item.returnedQty;
+      if (availableQty > 0) {
+        _selectedRefundQtys[idx] = availableQty;
+      }
+    }
+  }
+
+  double get _totalRefundAmount {
+    double sum = 0.0;
+    _selectedRefundQtys.forEach((idx, qty) {
+      if (qty > 0 && idx < widget.tx.items.length) {
+        sum += widget.tx.items[idx].price * qty;
+      }
+    });
+    return sum;
+  }
+
+  int get _totalRefundUnits {
+    int total = 0;
+    _selectedRefundQtys.forEach((_, qty) {
+      if (qty > 0) total += qty;
+    });
+    return total;
+  }
+
+  Future<void> _confirmRefund() async {
+    if (_totalRefundUnits <= 0 || _isProcessing) return;
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final fs = FirestoreService();
+      final List<Map<String, dynamic>> itemsToRefund = [];
+
+      _selectedRefundQtys.forEach((idx, qty) {
+        if (qty > 0 && idx < widget.tx.items.length) {
+          final item = widget.tx.items[idx];
+          itemsToRefund.add({
+            'productId': item.productId,
+            if (item.variantId != null) 'variantId': item.variantId,
+            'name': item.name,
+            'barcode': item.barcode,
+            'qty': qty,
+            'price': item.price,
+          });
+        }
+      });
+
+      const String adminName = 'Store Admin';
+
+      await fs.processMultiItemRefund(
+        transactionId: widget.tx.id,
+        itemsToRefund: itemsToRefund,
+        totalRefundAmount: _totalRefundAmount,
+        processedBy: adminName,
+        customerEmail: widget.tx.customerEmail,
+      );
+
+      // Automatically send updated digital receipt email to customer
+      if (widget.tx.customerEmail != null &&
+          widget.tx.customerEmail!.isNotEmpty) {
+        try {
+          await AdminMessagingService().sendDigitalReceiptEmail(
+            customerEmail: widget.tx.customerEmail!,
+            customerName: widget.tx.customerEmail!.split('@').first,
+            orderId: widget.tx.id,
+            items: widget.tx.items,
+            total: widget.tx.total - _totalRefundAmount,
+            paymentMethod: widget.tx.paymentMethod.name.toUpperCase(),
+          );
+        } catch (e) {
+          debugPrint('Error sending digital receipt refund email: $e');
+        }
+      }
+
+      widget.inventory.initialize();
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Refund of ${formatPeso(_totalRefundAmount)} for $_totalRefundUnits item(s) processed! Recorded in Inventory Records.',
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to process refund: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final todayStr = DateFormat('MMMM d, yyyy • h:mm a').format(DateTime.now());
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Container(
+        width: 540,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.published_with_changes_rounded,
+                          color: Colors.red, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Refund Order #${widget.tx.id.substring(0, widget.tx.id.length > 10 ? 10 : widget.tx.id.length).toUpperCase()}',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Date Today: $todayStr',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+
+            const Text(
+              'SELECT ITEMS TO REFUND:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: Colors.grey,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.tx.items.length,
+                itemBuilder: (ctx, idx) {
+                  final item = widget.tx.items[idx];
+                  final availableQty = item.qty - item.returnedQty;
+                  if (availableQty <= 0) return const SizedBox.shrink();
+
+                  final currentRefundQty = _selectedRefundQtys[idx] ?? 0;
+                  final isSelected = currentRefundQty > 0;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.red.shade50.withValues(alpha: 0.5)
+                          : theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? Colors.red.shade300
+                            : theme.colorScheme.outlineVariant
+                                .withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: isSelected,
+                          activeColor: Colors.red,
+                          onChanged: (val) {
+                            setState(() {
+                              if (val == true) {
+                                _selectedRefundQtys[idx] = availableQty;
+                              } else {
+                                _selectedRefundQtys[idx] = 0;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name +
+                                    (item.variantName != null
+                                        ? ' (${item.variantName})'
+                                        : ''),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              Text(
+                                '${formatPeso(item.price)} each • Available for refund: $availableQty unit(s)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isSelected) ...[
+                          const SizedBox(width: 8),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline,
+                                    size: 20),
+                                color: Colors.red,
+                                onPressed: currentRefundQty > 1
+                                    ? () {
+                                        setState(() {
+                                          _selectedRefundQtys[idx] =
+                                              currentRefundQty - 1;
+                                        });
+                                      }
+                                    : null,
+                              ),
+                              Text(
+                                '$currentRefundQty',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline,
+                                    size: 20),
+                                color: Colors.red,
+                                onPressed: currentRefundQty < availableQty
+                                    ? () {
+                                        setState(() {
+                                          _selectedRefundQtys[idx] =
+                                              currentRefundQty + 1;
+                                        });
+                                      }
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(width: 8),
+                        Text(
+                          formatPeso(item.price * (isSelected ? currentRefundQty : availableQty)),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isSelected ? Colors.red.shade900 : Colors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'TOTAL REFUND AMOUNT',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.red,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      Text(
+                        '$_totalRefundUnits item unit(s) selected',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.red.shade800),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    formatPeso(_totalRefundAmount),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.red.shade900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: (_totalRefundUnits > 0 && !_isProcessing)
+                    ? _confirmRefund
+                    : null,
+                icon: const Icon(Icons.check_circle_rounded),
+                label: Text(_isProcessing
+                    ? 'Processing Refund...'
+                    : 'CONFIRM REFUND (${formatPeso(_totalRefundAmount)})'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
