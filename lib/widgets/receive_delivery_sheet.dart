@@ -793,12 +793,6 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                                               ?.text ??
                                                           '') ??
                                                       0;
-                                                  final bCost = double.tryParse(
-                                                          _inquiryBulkCostControllers[
-                                                                  item.productId]
-                                                              ?.text ??
-                                                          '') ??
-                                                      0.0;
                                                   final extra = int.tryParse(
                                                           _inquiryExtraQtyControllers[
                                                                   item.productId]
@@ -809,15 +803,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                                           .convertBulkToUnits(
                                                               bQty) +
                                                       extra;
-                                                  final pCost = prod
-                                                      .calculateUnitCostFromPack(
-                                                          bCost);
                                                   qtyCtrl.text =
                                                       totalUnits.toString();
-                                                  if (pCost > 0) {
-                                                    costCtrl.text = pCost
-                                                        .toStringAsFixed(2);
-                                                  }
                                                   setState(() {});
                                                 },
                                                 decoration: InputDecoration(
@@ -830,55 +817,11 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: TextFormField(
-                                                controller:
-                                                    _inquiryBulkCostControllers[
-                                                            item.productId] ??=
-                                                        TextEditingController(),
-                                                keyboardType: const TextInputType
-                                                    .numberWithOptions(
-                                                    decimal: true),
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter
-                                                      .allow(
-                                                          RegExp(r'^\d*\.?\d*'))
-                                                ],
-                                                onChanged: (_) {
-                                                  final bCost = double.tryParse(
-                                                          _inquiryBulkCostControllers[
-                                                                  item.productId]
-                                                              ?.text ??
-                                                          '') ??
-                                                      0.0;
-                                                  final pCost = prod!
-                                                      .calculateUnitCostFromPack(
-                                                          bCost);
-                                                  if (pCost > 0) {
-                                                    costCtrl.text = pCost
-                                                        .toStringAsFixed(2);
-                                                  }
-                                                  setState(() {});
-                                                },
-                                                decoration: InputDecoration(
-                                                  labelText:
-                                                      'Cost (${prod.bulkUnit})',
-                                                  prefixText: 'P ',
-                                                  isDense: true,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: TextFormField(
                                                 initialValue:
-                                                    '${prod.piecesPerPack}',
+                                                    '${prod.piecesPerPack} ${prod.unit}/pack',
                                                 readOnly: true,
                                                 decoration: InputDecoration(
-                                                  labelText:
-                                                      'Pcs per ${prod.bulkUnit}',
+                                                  labelText: 'Pack Size',
                                                   isDense: true,
                                                   fillColor: Theme.of(context)
                                                       .colorScheme
@@ -939,12 +882,6 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                                         ?.text ??
                                                     '') ??
                                                 0;
-                                            final bCost = double.tryParse(
-                                                    _inquiryBulkCostControllers[
-                                                            item.productId]
-                                                        ?.text ??
-                                                    '') ??
-                                                0.0;
                                             final extra = int.tryParse(
                                                     _inquiryExtraQtyControllers[
                                                             item.productId]
@@ -954,11 +891,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                             final totalUnits = prod!
                                                     .convertBulkToUnits(bQty) +
                                                 extra;
-                                            final pCost = prod
-                                                .calculateUnitCostFromPack(
-                                                    bCost);
                                             return Text(
-                                              'Total: $bQty ${prod.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} = $totalUnits ${prod.unit} @ ${formatPeso(pCost)} / ${prod.unit}',
+                                              'Item Quantity: $bQty ${prod.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} = $totalUnits ${prod.unit} total',
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.bold,
@@ -973,6 +907,43 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: qtyCtrl,
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.digitsOnly
+                                          ],
+                                          onChanged: (_) => setState(() {}),
+                                          decoration: InputDecoration(
+                                            labelText: 'Total Received Qty (${prod!.unit})',
+                                            isDense: true,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: costCtrl,
+                                          keyboardType: const TextInputType
+                                              .numberWithOptions(decimal: true),
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                                RegExp(r'^\d*\.?\d*'))
+                                          ],
+                                          onChanged: (_) => setState(() {}),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Actual Unit Cost',
+                                            isDense: true,
+                                            prefixText: 'P ',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
                                 ] else ...[
                                   Row(
                                     children: [
