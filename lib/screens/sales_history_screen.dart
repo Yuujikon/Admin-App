@@ -1305,12 +1305,39 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
   void initState() {
     super.initState();
     for (int idx = 0; idx < widget.tx.items.length; idx++) {
-      final item = widget.tx.items[idx];
-      final availableQty = item.qty - item.returnedQty;
-      if (availableQty > 0) {
-        _selectedRefundQtys[idx] = availableQty;
-      }
+      _selectedRefundQtys[idx] = 0;
     }
+  }
+
+  void _promptRefundConfirmation() {
+    if (_totalRefundUnits <= 0 || _isProcessing) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Confirm Refund of ${formatPeso(_totalRefundAmount)}?'),
+        content: Text(
+          'Are you sure you want to process a refund of ${formatPeso(_totalRefundAmount)} for $_totalRefundUnits item unit(s)?\n\nThis will restock the items into inventory, update the customer receipt, and log a permanent Refund Record.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _confirmRefund();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('CONFIRM REFUND'),
+          ),
+        ],
+      ),
+    );
   }
 
   double get _totalRefundAmount {
@@ -1648,7 +1675,7 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
               height: 48,
               child: ElevatedButton.icon(
                 onPressed: (_totalRefundUnits > 0 && !_isProcessing)
-                    ? _confirmRefund
+                    ? _promptRefundConfirmation
                     : null,
                 icon: const Icon(Icons.check_circle_rounded),
                 label: Text(_isProcessing
