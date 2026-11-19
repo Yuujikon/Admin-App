@@ -203,15 +203,12 @@ class PendingDeliveriesList extends StatelessWidget {
 
               const Divider(height: 24),
 
-              // Footer: Order Totals & Action Button
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 10,
+              // Footer: Order Totals & Centered Action Button
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         '${inquiry.items.length} item${inquiry.items.length != 1 ? 's' : ''} (${inquiry.totalRequestedQty} total pcs)',
@@ -223,7 +220,7 @@ class PendingDeliveriesList extends StatelessWidget {
                             fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        'Total Order: ${formatPeso(inquiry.totalOrderedValue)}',
+                        'Total: ${formatPeso(inquiry.totalOrderedValue)}',
                         style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
@@ -231,24 +228,31 @@ class PendingDeliveriesList extends StatelessWidget {
                       ),
                     ],
                   ),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      ReceiveDeliverySheet.show(
-                        context: context,
-                        inquiry: inquiry,
-                      );
-                    },
-                    icon: const Icon(Icons.check_circle_outline_rounded,
-                        size: 16),
-                    label: const Text('VERIFY & RECEIVE'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade800,
-                      foregroundColor: Colors.white,
-                      elevation: 1,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        ReceiveDeliverySheet.show(
+                          context: context,
+                          inquiry: inquiry,
+                        );
+                      },
+                      icon: const Icon(Icons.check_circle_outline_rounded,
+                          size: 18),
+                      label: const Text('VERIFY & RECEIVE DELIVERY',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade800,
+                        foregroundColor: Colors.white,
+                        elevation: 1,
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
                     ),
                   ),
                 ],
