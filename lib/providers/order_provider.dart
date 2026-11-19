@@ -311,6 +311,7 @@ class OrderProvider extends BaseProvider {
     // 3. Record as transaction
     final tx = StoreTransaction(
       id: const Uuid().v4(),
+      orderId: order.orderId,
       items: order.items,
       total: order.total,
       cashTendered: order.total,
@@ -379,6 +380,7 @@ class OrderProvider extends BaseProvider {
     // 4. Record StoreTransaction with exact cashTendered and changeGiven
     final tx = StoreTransaction(
       id: const Uuid().v4(),
+      orderId: order.orderId,
       items: allItems,
       total: grandTotal,
       cashTendered: cashTendered,
@@ -461,6 +463,7 @@ class OrderProvider extends BaseProvider {
     // 4. Record StoreTransaction for prepaid cashless pickup
     final tx = StoreTransaction(
       id: const Uuid().v4(),
+      orderId: order.orderId,
       items: allItems,
       total: grandTotal,
       cashTendered: grandTotal,

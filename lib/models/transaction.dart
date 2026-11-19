@@ -12,6 +12,9 @@ class StoreTransaction {
   /// Unique transaction document ID.
   final String id;
 
+  /// Associated online order reference ID (e.g. GDC-1024).
+  final String? orderId;
+
   /// Purchased cart line items.
   final List<CartItem> items;
 
@@ -49,6 +52,7 @@ class StoreTransaction {
   /// Creates a [StoreTransaction] instance.
   const StoreTransaction({
     required this.id,
+    this.orderId,
     required this.items,
     required this.total,
     required this.cashTendered,
@@ -79,6 +83,10 @@ class StoreTransaction {
 
       return StoreTransaction(
         id: doc.id,
+        orderId: d['orderId']?.toString() ??
+            d['reference']?.toString() ??
+            d['orderRef']?.toString() ??
+            d['order_id']?.toString(),
         items: (d['items'] as List? ?? [])
             .map((e) => CartItem.fromMap(e))
             .toList(),
@@ -112,6 +120,7 @@ class StoreTransaction {
 
   /// Converts transaction instance to Map for Firestore persistence.
   Map<String, dynamic> toFirestore() => {
+        if (orderId != null) 'orderId': orderId,
         'items': items.map((i) => i.toMap()).toList(),
         'total': total,
         'cashTendered': cashTendered,

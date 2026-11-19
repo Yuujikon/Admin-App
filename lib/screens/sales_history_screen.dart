@@ -6,6 +6,7 @@ import '../models/transaction.dart';
 import '../models/order.dart';
 import '../models/refund_request.dart';
 import '../providers/inventory_provider.dart';
+import '../providers/order_provider.dart';
 import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 import '../widgets/responsive_layout.dart';
@@ -115,7 +116,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final matchingTx = txs.firstWhere(
       (tx) {
         final txId = tx.id.replaceAll('#', '').toLowerCase();
+        final orderRef = (tx.orderId ?? '').replaceAll('#', '').toLowerCase();
         if (txId == cleanLower || txId.contains(cleanLower)) return true;
+        if (orderRef.isNotEmpty &&
+            (orderRef == cleanLower || orderRef.contains(cleanLower))) {
+          return true;
+        }
         return tx.items.any((i) =>
             i.barcode.isNotEmpty &&
             i.barcode.replaceAll('#', '').toLowerCase() == cleanLower);
@@ -133,7 +139,27 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     if (matchingTx.id.isNotEmpty) {
       _showTxDetails(context, matchingTx, inventory);
     } else {
-      if (mounted) {
+      // Check if it matches an active pickup Pre-Order
+      final activeOrders = context.read<OrderProvider>().orders;
+      PreOrder? matchingOrder;
+      for (final o in activeOrders) {
+        final oId = o.orderId.replaceAll('#', '').toLowerCase();
+        final docId = o.id.replaceAll('#', '').toLowerCase();
+        if (oId == cleanLower || docId == cleanLower) {
+          matchingOrder = o;
+          break;
+        }
+      }
+
+      if (matchingOrder != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Order #${matchingOrder.orderId} is an active Pre-Order (${matchingOrder.status.name.toUpperCase()}). Check Pre-Orders tab.'),
+            backgroundColor: Colors.amber.shade900,
+          ),
+        );
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('No transaction found matching barcode/QR "$clean"'),
@@ -163,10 +189,18 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final filteredTxs = txs.where((tx) {
       final q = _salesSearch.toLowerCase().trim();
       if (q.isEmpty) return true;
-      return tx.id.toLowerCase().contains(q) ||
-          (tx.customerEmail != null &&
-              tx.customerEmail!.toLowerCase().contains(q)) ||
-          tx.paymentMethod.name.toLowerCase().contains(q);
+      final txId = tx.id.replaceAll('#', '').toLowerCase();
+      final orderRef = (tx.orderId ?? '').replaceAll('#', '').toLowerCase();
+      final custEmail = (tx.customerEmail ?? '').toLowerCase();
+      final payment = tx.paymentMethod.name.toLowerCase();
+
+      return txId.contains(q) ||
+          orderRef.contains(q) ||
+          custEmail.contains(q) ||
+          payment.contains(q) ||
+          tx.items.any((i) =>
+              i.barcode.toLowerCase().contains(q) ||
+              i.name.toLowerCase().contains(q));
     }).toList();
 
     // Filtered refund history
@@ -488,7 +522,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       DateFormat('MMM dd, yyyy • hh:mm a')
                           .format(tx.createdAt)),
                   _infoRow(Icons.receipt_outlined, 'Receipt #',
-                      tx.id.toUpperCase().substring(0, 8)),
+                      tx.id.toUpperCase().length >= 8 ? tx.id.toUpperCase().substring(0, 8) : tx.id.toUpperCase()),
+                  if (tx.orderId != null && tx.orderId!.isNotEmpty)
+                    _infoRow(Icons.confirmation_number_outlined, 'Order Ref #',
+                        tx.orderId!),
                   if (tx.customerEmail != null)
                     _infoRow(
                         Icons.person_outline, 'Customer', tx.customerEmail!),
