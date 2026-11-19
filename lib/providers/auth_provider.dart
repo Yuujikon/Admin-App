@@ -273,8 +273,12 @@ class AppAuthProvider extends ChangeNotifier {
   /// Resends account verification email link to the active user.
   Future<void> resendEmailVerification() async {
     final user = currentUser;
-    if (user != null && !user.emailVerified) {
-      await user.sendEmailVerification();
+    if (user != null) {
+      await user.reload();
+      if (!user.emailVerified) {
+        await user.sendEmailVerification();
+      }
+      notifyListeners();
     }
   }
 
@@ -329,13 +333,18 @@ class AppAuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Triggers a manual refresh of the user document permissions.
+  /// Triggers a manual refresh of the user document permissions and auth state.
   Future<void> refreshRole() async {
     final user = currentUser;
     if (user != null) {
-      await user.reload();
+      try {
+        await user.reload();
+      } catch (e) {
+        debugPrint('Error reloading user in refreshRole: $e');
+      }
       _userSub?.cancel();
       _listenToUserDoc(user.uid);
+      notifyListeners();
     }
   }
 

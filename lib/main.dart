@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -169,7 +171,6 @@ class _StaffAuthGate extends StatefulWidget {
 
 class _StaffAuthGateState extends State<_StaffAuthGate> {
   String? _activeUid;
-  bool _isResendingVerification = false;
 
   @override
   Widget build(BuildContext context) {
@@ -214,112 +215,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
     if (isPasswordUser &&
         !auth.isEmailVerified &&
         user.email != 'markjeo.hinampas@gmail.com') {
-      return Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        body: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.mark_email_unread_rounded,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Real Email Verification Required',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'VERIFICATION REQUIRED',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'A verification link was sent to ${user.email}.\n\nMade-up or fake email addresses cannot receive this link and will be permanently blocked from accessing the application. Please check your inbox and click the verification link.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: () => auth.refreshRole(),
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('I Have Verified / Check Status'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _isResendingVerification
-                      ? null
-                      : () async {
-                          setState(() {
-                            _isResendingVerification = true;
-                          });
-                          try {
-                            await auth.resendEmailVerification();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Verification email re-sent! Check your inbox.'),
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Could not resend email. Try again later.'),
-                                ),
-                              );
-                            }
-                          } finally {
-                            if (mounted) {
-                              setState(() {
-                                _isResendingVerification = false;
-                              });
-                            }
-                          }
-                        },
-                  icon: _isResendingVerification
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send_rounded, size: 16),
-                  label: Text(_isResendingVerification
-                      ? 'Resending...'
-                      : 'Resend Verification Email'),
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => auth.logout(),
-                  child: const Text('Log Out'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      return _EmailVerificationRequiredView(user: user);
     }
 
     // Account state screens when user has no active staff role assignment
@@ -500,5 +396,266 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
     } else {
       return const AdminApp();
     }
+  }
+}
+
+/// View presented when email/password user needs to verify their email address.
+class _EmailVerificationRequiredView extends StatefulWidget {
+  final User user;
+  const _EmailVerificationRequiredView({required this.user});
+
+  @override
+  State<_EmailVerificationRequiredView> createState() =>
+      _EmailVerificationRequiredViewState();
+}
+
+class _EmailVerificationRequiredViewState
+    extends State<_EmailVerificationRequiredView> {
+  bool _isChecking = false;
+  bool _isResending = false;
+  Timer? _autoCheckTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Periodically check email verification status every 4 seconds
+    _autoCheckTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _checkStatus(silent: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkStatus({bool silent = false}) async {
+    if (_isChecking) return;
+    if (!silent) {
+      setState(() => _isChecking = true);
+    }
+    try {
+      final auth = context.read<AppAuthProvider>();
+      await auth.refreshRole();
+      if (mounted && !silent) {
+        if (auth.isEmailVerified) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Email verified successfully! Welcome.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Email is not verified yet. Please check your inbox and click the verification link.'),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted && !silent) {
+        setState(() => _isChecking = false);
+      }
+    }
+  }
+
+  Future<void> _resendEmail() async {
+    if (_isResending) return;
+    setState(() => _isResending = true);
+    try {
+      final auth = context.read<AppAuthProvider>();
+      await auth.resendEmailVerification();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Verification email re-sent to ${widget.user.email}! Check your inbox and spam folder.'),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        final message = switch (e.code) {
+          'too-many-requests' =>
+            'Verification email was already sent recently. Please check your inbox & spam folder, or wait a minute before requesting another link.',
+          _ => e.message ?? 'Could not resend email. Try again later.',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: e.code == 'too-many-requests'
+                ? Colors.amber.shade900
+                : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error sending email: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isResending = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final auth = context.read<AppAuthProvider>();
+
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 450),
+            child: Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(28.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer
+                            .withValues(alpha: 0.4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.mark_email_unread_rounded,
+                        size: 48,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Email Verification Required',
+                      textAlign: TextAlign.center,
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.3,
+                              ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'VERIFICATION PENDING',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text.rich(
+                      TextSpan(
+                        style:
+                            Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  height: 1.4,
+                                ),
+                        children: [
+                          const TextSpan(
+                              text: 'A verification link was sent to:\n'),
+                          TextSpan(
+                            text: '${widget.user.email}\n\n',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                          const TextSpan(
+                            text:
+                                'Please check your Inbox and Spam/Junk folder and click the link to verify your account.\n\nThis screen will automatically refresh once verified.',
+                          ),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: _isChecking ? null : () => _checkStatus(),
+                      icon: _isChecking
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.refresh_rounded),
+                      label: Text(_isChecking
+                          ? 'Checking Status...'
+                          : 'I Have Verified / Check Status'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _isResending ? null : _resendEmail,
+                      icon: _isResending
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_rounded, size: 16),
+                      label: Text(_isResending
+                          ? 'Resending Link...'
+                          : 'Resend Verification Email'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: () => auth.logout(),
+                      icon: const Icon(Icons.logout_rounded, size: 16),
+                      label: const Text('Log Out & Try Another Email'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
