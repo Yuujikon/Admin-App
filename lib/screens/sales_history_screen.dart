@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/transaction.dart';
+import '../models/order.dart';
 import '../models/refund_request.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/printer_provider.dart';
@@ -382,75 +383,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           color: Colors.grey,
                           letterSpacing: 1)),
                   const SizedBox(height: 12),
-                  ...tx.items.map((i) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${i.qty}x',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 13)),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(i.name,
-                                            style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600)),
-                                      ),
-                                      if (i.returnedQty > 0) ...[
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.red.shade50,
-                                            borderRadius:
-                                                BorderRadius.circular(4),
-                                            border: Border.all(
-                                                color: Colors.red.shade200),
-                                          ),
-                                          child: Text(
-                                            'Returned: ${i.returnedQty}',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.red.shade700,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  if (i.variantName != null)
-                                    Text('Variant: ${i.variantName}',
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.teal,
-                                            fontWeight: FontWeight.w600)),
-                                  Text(
-                                    'Barcode: ${i.barcode.isNotEmpty ? i.barcode : "N/A"} • ${formatPeso(i.price)} each',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontFamily: 'monospace',
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(formatPeso(i.price * i.qty),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      )),
+                  ..._buildItemizedReceiptRows(tx.items, context),
                   const SizedBox(height: 16),
                   const _DashedDivider(),
                   const SizedBox(height: 16),
@@ -627,6 +560,158 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           ],
         ),
       );
+
+  List<Widget> _buildItemizedReceiptRows(
+      List<CartItem> items, BuildContext context) {
+    final List<Widget> widgets = [];
+    final theme = Theme.of(context);
+
+    for (final i in items) {
+      final int retainedQty = i.qty - i.returnedQty;
+      final int refundedQty = i.returnedQty;
+
+      // 1. Non-refunded / retained units line item
+      if (retainedQty > 0) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${retainedQty}x',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        i.name,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      if (i.variantName != null && i.variantName!.isNotEmpty)
+                        Text('Variant: ${i.variantName}',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.teal,
+                                fontWeight: FontWeight.w600)),
+                      Text(
+                        'Barcode: ${i.barcode.isNotEmpty ? i.barcode : "N/A"} • ${formatPeso(i.price)} each',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  formatPeso(i.price * retainedQty),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // 2. Refunded units line item (separated into a distinct item row as "Item Name (Refunded)")
+      if (refundedQty > 0) {
+        widgets.add(
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${refundedQty}x',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.red.shade900),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${i.name} (Refunded)',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade900,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'REFUNDED',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (i.variantName != null && i.variantName!.isNotEmpty)
+                        Text('Variant: ${i.variantName}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.red.shade700,
+                                fontWeight: FontWeight.w600)),
+                      Text(
+                        'Barcode: ${i.barcode.isNotEmpty ? i.barcode : "N/A"} • ${formatPeso(i.price)} each',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: Colors.red.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  formatPeso(i.price * refundedQty),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.red.shade900,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    return widgets;
+  }
 
   void _showReceiptLookupDialog(
       BuildContext context, List<StoreTransaction> txs) {
@@ -831,51 +916,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             ),
             const SizedBox(height: 6),
 
-            ...tx.items.map((i) {
-              final availableQty = i.qty - i.returnedQty;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  children: [
-                    Text('${i.qty}x',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            i.name +
-                                (i.variantName != null
-                                    ? ' (${i.variantName})'
-                                    : ''),
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            'Price: ${formatPeso(i.price)} • Returned: ${i.returnedQty} (Available: $availableQty)',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: availableQty > 0
-                                  ? theme.colorScheme.onSurfaceVariant
-                                  : Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      formatPeso(i.price * i.qty),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                  ],
-                ),
-              );
-            }),
+            ..._buildItemizedReceiptRows(tx.items, context),
 
             const SizedBox(height: 12),
             Row(
