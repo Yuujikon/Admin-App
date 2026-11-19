@@ -33,6 +33,7 @@ class InventoryProvider extends BaseProvider {
   List<Customer> _customers = [];
   List<ProductBundle> _bundles = [];
   List<DeliveryLog> _deliveryLogs = [];
+  List<Map<String, dynamic>> _appeals = [];
   StoreSettings _settings = const StoreSettings(isClosed: false);
   String _adminName = 'Admin';
   bool _isProcessingSale = false;
@@ -58,6 +59,7 @@ class InventoryProvider extends BaseProvider {
   List<Customer> get customers => _customers;
   List<ProductBundle> get bundles => _bundles;
   List<DeliveryLog> get deliveryLogs => _deliveryLogs;
+  List<Map<String, dynamic>> get appeals => _appeals;
   StoreSettings get settings => _settings;
   String get adminName => _adminName;
   bool get isProcessingSale => _isProcessingSale;
@@ -352,6 +354,14 @@ class InventoryProvider extends BaseProvider {
     }).listen((list) {
       _customers = list;
       _isCustomersLoading = false;
+      notifyListeners();
+    }));
+
+    registerSubscription(_fs.appealsStream().handleError((e) {
+      debugPrint('Appeals Stream Error: $e');
+      notifyListeners();
+    }).listen((list) {
+      _appeals = list;
       notifyListeners();
     }));
 

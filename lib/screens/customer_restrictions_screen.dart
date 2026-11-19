@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -26,6 +27,7 @@ class _CustomerRestrictionsScreenState
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
     final customers = inventory.customers;
+    final rawAppeals = inventory.appeals;
 
     // Filter customers with offenses or appeals
     final offendingCustomers = customers.where((c) {
@@ -40,9 +42,51 @@ class _CustomerRestrictionsScreenState
           c.appealStatus == 'pending';
     }).toList();
 
-    final pendingAppeals = customers
-        .where((c) => c.isPermanentlyLocked && c.appealStatus == 'pending')
-        .toList();
+    // Build comprehensive pending appeals list from customers, users, and appeals collection
+    final pendingAppealsMap = <String, Customer>{};
+
+    for (final c in customers) {
+      if (c.appealStatus == 'pending' || (c.isPermanentlyLocked && c.appealStatus == 'pending')) {
+        pendingAppealsMap[c.id] = c;
+        if (c.email != null && c.email!.isNotEmpty) {
+          pendingAppealsMap[c.email!.toLowerCase()] = c;
+        }
+      }
+    }
+
+    for (final a in rawAppeals) {
+      final st = (a['status'] ?? a['appealStatus'] ?? 'pending').toString().toLowerCase();
+      if (st == 'pending') {
+        final uid = (a['userId'] ?? a['customerId'] ?? a['id'] ?? '').toString();
+        final email = (a['customerEmail'] ?? a['userEmail'] ?? a['email'] ?? '').toString().toLowerCase();
+
+        final alreadyMatched = (uid.isNotEmpty && pendingAppealsMap.containsKey(uid)) ||
+            (email.isNotEmpty && pendingAppealsMap.containsKey(email));
+
+        if (!alreadyMatched) {
+          DateTime? subDate;
+          final rawTS = a['createdAt'] ?? a['submittedAt'] ?? a['timestamp'];
+          if (rawTS is Timestamp) subDate = rawTS.toDate();
+
+          final syntheticCustomer = Customer(
+            id: uid.isNotEmpty ? uid : (a['id'] ?? 'appeal_${DateTime.now().millisecondsSinceEpoch}').toString(),
+            name: (a['customerName'] ?? a['name'] ?? 'Customer (Appealed)').toString(),
+            email: (a['customerEmail'] ?? a['userEmail'] ?? a['email'] ?? '').toString(),
+            phone: (a['customerPhone'] ?? a['phone'] ?? '').toString(),
+            createdAt: subDate ?? DateTime.now(),
+            offenseCount: 4,
+            isPermanentlyLocked: true,
+            appealStatus: 'pending',
+            appealMessage: (a['appealMessage'] ?? a['message'] ?? a['reason'] ?? 'No statement provided by customer.').toString(),
+            appealSubmittedAt: subDate ?? DateTime.now(),
+          );
+
+          pendingAppealsMap[syntheticCustomer.id] = syntheticCustomer;
+        }
+      }
+    }
+
+    final pendingAppeals = pendingAppealsMap.values.toSet().toList();
 
     final theme = Theme.of(context);
 

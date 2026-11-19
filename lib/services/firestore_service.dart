@@ -798,12 +798,69 @@ class FirestoreService {
 
   Future<void> addExpense(Expense e) => _expenses.add(e.toFirestore());
 
-  // ── Customers ──────────────────────────────────────────────────────────────
+  // ── Customers & Appeals ───────────────────────────────────────────────────
 
-  Stream<List<Customer>> customersStream() =>
-      _customers.orderBy('name').snapshots().map((s) => s.docs
+  Stream<List<Map<String, dynamic>>> appealsStream() =>
+      _db.collection('appeals').snapshots().map((s) => s.docs.map((doc) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            return data;
+          }).toList());
+
+  Stream<List<Customer>> customersStream() {
+    return _customers.orderBy('name').snapshots().asyncMap((snap) async {
+      final List<Customer> list = snap.docs
           .map((d) => Customer.fromMap(d.id, d.data() as Map<String, dynamic>))
-          .toList());
+          .toList();
+
+      // Merge customer user records from 'users' collection who have offenses or pending appeals
+      try {
+        final usersSnap =
+            await _users.where('isCustomer', isEqualTo: true).get();
+        for (final uDoc in usersSnap.docs) {
+          final uData = uDoc.data() as Map<String, dynamic>? ?? {};
+          final uId = uDoc.id;
+          final email = uData['email'] as String?;
+
+          final existingIdx = list.indexWhere((c) =>
+              c.id == uId ||
+              (email != null &&
+                  email.isNotEmpty &&
+                  c.email?.toLowerCase() == email.toLowerCase()));
+
+          if (existingIdx == -1) {
+            if ((uData['offenseCount'] as num? ?? 0) > 0 ||
+                uData['isPermanentlyLocked'] == true ||
+                (uData['appealStatus'] != null &&
+                    uData['appealStatus'] != 'none')) {
+              list.add(Customer.fromMap(uId, uData));
+            }
+          } else {
+            final existing = list[existingIdx];
+            if (uData['appealStatus'] != null &&
+                uData['appealStatus'] != 'none') {
+              list[existingIdx] = existing.copyWith(
+                appealStatus: uData['appealStatus']?.toString(),
+                appealMessage: uData['appealMessage']?.toString(),
+                appealSubmittedAt:
+                    (uData['appealSubmittedAt'] as Timestamp?)?.toDate(),
+                isPermanentlyLocked:
+                    uData['isPermanentlyLocked'] ?? existing.isPermanentlyLocked,
+                offenseCount:
+                    (uData['offenseCount'] as num? ?? existing.offenseCount)
+                        .toInt(),
+              );
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint(
+            'Error merging user customer records into customersStream: $e');
+      }
+
+      return list;
+    });
+  }
 
   Future<void> addCustomer(Customer c) => _customers.add(c.toMap());
 
@@ -928,20 +985,36 @@ class FirestoreService {
       {String? adminNotes}) async {
     final docRef = _customers.doc(customerId);
     final snap = await docRef.get();
-    if (!snap.exists) return;
+    String? email;
+    String name = 'Customer';
 
-    final data = snap.data() as Map<String, dynamic>? ?? {};
-    final email = data['email'] as String?;
-    final name = data['name'] as String? ?? 'Customer';
+    if (snap.exists) {
+      final data = snap.data() as Map<String, dynamic>? ?? {};
+      email = data['email'] as String?;
+      name = data['name'] as String? ?? 'Customer';
 
-    await docRef.update({
-      'isPermanentlyLocked': false,
-      'restrictedUntil': null,
-      'appealStatus': 'approved',
-      'appealReviewedAt': Timestamp.now(),
-    });
+      await docRef.update({
+        'isPermanentlyLocked': false,
+        'restrictedUntil': null,
+        'appealStatus': 'approved',
+        'appealReviewedAt': Timestamp.now(),
+      });
+    }
 
-    if (email != null && email.isNotEmpty) {
+    final userDocRef = _users.doc(customerId);
+    final userSnap = await userDocRef.get();
+    if (userSnap.exists) {
+      final uData = userSnap.data() as Map<String, dynamic>? ?? {};
+      email ??= uData['email'] as String?;
+      name = uData['name'] as String? ?? name;
+
+      await userDocRef.update({
+        'isPermanentlyLocked': false,
+        'restrictedUntil': null,
+        'appealStatus': 'approved',
+        'appealReviewedAt': Timestamp.now(),
+      });
+    } else if (email != null && email.isNotEmpty) {
       final userQuery = await _users.where('email', isEqualTo: email).get();
       for (final uDoc in userQuery.docs) {
         await uDoc.reference.update({
@@ -951,7 +1024,24 @@ class FirestoreService {
           'appealReviewedAt': Timestamp.now(),
         });
       }
+    }
 
+    // Update appeals collection documents if matching userId or customerId
+    try {
+      final appealsQuery = await _db
+          .collection('appeals')
+          .where('userId', isEqualTo: customerId)
+          .get();
+      for (final aDoc in appealsQuery.docs) {
+        await aDoc.reference.update({
+          'status': 'approved',
+          'appealStatus': 'approved',
+          'reviewedAt': Timestamp.now(),
+        });
+      }
+    } catch (_) {}
+
+    if (email != null && email.isNotEmpty) {
       await AdminMessagingService().sendNotification(
         recipientEmail: email,
         title: 'GDC Store - Account Unlock Appeal ACCEPTED',
@@ -966,18 +1056,32 @@ class FirestoreService {
       {String? adminNotes}) async {
     final docRef = _customers.doc(customerId);
     final snap = await docRef.get();
-    if (!snap.exists) return;
+    String? email;
+    String name = 'Customer';
 
-    final data = snap.data() as Map<String, dynamic>? ?? {};
-    final email = data['email'] as String?;
-    final name = data['name'] as String? ?? 'Customer';
+    if (snap.exists) {
+      final data = snap.data() as Map<String, dynamic>? ?? {};
+      email = data['email'] as String?;
+      name = data['name'] as String? ?? 'Customer';
 
-    await docRef.update({
-      'appealStatus': 'rejected',
-      'appealReviewedAt': Timestamp.now(),
-    });
+      await docRef.update({
+        'appealStatus': 'rejected',
+        'appealReviewedAt': Timestamp.now(),
+      });
+    }
 
-    if (email != null && email.isNotEmpty) {
+    final userDocRef = _users.doc(customerId);
+    final userSnap = await userDocRef.get();
+    if (userSnap.exists) {
+      final uData = userSnap.data() as Map<String, dynamic>? ?? {};
+      email ??= uData['email'] as String?;
+      name = uData['name'] as String? ?? name;
+
+      await userDocRef.update({
+        'appealStatus': 'rejected',
+        'appealReviewedAt': Timestamp.now(),
+      });
+    } else if (email != null && email.isNotEmpty) {
       final userQuery = await _users.where('email', isEqualTo: email).get();
       for (final uDoc in userQuery.docs) {
         await uDoc.reference.update({
@@ -985,7 +1089,23 @@ class FirestoreService {
           'appealReviewedAt': Timestamp.now(),
         });
       }
+    }
 
+    try {
+      final appealsQuery = await _db
+          .collection('appeals')
+          .where('userId', isEqualTo: customerId)
+          .get();
+      for (final aDoc in appealsQuery.docs) {
+        await aDoc.reference.update({
+          'status': 'rejected',
+          'appealStatus': 'rejected',
+          'reviewedAt': Timestamp.now(),
+        });
+      }
+    } catch (_) {}
+
+    if (email != null && email.isNotEmpty) {
       await AdminMessagingService().sendNotification(
         recipientEmail: email,
         title: 'GDC Store - Account Unlock Appeal REJECTED',
