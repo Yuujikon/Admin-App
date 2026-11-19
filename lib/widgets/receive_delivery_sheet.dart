@@ -63,6 +63,12 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
   final Map<String, TextEditingController> _inquiryNoteControllers = {};
   final Map<String, DateTime?> _inquiryExpiryDates = {};
 
+  // Inquiry Bulk UOM State Maps
+  final Map<String, bool> _inquiryBulkModes = {};
+  final Map<String, TextEditingController> _inquiryBulkQtyControllers = {};
+  final Map<String, TextEditingController> _inquiryBulkCostControllers = {};
+  final Map<String, TextEditingController> _inquiryExtraQtyControllers = {};
+
   DateTime? _batchExpiry;
   bool _saving = false;
 
@@ -107,10 +113,40 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
         _inquiryNoteControllers[item.productId] =
             TextEditingController(text: item.discrepancyNote ?? '');
 
+        _inquiryBulkQtyControllers[item.productId] = TextEditingController();
+        _inquiryBulkCostControllers[item.productId] = TextEditingController();
+        _inquiryExtraQtyControllers[item.productId] = TextEditingController();
+
+        bool isBulk = false;
         DateTime? defaultExp;
         try {
-          final prod =
-              inventory.products.firstWhere((p) => p.id == item.productId);
+          final prod = inventory.products.firstWhere(
+            (p) =>
+                p.id == item.productId ||
+                p.name.trim().toLowerCase() ==
+                    item.productName.trim().toLowerCase(),
+          );
+          if (prod.hasBulkPacking) {
+            isBulk = true;
+            final packCost =
+                prod.packCost ?? (prod.costPrice * prod.piecesPerPack);
+            if (packCost > 0) {
+              _inquiryBulkCostControllers[item.productId]!.text =
+                  packCost.toStringAsFixed(2);
+            }
+            if (item.requestedQty >= prod.piecesPerPack) {
+              final bQty = item.requestedQty ~/ prod.piecesPerPack;
+              final extra = item.requestedQty % prod.piecesPerPack;
+              _inquiryBulkQtyControllers[item.productId]!.text =
+                  bQty.toString();
+              if (extra > 0) {
+                _inquiryExtraQtyControllers[item.productId]!.text =
+                    extra.toString();
+              }
+            } else {
+              _inquiryBulkQtyControllers[item.productId]!.text = '1';
+            }
+          }
           if (prod.shelfDays != null && prod.shelfDays! > 0) {
             defaultExp = DateTime.now().add(Duration(days: prod.shelfDays!));
           } else if (prod.expiryDate != null) {
@@ -118,6 +154,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
           }
         } catch (_) {}
 
+        _inquiryBulkModes[item.productId] = isBulk;
         _inquiryExpiryDates[item.productId] = defaultExp;
       }
     }
@@ -137,6 +174,15 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       c.dispose();
     }
     for (var c in _inquiryNoteControllers.values) {
+      c.dispose();
+    }
+    for (var c in _inquiryBulkQtyControllers.values) {
+      c.dispose();
+    }
+    for (var c in _inquiryBulkCostControllers.values) {
+      c.dispose();
+    }
+    for (var c in _inquiryExtraQtyControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -273,13 +319,48 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
   }
 
   void _acceptAllInquiryQty(RestockInquiry inquiry) {
+    final inventory = context.read<InventoryProvider>();
     setState(() {
       for (var item in inquiry.items) {
-        _inquiryQtyControllers[item.productId]?.text =
-            item.requestedQty.toString();
-        if (item.costPrice > 0) {
-          _inquiryCostControllers[item.productId]?.text =
-              item.costPrice.toString();
+        Product? prod;
+        try {
+          prod = inventory.products.firstWhere(
+            (p) =>
+                p.id == item.productId ||
+                p.name.trim().toLowerCase() ==
+                    item.productName.trim().toLowerCase(),
+          );
+        } catch (_) {}
+
+        final isBulk = _inquiryBulkModes[item.productId] ?? false;
+        if (isBulk && prod != null && prod.hasBulkPacking) {
+          final packCost =
+              prod.packCost ?? (prod.costPrice * prod.piecesPerPack);
+          if (packCost > 0) {
+            _inquiryBulkCostControllers[item.productId]?.text =
+                packCost.toStringAsFixed(2);
+          }
+          final int recQty = item.requestedQty;
+          final bQty = recQty ~/ prod.piecesPerPack;
+          final extra = recQty % prod.piecesPerPack;
+          _inquiryBulkQtyControllers[item.productId]?.text = bQty.toString();
+          _inquiryExtraQtyControllers[item.productId]?.text =
+              extra > 0 ? extra.toString() : '';
+
+          final totalUnits = prod.convertBulkToUnits(bQty) + extra;
+          final pieceCost = prod.calculateUnitCostFromPack(packCost);
+          _inquiryQtyControllers[item.productId]?.text =
+              totalUnits.toString();
+          _inquiryCostControllers[item.productId]?.text = pieceCost > 0
+              ? pieceCost.toStringAsFixed(2)
+              : item.costPrice.toString();
+        } else {
+          _inquiryQtyControllers[item.productId]?.text =
+              item.requestedQty.toString();
+          if (item.costPrice > 0) {
+            _inquiryCostControllers[item.productId]?.text =
+                item.costPrice.toString();
+          }
         }
       }
     });
@@ -529,6 +610,22 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                           badgeLabel = '+$diff Surplus 📦';
                         }
 
+                        final inventory = context.watch<InventoryProvider>();
+                        Product? prod;
+                        try {
+                          prod = inventory.products.firstWhere(
+                            (p) =>
+                                p.id == item.productId ||
+                                p.name.trim().toLowerCase() ==
+                                    item.productName.trim().toLowerCase(),
+                          );
+                        } catch (_) {}
+
+                        final bool hasBulk =
+                            prod != null && prod.hasBulkPacking;
+                        final bool isBulk =
+                            _inquiryBulkModes[item.productId] ?? false;
+
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           color:
@@ -581,44 +678,341 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                       fontSize: 11, color: Colors.grey),
                                 ),
                                 const SizedBox(height: 10),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: qtyCtrl,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly
-                                        ],
-                                        onChanged: (_) => setState(() {}),
-                                        decoration: InputDecoration(
-                                          labelText: 'Actual Received Qty',
-                                          isDense: true,
-                                          suffixText: item.unit,
+
+                                // Segmented Button Toggle for Bulk vs Single UOM
+                                if (hasBulk) ...[
+                                  SegmentedButton<bool>(
+                                    style: SegmentedButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    segments: [
+                                      ButtonSegment<bool>(
+                                        value: false,
+                                        label: Text('Single (${prod.unit})',
+                                            style: const TextStyle(
+                                                fontSize: 11)),
+                                        icon: const Icon(
+                                            Icons.inventory_2_outlined,
+                                            size: 14),
+                                      ),
+                                      ButtonSegment<bool>(
+                                        value: true,
+                                        label: Text(
+                                          'Bulk (${prod.bulkUnit.toUpperCase()} of ${prod.piecesPerPack})',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold),
                                         ),
+                                        icon: const Icon(
+                                            Icons.all_inbox_rounded,
+                                            size: 14),
+                                      ),
+                                    ],
+                                    selected: {isBulk},
+                                    onSelectionChanged: (Set<bool> set) {
+                                      setState(() {
+                                        final newIsBulk = set.first;
+                                        _inquiryBulkModes[item.productId] =
+                                            newIsBulk;
+                                        if (newIsBulk) {
+                                          final packCost = prod!.packCost ??
+                                              (prod.costPrice *
+                                                  prod.piecesPerPack);
+                                          if (packCost > 0) {
+                                            _inquiryBulkCostControllers[
+                                                        item.productId]
+                                                    ?.text =
+                                                packCost.toStringAsFixed(2);
+                                          }
+                                          final int recQty =
+                                              int.tryParse(qtyCtrl.text) ??
+                                                  item.requestedQty;
+                                          if (recQty >= prod.piecesPerPack) {
+                                            final bQty =
+                                                recQty ~/ prod.piecesPerPack;
+                                            final extra =
+                                                recQty % prod.piecesPerPack;
+                                            _inquiryBulkQtyControllers[
+                                                    item.productId]
+                                                ?.text = bQty.toString();
+                                            _inquiryExtraQtyControllers[
+                                                    item.productId]
+                                                ?.text = extra > 0
+                                                ? extra.toString()
+                                                : '';
+                                          } else {
+                                            _inquiryBulkQtyControllers[
+                                                    item.productId]
+                                                ?.text = '1';
+                                          }
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+
+                                if (hasBulk && isBulk) ...[
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer
+                                          .withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                            .withValues(alpha: 0.25),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: costCtrl,
-                                        keyboardType: const TextInputType
-                                            .numberWithOptions(decimal: true),
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.allow(
-                                              RegExp(r'^\d*\.?\d*'))
-                                        ],
-                                        onChanged: (_) => setState(() {}),
-                                        decoration: const InputDecoration(
-                                          labelText: 'Actual Unit Cost',
-                                          isDense: true,
-                                          prefixText: 'P ',
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextFormField(
+                                                controller:
+                                                    _inquiryBulkQtyControllers[
+                                                            item.productId] ??=
+                                                        TextEditingController(),
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .digitsOnly
+                                                ],
+                                                onChanged: (_) {
+                                                  final bQty = int.tryParse(
+                                                          _inquiryBulkQtyControllers[
+                                                                  item.productId]
+                                                              ?.text ??
+                                                          '') ??
+                                                      0;
+                                                  final bCost = double.tryParse(
+                                                          _inquiryBulkCostControllers[
+                                                                  item.productId]
+                                                              ?.text ??
+                                                          '') ??
+                                                      0.0;
+                                                  final extra = int.tryParse(
+                                                          _inquiryExtraQtyControllers[
+                                                                  item.productId]
+                                                              ?.text ??
+                                                          '') ??
+                                                      0;
+                                                  final totalUnits = prod!
+                                                          .convertBulkToUnits(
+                                                              bQty) +
+                                                      extra;
+                                                  final pCost = prod
+                                                      .calculateUnitCostFromPack(
+                                                          bCost);
+                                                  qtyCtrl.text =
+                                                      totalUnits.toString();
+                                                  if (pCost > 0) {
+                                                    costCtrl.text = pCost
+                                                        .toStringAsFixed(2);
+                                                  }
+                                                  setState(() {});
+                                                },
+                                                decoration: InputDecoration(
+                                                  labelText:
+                                                      'Bulk Qty (${prod!.bulkUnit.toUpperCase()})',
+                                                  isDense: true,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: TextFormField(
+                                                controller:
+                                                    _inquiryBulkCostControllers[
+                                                            item.productId] ??=
+                                                        TextEditingController(),
+                                                keyboardType: const TextInputType
+                                                    .numberWithOptions(
+                                                    decimal: true),
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .allow(
+                                                          RegExp(r'^\d*\.?\d*'))
+                                                ],
+                                                onChanged: (_) {
+                                                  final bCost = double.tryParse(
+                                                          _inquiryBulkCostControllers[
+                                                                  item.productId]
+                                                              ?.text ??
+                                                          '') ??
+                                                      0.0;
+                                                  final pCost = prod!
+                                                      .calculateUnitCostFromPack(
+                                                          bCost);
+                                                  if (pCost > 0) {
+                                                    costCtrl.text = pCost
+                                                        .toStringAsFixed(2);
+                                                  }
+                                                  setState(() {});
+                                                },
+                                                decoration: InputDecoration(
+                                                  labelText:
+                                                      'Cost (${prod.bulkUnit})',
+                                                  prefixText: 'P ',
+                                                  isDense: true,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextFormField(
+                                                initialValue:
+                                                    '${prod.piecesPerPack}',
+                                                readOnly: true,
+                                                decoration: InputDecoration(
+                                                  labelText:
+                                                      'Pcs per ${prod.bulkUnit}',
+                                                  isDense: true,
+                                                  fillColor: Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest,
+                                                  filled: true,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: TextFormField(
+                                                controller:
+                                                    _inquiryExtraQtyControllers[
+                                                            item.productId] ??=
+                                                        TextEditingController(),
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .digitsOnly
+                                                ],
+                                                onChanged: (_) {
+                                                  final bQty = int.tryParse(
+                                                          _inquiryBulkQtyControllers[
+                                                                  item.productId]
+                                                              ?.text ??
+                                                          '') ??
+                                                      0;
+                                                  final extra = int.tryParse(
+                                                          _inquiryExtraQtyControllers[
+                                                                  item.productId]
+                                                              ?.text ??
+                                                          '') ??
+                                                      0;
+                                                  final totalUnits = prod!
+                                                          .convertBulkToUnits(
+                                                              bQty) +
+                                                      extra;
+                                                  qtyCtrl.text =
+                                                      totalUnits.toString();
+                                                  setState(() {});
+                                                },
+                                                decoration: InputDecoration(
+                                                  labelText:
+                                                      'Extra Loose (${prod.unit})',
+                                                  isDense: true,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Builder(
+                                          builder: (_) {
+                                            final bQty = int.tryParse(
+                                                    _inquiryBulkQtyControllers[
+                                                            item.productId]
+                                                        ?.text ??
+                                                    '') ??
+                                                0;
+                                            final bCost = double.tryParse(
+                                                    _inquiryBulkCostControllers[
+                                                            item.productId]
+                                                        ?.text ??
+                                                    '') ??
+                                                0.0;
+                                            final extra = int.tryParse(
+                                                    _inquiryExtraQtyControllers[
+                                                            item.productId]
+                                                        ?.text ??
+                                                    '') ??
+                                                0;
+                                            final totalUnits = prod!
+                                                    .convertBulkToUnits(bQty) +
+                                                extra;
+                                            final pCost = prod
+                                                .calculateUnitCostFromPack(
+                                                    bCost);
+                                            return Text(
+                                              'Total: $bQty ${prod.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} = $totalUnits ${prod.unit} @ ${formatPeso(pCost)} / ${prod.unit}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                ] else ...[
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: qtyCtrl,
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.digitsOnly
+                                          ],
+                                          onChanged: (_) => setState(() {}),
+                                          decoration: InputDecoration(
+                                            labelText: 'Actual Received Qty',
+                                            isDense: true,
+                                            suffixText: item.unit,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: costCtrl,
+                                          keyboardType: const TextInputType
+                                              .numberWithOptions(decimal: true),
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                                RegExp(r'^\d*\.?\d*'))
+                                          ],
+                                          onChanged: (_) => setState(() {}),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Actual Unit Cost',
+                                            isDense: true,
+                                            prefixText: 'P ',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
 
                                 // Batch Expiration Date & Quick Preset Chips
                                 Column(

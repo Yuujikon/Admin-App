@@ -49,7 +49,7 @@ class PendingDeliveriesList extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   CircleAvatar(
-                    radius: 20,
+                    radius: 18,
                     backgroundColor:
                         Theme.of(context).colorScheme.primaryContainer,
                     child: Text(
@@ -62,53 +62,74 @@ class PendingDeliveriesList extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          inquiry.supplierName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 16),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                inquiry.supplierName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900, fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: (isPartial ? Colors.orange : Colors.blue)
+                                    .withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                    color: isPartial
+                                        ? Colors.orange.shade400
+                                        : Colors.blue.shade300),
+                              ),
+                              child: Text(
+                                isPartial ? 'PARTIAL' : 'AWAITING SHIPMENT',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: isPartial
+                                      ? Colors.orange.shade900
+                                      : Colors.blue.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         if (inquiry.supplierContact != null &&
                             inquiry.supplierContact!.isNotEmpty)
                           Text(
                             'Contact: ${inquiry.supplierContact}',
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.grey),
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         const SizedBox(height: 2),
                         Text(
                           'Order #${inquiry.inquiryNumber} • Placed ${DateFormat('MMM d, yyyy').format(inquiry.createdAt)}',
-                          style:
-                              const TextStyle(fontSize: 11, color: Colors.grey),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withValues(alpha: 0.8)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: (isPartial ? Colors.orange : Colors.blue)
-                          .withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: isPartial
-                              ? Colors.orange.shade400
-                              : Colors.blue.shade300),
-                    ),
-                    child: Text(
-                      isPartial ? 'PARTIAL DELIVERY' : 'AWAITING SHIPMENT',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: isPartial
-                            ? Colors.orange.shade900
-                            : Colors.blue.shade900,
-                      ),
                     ),
                   ),
                 ],
@@ -134,14 +155,18 @@ class PendingDeliveriesList extends StatelessWidget {
                           : Colors.grey.shade700,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      etaText,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: inquiry.expectedDeliveryDate != null
-                            ? Colors.teal.shade900
-                            : Colors.grey.shade800,
+                    Expanded(
+                      child: Text(
+                        etaText,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: inquiry.expectedDeliveryDate != null
+                              ? Colors.teal.shade900
+                              : Colors.grey.shade800,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -179,25 +204,30 @@ class PendingDeliveriesList extends StatelessWidget {
               const Divider(height: 24),
 
               // Footer: Order Totals & Action Button
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 10,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${inquiry.items.length} items (${inquiry.totalRequestedQty} total pcs)',
-                        style: const TextStyle(
+                        '${inquiry.items.length} item${inquiry.items.length != 1 ? 's' : ''} (${inquiry.totalRequestedQty} total pcs)',
+                        style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                             fontWeight: FontWeight.bold),
                       ),
                       Text(
                         'Total Order: ${formatPeso(inquiry.totalOrderedValue)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
-                            color: Colors.green),
+                            color: Colors.green.shade800),
                       ),
                     ],
                   ),
@@ -209,16 +239,16 @@ class PendingDeliveriesList extends StatelessWidget {
                       );
                     },
                     icon: const Icon(Icons.check_circle_outline_rounded,
-                        size: 18),
+                        size: 16),
                     label: const Text('VERIFY & RECEIVE'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green.shade800,
                       foregroundColor: Colors.white,
                       elevation: 1,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
                     ),
                   ),
                 ],
