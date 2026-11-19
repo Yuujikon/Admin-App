@@ -37,6 +37,7 @@ class ReturnSwapDialog extends StatefulWidget {
 
 class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
   final MobileScannerController _scannerController = MobileScannerController();
+  final TextEditingController _manualBarcodeCtrl = TextEditingController();
 
   CartItem? _matchedItem;
   String? _errorMessage;
@@ -52,28 +53,43 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
   @override
   void dispose() {
     _scannerController.dispose();
+    _manualBarcodeCtrl.dispose();
     super.dispose();
   }
 
   void _processScannedBarcode(String rawBarcode) {
-    if (_hasScanned) return;
     final cleanBarcode = rawBarcode.trim();
     if (cleanBarcode.isEmpty) return;
 
     setState(() {
-      _hasScanned = true;
       _errorMessage = null;
     });
 
-    // Check receipt saved items array for barcode match
     final items = widget.transaction.items;
-    final matchingIndex = items.indexWhere((i) => i.barcode == cleanBarcode);
+
+    // 1. Try matching by item barcode
+    int matchingIndex = items.indexWhere((i) =>
+        i.barcode.isNotEmpty &&
+        i.barcode.toLowerCase() == cleanBarcode.toLowerCase());
+
+    // 2. If no barcode match, try matching by transaction ID / receipt number or item name
+    if (matchingIndex < 0) {
+      if (cleanBarcode.toLowerCase() == widget.transaction.id.toLowerCase() ||
+          (widget.orderId != null &&
+              cleanBarcode.toLowerCase() == widget.orderId!.toLowerCase())) {
+        _showUnbarcodedPicker();
+        return;
+      }
+
+      matchingIndex = items.indexWhere(
+          (i) => i.name.toLowerCase().contains(cleanBarcode.toLowerCase()));
+    }
 
     if (matchingIndex < 0) {
       setState(() {
         _hasScanned = false;
         _errorMessage =
-            'Item Mismatch: Barcode [$cleanBarcode] was not part of this receipt.';
+            'Mismatch: Barcode/Number [$cleanBarcode] was not found on this receipt.';
       });
       return;
     }
@@ -89,6 +105,7 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     }
 
     setState(() {
+      _hasScanned = true;
       _matchedItem = matched;
       _returnQty = 1;
       _selectedCondition = null;
@@ -312,6 +329,52 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 ),
 
                 const SizedBox(height: 16),
+                const Text(
+                  'OR ENTER ITEM / RECEIPT BARCODE NUMBER:',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.grey,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _manualBarcodeCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'Type item or receipt barcode number...',
+                          isDense: true,
+                          prefixIcon:
+                              const Icon(Icons.qr_code_rounded, size: 18),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        onSubmitted: (val) => _processScannedBarcode(val),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () =>
+                          _processScannedBarcode(_manualBarcodeCtrl.text),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Verify'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Center(
                   child: OutlinedButton.icon(
                     onPressed: _showUnbarcodedPicker,
