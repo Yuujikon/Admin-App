@@ -69,39 +69,38 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   Future<void> _selectCustomDateRange() async {
     final now = DateTime.now();
-    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
 
-    DateTimeRange initialRange;
-    if (_customRange != null) {
-      final start = _customRange!.start.isAfter(todayEnd)
-          ? todayEnd
-          : _customRange!.start;
-      final end =
-          _customRange!.end.isAfter(todayEnd) ? todayEnd : _customRange!.end;
-      initialRange = DateTimeRange(
-        start: start.isAfter(end) ? end : start,
-        end: end,
-      );
-    } else {
-      final start = DateTime(now.year, now.month, 1);
-      final end = todayEnd;
-      initialRange = DateTimeRange(
-        start: start.isAfter(end) ? end : start,
-        end: end,
-      );
-    }
+    // Clean date-only boundaries for picker to prevent Flutter DateRangePicker assertion errors
+    final firstAllowed = DateTime(2020, 1, 1);
+    final lastAllowed = DateTime(now.year + 5, 12, 31);
+
+    final DateTime rawStart =
+        _customRange?.start ?? DateTime(now.year, now.month, 1);
+    final DateTime rawEnd = _customRange?.end ?? now;
+
+    final DateTime initialStart =
+        DateTime(rawStart.year, rawStart.month, rawStart.day);
+    final DateTime initialEnd =
+        DateTime(rawEnd.year, rawEnd.month, rawEnd.day);
+
+    final validStart = initialStart.isBefore(firstAllowed)
+        ? firstAllowed
+        : (initialStart.isAfter(lastAllowed) ? lastAllowed : initialStart);
+    final validEnd = initialEnd.isBefore(validStart)
+        ? validStart
+        : (initialEnd.isAfter(lastAllowed) ? lastAllowed : initialEnd);
 
     final picked = await showDateRangePicker(
       context: context,
-      firstDate: DateTime(2023),
-      lastDate: todayEnd,
-      initialDateRange: initialRange,
+      firstDate: firstAllowed,
+      lastDate: lastAllowed,
+      initialDateRange: DateTimeRange(start: validStart, end: validEnd),
       helpText: 'Select Custom Date Range',
     );
 
     if (picked != null) {
       final normalizedStart =
-          DateTime(picked.start.year, picked.start.month, picked.start.day);
+          DateTime(picked.start.year, picked.start.month, picked.start.day, 0, 0, 0);
       final normalizedEnd = DateTime(
           picked.end.year, picked.end.month, picked.end.day, 23, 59, 59);
       setState(() {
@@ -110,6 +109,15 @@ class _ReportsScreenState extends State<ReportsScreen>
         _selectedPeriod = ReportPeriod.custom;
       });
     }
+  }
+
+  void _selectSpecificMonth(int year, int month) {
+    final start = DateTime(year, month, 1, 0, 0, 0);
+    final end = DateTime(year, month + 1, 0, 23, 59, 59);
+    setState(() {
+      _customRange = DateTimeRange(start: start, end: end);
+      _selectedPeriod = ReportPeriod.custom;
+    });
   }
 
   @override
@@ -264,58 +272,66 @@ class _ReportsScreenState extends State<ReportsScreen>
                     selected: {_selectedPeriod},
                     onSelectionChanged: (set) async {
                       final period = set.first;
+                      setState(() => _selectedPeriod = period);
                       if (period == ReportPeriod.custom) {
                         await _selectCustomDateRange();
-                      } else {
-                        setState(() => _selectedPeriod = period);
                       }
                     },
                   ),
                 ),
-                if (_selectedPeriod == ReportPeriod.custom &&
-                    _customRange != null) ...[
+                if (_selectedPeriod == ReportPeriod.custom) ...[
                   const SizedBox(height: 8),
-                  InkWell(
-                    onTap: _selectCustomDateRange,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primaryContainer
-                            .withAlpha(128),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withAlpha(80),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.calendar_month_rounded,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${DateFormat('MMM d, yyyy').format(_customRange!.start)} - ${DateFormat('MMM d, yyyy').format(_customRange!.end)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (_customRange != null)
+                        InkWell(
+                          onTap: _selectCustomDateRange,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withAlpha(128),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withAlpha(80),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.calendar_month_rounded,
+                                    size: 16,
+                                    color: Theme.of(context).colorScheme.primary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${DateFormat('MMM d, yyyy').format(_customRange!.start)} - ${DateFormat('MMM d, yyyy').format(_customRange!.end)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(Icons.edit_rounded,
+                                    size: 14,
+                                    color: Theme.of(context).colorScheme.primary),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Icon(Icons.edit_rounded,
-                              size: 14,
-                              color: Theme.of(context).colorScheme.primary),
-                        ],
-                      ),
-                    ),
+                        ),
+                      _buildQuickMonthSelector(context),
+                    ],
                   ),
                 ],
               ],
@@ -780,6 +796,63 @@ class _ReportsScreenState extends State<ReportsScreen>
       case ReportPeriod.custom:
         return '${DateFormat('MMM d, yyyy').format(range.start)} - ${DateFormat('MMM d, yyyy').format(range.end)}';
     }
+  }
+
+  Widget _buildQuickMonthSelector(BuildContext context) {
+    final now = DateTime.now();
+    final List<DateTime> pastMonths = [];
+    for (int i = 0; i < 24; i++) {
+      pastMonths.add(DateTime(now.year, now.month - i, 1));
+    }
+
+    return PopupMenuButton<DateTime>(
+      tooltip: 'Pick Specific Month (e.g. October)',
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Theme.of(context)
+                .colorScheme
+                .outlineVariant
+                .withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.calendar_view_month_rounded,
+                size: 16, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              'Pick Month',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down,
+                size: 18, color: Theme.of(context).colorScheme.primary),
+          ],
+        ),
+      ),
+      onSelected: (date) {
+        _selectSpecificMonth(date.year, date.month);
+      },
+      itemBuilder: (ctx) => pastMonths.map((m) {
+        final label = DateFormat('MMMM yyyy').format(m);
+        return PopupMenuItem<DateTime>(
+          value: m,
+          child: Text(label,
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        );
+      }).toList(),
+    );
   }
 
   Widget _reportRow(String label, String value, Color color,
