@@ -1,0 +1,44 @@
+name: Build Admin iOS IPA for Sideloadly
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Disable Swift Package Manager (Use CocoaPods)
+        run: |
+          flutter config --no-enable-swift-package-manager
+
+      - name: Get Flutter dependencies
+        run: |
+          flutter pub get
+
+      - name: Build iOS App (Unsigned)
+        run: |
+          flutter build ipa --release --no-codesign
+
+      - name: Create IPA Package for Sideloadly
+        run: |
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r gdc_admin_app_sideload.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdc_admin_app_sideload
+          path: build/ios/ipa/*.ipa
