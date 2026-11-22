@@ -18,9 +18,11 @@ import 'reports_screen.dart';
 import 'category_bundle_management_screen.dart';
 import 'sales_history_screen.dart';
 import 'inventory_records_screen.dart';
+import '../widgets/action_warning_dialog.dart';
 import 'customer_restrictions_screen.dart';
 import 'admin_app.dart';
 import '../widgets/responsive_layout.dart';
+import 'audit_log_screen.dart';
 
 class MoreManagementScreen extends StatelessWidget {
   final void Function(AppTab)? onNavigateToTab;
@@ -319,9 +321,9 @@ class MoreManagementScreen extends StatelessWidget {
                     icon: Icons.gavel_rounded,
                     iconBg: const Color(0xFFFEE2E2),
                     iconColor: const Color(0xFFDC2626),
-                    title: 'Customer Restrictions & Appeals',
+                    title: 'Customer Complaints & Restrictions',
                     subtitle:
-                        'Manage Ghosting Offenses, Escalating Locks & Unlock Appeals',
+                        'Manage Complaints, Remove Ordering Restrictions & Review Appeals',
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -983,6 +985,27 @@ class _MyStaffAccountSection extends StatelessWidget {
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
+                      color: Colors.deepPurple.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.history_rounded, color: Colors.deepPurple),
+                  ),
+                  title: const Text('System Audit Logs',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  subtitle: const Text(
+                      'View complete history of system events and transactions',
+                      style: TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+                  onTap: () {
+                    Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const AuditLogScreen()));
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
                       color: Colors.blue.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
@@ -1579,24 +1602,21 @@ class _RecoveryCodesDialogState extends State<_RecoveryCodesDialog> {
           onPressed: _loading
               ? null
               : () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (c) => AlertDialog(
-                      title: const Text('Regenerate Recovery Codes?'),
-                      content: const Text(
-                          'Generating new codes will invalidate all existing recovery codes. Are you sure?'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(c, false),
-                            child: const Text('CANCEL')),
-                        ElevatedButton(
-                            onPressed: () => Navigator.pop(c, true),
-                            child: const Text('REGENERATE')),
-                      ],
-                    ),
+                  final confirm = await ActionWarningDialog.show(
+                    context,
+                    title: 'Regenerate Recovery Codes?',
+                    message:
+                        'Generating new codes will invalidate all existing 2FA recovery codes.',
+                    confirmLabel: 'Regenerate Codes',
+                    cancelLabel: 'Cancel',
+                    severity: ActionWarningSeverity.warning,
+                    icon: Icons.vpn_key_rounded,
+                    requireCheckbox: true,
+                    checkboxLabel:
+                        'I understand previous recovery codes will no longer work.',
                   );
 
-                  if (confirm == true) {
+                  if (confirm) {
                     setState(() => _loading = true);
                     await auth.regenerateRecoveryCodes();
                     if (mounted) setState(() => _loading = false);

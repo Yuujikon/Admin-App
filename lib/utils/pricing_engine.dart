@@ -6,11 +6,13 @@ class PricingBreakdown {
   final double subtotal;
   final double vAtAmount; // 12% of VATable sales
   final double total; // Final amount to pay
+  final double savings; // Wholesale discount savings
 
   const PricingBreakdown({
     required this.subtotal,
     required this.vAtAmount,
     required this.total,
+    this.savings = 0.0,
   });
 }
 
@@ -55,6 +57,7 @@ class PricingEngine {
   }) {
     double subtotal = 0;
     double taxableSubtotal = 0;
+    double savings = 0;
 
     for (final item in items) {
       final product = allProducts.firstWhere((p) => p.id == item.productId,
@@ -65,8 +68,11 @@ class PricingEngine {
               price: item.price,
               stock: 0));
 
-      final itemSubtotal = product.price * item.qty;
+      final regularSubtotal = product.price * item.qty;
+      final itemSubtotal = item.price * item.qty;
+      
       subtotal += itemSubtotal;
+      savings += (regularSubtotal - itemSubtotal);
 
       if (product.isTaxable) {
         taxableSubtotal += itemSubtotal;
@@ -77,9 +83,29 @@ class PricingEngine {
     final total = subtotal.clamp(0.0, double.infinity);
 
     return PricingBreakdown(
-      subtotal: subtotal,
+      subtotal: subtotal + savings, // Subtotal usually represents price before discount
       vAtAmount: finalVat,
       total: total,
+      savings: savings,
     );
+  }
+
+  /// Checks if a [sellingPrice] is strictly below the [unitCost].
+  static bool isBelowCost({
+    required double sellingPrice,
+    required double unitCost,
+  }) {
+    return sellingPrice > 0 && unitCost > 0 && sellingPrice < unitCost;
+  }
+
+  /// Calculates potential per-unit financial loss if [sellingPrice] is below [unitCost].
+  static double calculateUnitLoss({
+    required double sellingPrice,
+    required double unitCost,
+  }) {
+    if (!isBelowCost(sellingPrice: sellingPrice, unitCost: unitCost)) {
+      return 0.0;
+    }
+    return unitCost - sellingPrice;
   }
 }

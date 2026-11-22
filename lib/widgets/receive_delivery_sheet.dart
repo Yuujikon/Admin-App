@@ -10,6 +10,7 @@ import '../providers/restock_provider.dart';
 import '../utils/format.dart';
 import 'scanner_dialog.dart';
 import 'premium_components.dart';
+import 'action_warning_dialog.dart';
 
 class ReceiveDeliverySheet extends StatefulWidget {
   final Product? initialProduct;
@@ -2548,7 +2549,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                           if (_batchExpiry == null) ...[
                             const SizedBox(height: 6),
                             Text(
-                              '⚠️ Mandatory: Every received batch requires an expiration date for FEFO compliance.',
+                              '⚠️ Mandatory: Every received batch requires an expiration date for FIFO compliance.',
                               style: TextStyle(
                                   fontSize: 11,
                                   color: isDark
@@ -2679,6 +2680,41 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
             ? ((qty * cost) / addedBaseUnits)
             : _selectedProduct!.calculateUnitCostFromPack(cost))
         : cost;
+
+    final bool isCostExceedingPrice = _selectedProduct != null &&
+        _selectedProduct!.price > 0 &&
+        calculatedPieceCost > 0 &&
+        calculatedPieceCost > _selectedProduct!.price;
+
+    final confirm = await ActionWarningDialog.show(
+      context,
+      title: isCostExceedingPrice
+          ? 'Confirm Delivery Reception (Cost Exceeds Price)'
+          : 'Confirm Delivery Reception?',
+      message: isCostExceedingPrice
+          ? 'Save delivery batch for "${_selectedProduct!.name}"? Warning: Received unit cost (${formatPeso(calculatedPieceCost)}) is higher than current selling price (${formatPeso(_selectedProduct!.price)}).'
+          : 'Save delivery batch for "${_selectedProduct!.name}" and add $addedBaseUnits ${_selectedProduct!.unit} to inventory?',
+      confirmLabel: 'Receive Delivery',
+      cancelLabel: 'Review',
+      severity: isCostExceedingPrice
+          ? ActionWarningSeverity.warning
+          : ActionWarningSeverity.info,
+      icon: isCostExceedingPrice
+          ? Icons.trending_down_rounded
+          : Icons.local_shipping_rounded,
+      details: [
+        'Product: ${_selectedProduct!.name}',
+        'Quantity: $addedBaseUnits ${_selectedProduct!.unit}',
+        'Received Unit Cost: ${formatPeso(calculatedPieceCost)} / ${_selectedProduct!.unit}',
+        'Current Selling Price: ${formatPeso(_selectedProduct!.price)} / ${_selectedProduct!.unit}',
+        'Expiration: ${DateFormat('MMM dd, yyyy').format(_batchExpiry!)}',
+        if (_invoiceCtrl.text.trim().isNotEmpty)
+          'Invoice: ${_invoiceCtrl.text.trim()}',
+        if (isCostExceedingPrice)
+          '⚠️ Warning: Unit cost exceeds selling price! Selling price is below cost by ${formatPeso(calculatedPieceCost - _selectedProduct!.price)}/unit.',
+      ],
+    );
+    if (!confirm) return;
 
     setState(() => _saving = true);
 

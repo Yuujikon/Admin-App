@@ -121,7 +121,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.fact_check_outlined),
-            tooltip: 'FEFO Batch Audit',
+            tooltip: 'FIFO Batch Audit',
             onPressed: () => _openBatchAuditSheet(context, p),
           ),
           const SizedBox(width: 8),
@@ -159,7 +159,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                       const SizedBox(height: 16),
 
-                      // 4. Audit & FEFO Batch History Card
+                      // 4. Audit & FIFO Batch History Card
                       _AuditBatchCard(
                         product: p,
                         supplier: supplier,
@@ -1017,7 +1017,7 @@ class _LiveInventoryHealthCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. AUDIT & FEFO BATCH HISTORY CARD
+// 4. AUDIT & FIFO BATCH HISTORY CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AuditBatchCard extends StatelessWidget {
@@ -1034,16 +1034,9 @@ class _AuditBatchCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // FEFO Sort: Earliest expiring first, then oldest created
+    // FIFO Sort: Oldest created/received first
     final List<ProductBatch> sortedBatches = List.from(product.batches);
-    sortedBatches.sort((a, b) {
-      if (a.expiryDate != null && b.expiryDate != null) {
-        return a.expiryDate!.compareTo(b.expiryDate!);
-      }
-      if (a.expiryDate != null) return -1;
-      if (b.expiryDate != null) return 1;
-      return a.createdAt.compareTo(b.createdAt);
-    });
+    sortedBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     return Card(
       elevation: 0,
@@ -1075,7 +1068,7 @@ class _AuditBatchCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Audit & FEFO Expiry Batches',
+                    'Audit & FIFO Batches',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
@@ -1138,7 +1131,7 @@ class _AuditBatchCard extends StatelessWidget {
                 ),
                 if (sortedBatches.isNotEmpty)
                   Text(
-                    'FEFO Order',
+                    'FIFO Order',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
@@ -1172,7 +1165,7 @@ class _AuditBatchCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'No Active FEFO Batches Registered',
+                      'No Active FIFO Batches Registered',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -1449,7 +1442,7 @@ class _QuickActionsRow extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: onAudit,
           icon: const Icon(Icons.fact_check_outlined, size: 18),
-          label: const Text('Audit FEFO Batches'),
+          label: const Text('Audit FIFO Batches'),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             side: BorderSide(color: colorScheme.outline),

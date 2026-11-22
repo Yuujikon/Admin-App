@@ -209,6 +209,21 @@ class Product {
     return double.parse((bulkCost / piecesPerPack).toStringAsFixed(2));
   }
 
+  /// Derived per-piece cost price (prefers bulk pack cost conversion if set, otherwise base [costPrice]).
+  double get effectiveUnitCost {
+    if (packCost != null && packCost! > 0 && piecesPerPack > 0) {
+      return calculateUnitCostFromPack(packCost!);
+    }
+    return costPrice;
+  }
+
+  /// Whether current selling price is strictly below calculated unit cost.
+  bool get isPriceBelowCost =>
+      price > 0 && effectiveUnitCost > 0 && price < effectiveUnitCost;
+
+  /// Estimated financial loss per unit when selling price is below cost.
+  double get unitLoss => isPriceBelowCost ? effectiveUnitCost - price : 0.0;
+
   /// Expresses current base stock in terms of full bulk boxes + remaining loose pieces.
   String get formattedBulkStock {
     if (stock <= 0) return '0 $unit';
@@ -309,8 +324,17 @@ class Product {
         isTaxable: d['isTaxable'] ?? true,
         variants: (d['variants'] is Map)
             ? (d['variants'] as Map)
-                .values
-                .map((e) => ProductVariant.fromMap(e))
+                .entries
+                .map((entry) {
+                  final mapData = entry.value is Map
+                      ? Map<String, dynamic>.from(entry.value as Map)
+                      : <String, dynamic>{};
+                  if (mapData['id'] == null ||
+                      mapData['id'].toString().isEmpty) {
+                    mapData['id'] = entry.key.toString();
+                  }
+                  return ProductVariant.fromMap(mapData);
+                })
                 .toList()
             : (d['variants'] is List)
                 ? (d['variants'] as List)

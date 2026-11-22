@@ -250,7 +250,7 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Edit Restock Inquiry',
+                      'Edit Request for Quotation (RFQ)',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.3,

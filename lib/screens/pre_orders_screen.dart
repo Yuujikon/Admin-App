@@ -18,6 +18,7 @@ import '../widgets/order_qr_scanner.dart';
 import '../widgets/responsive_layout.dart';
 import '../utils/packing_slip_printer.dart';
 import '../shared/services/time_service.dart';
+import '../widgets/action_warning_dialog.dart';
 
 enum PreOrderStage { toPack, ready, completed, refunds, all }
 
@@ -837,7 +838,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
               child: const Text('BACK')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('CANCEL ORDER',
+            child: const Text('PROCEED',
                 style:
                     TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
@@ -845,10 +846,27 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       ),
     );
     if (res == true && context.mounted) {
-      await context
-          .read<OrderProvider>()
-          .cancelOrder(orderId, reason: ctrl.text.trim());
-      if (context.mounted) Navigator.pop(context);
+      final confirm = await ActionWarningDialog.show(
+        context,
+        title: 'Confirm Order Cancellation?',
+        message:
+            'Are you sure you want to cancel order #$orderId? This will revoke order fulfillment.',
+        confirmLabel: 'Cancel Order',
+        cancelLabel: 'Keep Order',
+        severity: ActionWarningSeverity.danger,
+        icon: Icons.cancel_outlined,
+        details: [
+          'Order ID: #$orderId',
+          if (ctrl.text.trim().isNotEmpty) 'Reason: ${ctrl.text.trim()}',
+        ],
+      );
+
+      if (confirm && context.mounted) {
+        await context
+            .read<OrderProvider>()
+            .cancelOrder(orderId, reason: ctrl.text.trim());
+        if (context.mounted) Navigator.pop(context);
+      }
     }
   }
 }

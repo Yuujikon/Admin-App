@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'audit_log_service.dart';
 
 /// Authentication service for handling admin PIN verification and Firebase Auth.
 class AuthService {
@@ -116,6 +117,16 @@ class AuthService {
   /// Authenticates a user with Firebase Authentication using [email] and [password].
   Future<void> loginToFirebase(String email, String password) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
+    final user = _auth.currentUser;
+    if (user != null) {
+      await AuditLogService().logAction(
+        module: 'Auth',
+        action: 'LOGIN',
+        targetId: user.uid,
+        targetName: email,
+        summary: 'User $email logged in',
+      );
+    }
   }
 
   /// Returns true if a Firebase user is currently signed in.

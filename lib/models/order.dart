@@ -136,6 +136,15 @@ class CartItem {
         'depletedBatches': depletedBatches.map((b) => b.toMap()).toList(),
       };
 
+  /// Whether current selling price of this line item is below its cost price.
+  bool get isBelowCost => price > 0 && costPrice > 0 && price < costPrice;
+
+  /// Estimated unit financial loss for this line item.
+  double get unitLoss => isBelowCost ? costPrice - price : 0.0;
+
+  /// Total estimated financial loss for all units of this cart line item.
+  double get totalLoss => unitLoss * (qty < 1 ? 1 : qty);
+
   CartItem copyWith({
     int? qty,
     int? returnedQty,
@@ -227,6 +236,32 @@ class PreOrder {
     return false;
   }
 
+  static OrderStatus _parseStatus(dynamic rawStatus) {
+    final str = rawStatus?.toString() ?? 'pending';
+    switch (str) {
+      case 'staging':
+      case 'processing':
+        return OrderStatus.staging;
+      case 'ready':
+        return OrderStatus.ready;
+      case 'collected':
+      case 'completed':
+        return OrderStatus.collected;
+      case 'cancelled':
+      case 'rejected':
+        return OrderStatus.cancelled;
+      case 'refunded':
+        return OrderStatus.refunded;
+      case 'refundRequested':
+        return OrderStatus.refundRequested;
+      case 'refundRejected':
+        return OrderStatus.refundRejected;
+      case 'pending':
+      default:
+        return OrderStatus.pending;
+    }
+  }
+
   factory PreOrder.fromFirestore(DocumentSnapshot doc) {
     try {
       final d = doc.data() as Map<String, dynamic>? ?? {};
@@ -249,10 +284,7 @@ class PreOrder {
         subtotal: (d['subtotal'] as num? ?? 0).toDouble(),
         tax: (d['tax'] as num? ?? 0).toDouble(),
         total: (d['total'] as num? ?? 0).toDouble(),
-        status: OrderStatus.values.firstWhere(
-          (e) => e.name == (d['status'] ?? 'pending'),
-          orElse: () => OrderStatus.pending,
-        ),
+        status: _parseStatus(d['status']),
         notes: (d['notes'] ??
                 d['note'] ??
                 d['customerNote'] ??

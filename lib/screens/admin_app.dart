@@ -23,6 +23,7 @@ import 'supplier_management_screen.dart';
 import 'more_management_screen.dart';
 import '../shared/services/time_service.dart';
 import '../shared/widgets/common/time_travel_sheet.dart';
+import '../widgets/global_admin_search_palette.dart';
 
 enum AppTab {
   dashboard,
@@ -225,23 +226,47 @@ class _AdminAppState extends State<AdminApp> {
             ),
         };
 
-        return PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, result) {
-            _handleBackPop(didPop);
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+              GlobalAdminSearchPalette.show(
+                context,
+                onNavigateTab: (tab, {category}) =>
+                    _navigateToTab(tab, category: category),
+              );
+            },
+            const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
+              GlobalAdminSearchPalette.show(
+                context,
+                onNavigateTab: (tab, {category}) =>
+                    _navigateToTab(tab, category: category),
+              );
+            },
           },
-          child: Scaffold(
-            backgroundColor: Theme.of(context).brightness == Brightness.dark
-                ? Theme.of(context).scaffoldBackgroundColor
-                : const Color(0xFFF1F5F9),
-            body: SafeArea(
-              child: Column(
-                children: [
-                  // Global Top Utility Header
-                  _AdminTopBar(
-                    auth: auth,
-                    isCompact: isCompact,
-                  ),
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) {
+              _handleBackPop(didPop);
+            },
+            child: Scaffold(
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).scaffoldBackgroundColor
+                  : const Color(0xFFF1F5F9),
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    // Global Top Utility Header
+                    _AdminTopBar(
+                      auth: auth,
+                      isCompact: isCompact,
+                      onOpenSearch: () {
+                        GlobalAdminSearchPalette.show(
+                          context,
+                          onNavigateTab: (tab, {category}) =>
+                              _navigateToTab(tab, category: category),
+                        );
+                      },
+                    ),
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,9 +388,9 @@ class _AdminAppState extends State<AdminApp> {
                   )
                 : null,
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 }
 
@@ -479,22 +504,27 @@ class _SideNavItem extends StatelessWidget {
 class _AdminTopBar extends StatelessWidget {
   final AppAuthProvider auth;
   final bool isCompact;
+  final VoidCallback onOpenSearch;
 
   const _AdminTopBar({
     required this.auth,
     required this.isCompact,
+    required this.onOpenSearch,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       height: isCompact ? 56 : 64,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: theme.colorScheme.surface,
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context)
+            color: theme
                 .colorScheme
                 .outlineVariant
                 .withValues(alpha: 0.4),
@@ -514,7 +544,7 @@ class _AdminTopBar extends StatelessWidget {
                   fontSize: isCompact ? 16 : 18,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.3,
-                  color: Theme.of(context).colorScheme.onSurface,
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 2),
@@ -536,7 +566,83 @@ class _AdminTopBar extends StatelessWidget {
               ),
             ],
           ),
+
+          // Automated Global Search & Filter Command Bar Trigger
+          if (!isCompact) ...[
+            const SizedBox(width: 24),
+            InkWell(
+              onTap: onOpenSearch,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: 320,
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? theme.colorScheme.surfaceContainerHigh
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant
+                        .withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.search_rounded,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Search & filter anything…',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant
+                              .withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: const Text(
+                        'Ctrl+K',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           const Spacer(),
+
+          if (isCompact) ...[
+            IconButton(
+              icon: Icon(
+                Icons.search_rounded,
+                size: 22,
+                color: theme.colorScheme.primary,
+              ),
+              tooltip: 'Search & Filter Anything (Ctrl+K)',
+              onPressed: onOpenSearch,
+            ),
+            const SizedBox(width: 4),
+          ],
           // Time Travel / Fast-Forward Simulation Control Button
           Builder(
             builder: (context) {

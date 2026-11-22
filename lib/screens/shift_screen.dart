@@ -10,6 +10,7 @@ import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 import '../config/theme.dart';
 import '../widgets/premium_components.dart';
+import '../widgets/action_warning_dialog.dart';
 
 class ShiftScreen extends StatelessWidget {
   const ShiftScreen({super.key});
@@ -612,6 +613,25 @@ class _ActiveShiftView extends StatelessWidget {
                           flex: 2,
                           child: ElevatedButton.icon(
                             onPressed: () async {
+                              final confirm = await ActionWarningDialog.show(
+                                context,
+                                title: 'Close Cash Register Shift?',
+                                message:
+                                    'Are you sure you want to end this active register shift session?',
+                                confirmLabel: 'Close Shift',
+                                cancelLabel: 'Review',
+                                severity: !isMatch
+                                    ? ActionWarningSeverity.danger
+                                    : ActionWarningSeverity.warning,
+                                icon: Icons.lock_clock_rounded,
+                                details: [
+                                  'Expected Cash: ${formatPeso(shift.expectedCash)}',
+                                  'Actual Verified: ${formatPeso(actualAmount)}',
+                                  'Variance: ${formatPeso(variance.abs())} (${isMatch ? "Matched" : (isShort ? "Shortage" : "Overage")})',
+                                ],
+                              );
+                              if (!confirm) return;
+
                               final closed = await context
                                   .read<ShiftProvider>()
                                   .closeShift(actualCashCounted: actualAmount);

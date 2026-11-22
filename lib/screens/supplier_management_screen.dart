@@ -5,14 +5,20 @@ import 'package:intl/intl.dart';
 import '../models/supplier.dart';
 import '../models/product.dart';
 import '../models/restock_inquiry.dart';
+import '../models/rfq.dart';
+import '../models/purchase_order.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/restock_provider.dart';
+import '../providers/procurement_provider.dart';
 import '../utils/format.dart';
 import '../widgets/pending_deliveries_list.dart';
 import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/restock_inquiry_sheet.dart';
 import '../widgets/supplier_sheet.dart';
+import '../widgets/rfq_builder_sheet.dart';
+import '../widgets/rfq_detail_dialog.dart';
+import '../widgets/fifo_receiving_queue_view.dart';
 import 'supplier_detail_screen.dart';
 
 class SupplierManagementScreen extends StatefulWidget {
@@ -36,27 +42,19 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final restockProvider = context.watch<RestockProvider>();
+    final procurement = context.watch<ProcurementProvider>();
 
     final allSuppliers = inventory.suppliers;
     final allProducts = inventory.products;
 
-    final activeInquiries = restockProvider.inquiries
-        .where((i) =>
-            i.status == RestockInquiryStatus.draft ||
-            i.status == RestockInquiryStatus.pending ||
-            i.status == RestockInquiryStatus.sent ||
-            i.status == RestockInquiryStatus.acknowledged ||
-            i.status == RestockInquiryStatus.partiallyFulfilled)
+    final activeRfqs = procurement.rfqs
+        .where((r) =>
+            r.status == RfqStatus.draft ||
+            r.status == RfqStatus.sent ||
+            r.status == RfqStatus.quoted)
         .toList();
 
-    final pendingInquiries = restockProvider.inquiries
-        .where((i) =>
-            i.status == RestockInquiryStatus.pending ||
-            i.status == RestockInquiryStatus.sent ||
-            i.status == RestockInquiryStatus.acknowledged ||
-            i.status == RestockInquiryStatus.partiallyFulfilled)
-        .toList();
+    final pendingPos = procurement.fifoPendingPurchaseOrders;
 
     final filteredSuppliers = allSuppliers.where((s) {
       final query = _searchQuery.toLowerCase();
@@ -66,11 +64,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
     }).toList();
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
-          title: const Text('Suppliers & Restocks'),
+          title: const Text('Suppliers & Procurement'),
           backgroundColor: Theme.of(context).colorScheme.surface,
           bottom: TabBar(
             isScrollable: true,
@@ -94,12 +92,12 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('Global Inquiries'),
-                    if (activeInquiries.isNotEmpty) ...[
+                    const Text('RFQs'),
+                    if (activeRfqs.isNotEmpty) ...[
                       const SizedBox(width: 6),
                       Badge(
-                        label: Text('${activeInquiries.length}'),
-                        backgroundColor: Colors.blue.shade800,
+                        label: Text('${activeRfqs.length}'),
+                        backgroundColor: Colors.teal.shade800,
                         textColor: Colors.white,
                       ),
                     ],
@@ -110,11 +108,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('Arriving Deliveries'),
-                    if (pendingInquiries.isNotEmpty) ...[
+                    const Text('FIFO Receiving Queue'),
+                    if (pendingPos.isNotEmpty) ...[
                       const SizedBox(width: 6),
                       Badge(
-                        label: Text('${pendingInquiries.length}'),
+                        label: Text('${pendingPos.length}'),
                         backgroundColor: Colors.orange.shade800,
                         textColor: Colors.white,
                       ),
@@ -122,13 +120,20 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                   ],
                 ),
               ),
+              const Tab(
+                child: Text('Restock History'),
+              ),
             ],
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showSupplierSheet(context, null),
-          icon: const Icon(Icons.add),
-          label: const Text('New Supplier'),
+          onPressed: () {
+            RfqBuilderSheet.show(context: context);
+          },
+          icon: const Icon(Icons.request_quote_rounded),
+          label: const Text('New RFQ'),
+          backgroundColor: Colors.teal.shade800,
+          foregroundColor: Colors.white,
         ),
         body: TabBarView(
           children: [
@@ -137,26 +142,45 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: TextField(
-                    controller: _searchCtrl,
-                    onChanged: (v) => setState(() => _searchQuery = v),
-                    decoration: InputDecoration(
-                      hintText:
-                          'Search suppliers by name, category, or contact...',
-                      prefixIcon: const Icon(Icons.search),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () => setState(() {
-                                    _searchCtrl.clear();
-                                    _searchQuery = '';
-                                  }))
-                          : null,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchCtrl,
+                          onChanged: (v) => setState(() => _searchQuery = v),
+                          decoration: InputDecoration(
+                            hintText:
+                                'Search suppliers by name, category, or contact...',
+                            prefixIcon: const Icon(Icons.search),
+                            isDense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () => setState(() {
+                                          _searchCtrl.clear();
+                                          _searchQuery = '';
+                                        }))
+                                : null,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton.icon(
+                        onPressed: () => _showSupplierSheet(context, null),
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('Add Supplier'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -199,10 +223,13 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
               ],
             ),
 
-            // Tab 2: Global Pending & Active Restock Inquiries View
-            const _GlobalInquiriesTab(),
+            // Tab 2: RFQs (Request For Quotation) Module
+            const _RfqsTab(),
 
-            // Tab 3: Arriving Supplier Deliveries & Verification Cards
+            // Tab 3: FIFO Receiving Queue (Purchase Orders)
+            const FifoReceivingQueueView(),
+
+            // Tab 4: Legacy Restocks & Deliveries History
             const SingleChildScrollView(
               padding: EdgeInsets.all(16),
               child: PendingDeliveriesList(),
@@ -224,19 +251,18 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
   }
 }
 
-// ── GLOBAL INQUIRIES TAB ──────────────────────────────────────────────────────
+// ── RFQS TAB ──────────────────────────────────────────────────────────────────
 
-class _GlobalInquiriesTab extends StatefulWidget {
-  const _GlobalInquiriesTab();
+class _RfqsTab extends StatefulWidget {
+  const _RfqsTab();
 
   @override
-  State<_GlobalInquiriesTab> createState() => _GlobalInquiriesTabState();
+  State<_RfqsTab> createState() => _RfqsTabState();
 }
 
-class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
+class _RfqsTabState extends State<_RfqsTab> {
   String _searchQuery = '';
-  String? _selectedSupplierId;
-  RestockInquiryStatus? _selectedStatus;
+  RfqStatus? _selectedStatusFilter;
   final _searchCtrl = TextEditingController();
 
   @override
@@ -247,48 +273,23 @@ class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final restockProvider = context.watch<RestockProvider>();
-    final inventory = context.watch<InventoryProvider>();
+    final procurement = context.watch<ProcurementProvider>();
+    final allRfqs = procurement.rfqs;
 
-    final allInquiries = restockProvider.inquiries;
-    final suppliers = inventory.suppliers;
-
-    final filtered = allInquiries.where((i) {
-      if (_selectedSupplierId != null && _selectedSupplierId!.isNotEmpty) {
-        if (i.supplierId != _selectedSupplierId) return false;
+    final filtered = allRfqs.where((r) {
+      if (_selectedStatusFilter != null && r.status != _selectedStatusFilter) {
+        return false;
       }
-
-      if (_selectedStatus != null) {
-        if (i.status != _selectedStatus) return false;
-      } else {
-        // Default when no status filter selected: show active/pending inquiries
-        final bool isActive = i.status == RestockInquiryStatus.draft ||
-            i.status == RestockInquiryStatus.pending ||
-            i.status == RestockInquiryStatus.sent ||
-            i.status == RestockInquiryStatus.acknowledged ||
-            i.status == RestockInquiryStatus.partiallyFulfilled;
-        if (!isActive) return false;
-      }
-
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
-        final matchNum = i.inquiryNumber.toLowerCase().contains(q);
-        final matchSupp = i.supplierName.toLowerCase().contains(q);
-        final matchItem = i.items.any((item) =>
-            item.productName.toLowerCase().contains(q) ||
-            item.sku.toLowerCase().contains(q));
-        if (!matchNum && !matchSupp && !matchItem) return false;
+        final matchNo = r.rfqNumber.toLowerCase().contains(q);
+        final matchSupp = r.supplierName.toLowerCase().contains(q);
+        final matchItem = r.items.any(
+            (i) => i.productName.toLowerCase().contains(q) || i.sku.contains(q));
+        if (!matchNo && !matchSupp && !matchItem) return false;
       }
-
       return true;
     }).toList();
-
-    filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    final double totalEstimatedValue =
-        filtered.fold(0.0, (sum, i) => sum + i.totalOrderedValue);
-    final int totalItemsCount =
-        filtered.fold(0, (sum, i) => sum + i.totalRequestedQty);
 
     return Column(
       children: [
@@ -297,64 +298,26 @@ class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Column(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (v) => setState(() => _searchQuery = v),
-                      decoration: InputDecoration(
-                        hintText: 'Search inquiry #, supplier, or item...',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        isDense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 10),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, size: 18),
-                                onPressed: () => setState(() {
-                                      _searchCtrl.clear();
-                                      _searchQuery = '';
-                                    }))
-                            : null,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: DropdownButtonFormField<String?>(
-                      value: _selectedSupplierId,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 10),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                      hint: const Text('All Suppliers',
-                          style: TextStyle(fontSize: 12)),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('All Suppliers',
-                              style: TextStyle(fontSize: 12)),
-                        ),
-                        ...suppliers.map((s) => DropdownMenuItem<String?>(
-                              value: s.id,
-                              child: Text(s.name,
-                                  style: const TextStyle(fontSize: 12),
-                                  overflow: TextOverflow.ellipsis),
-                            )),
-                      ],
-                      onChanged: (val) =>
-                          setState(() => _selectedSupplierId = val),
-                    ),
-                  ),
-                ],
+              TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _searchQuery = v),
+                decoration: InputDecoration(
+                  hintText: 'Search RFQ #, supplier, or product...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(() {
+                                _searchCtrl.clear();
+                                _searchQuery = '';
+                              }))
+                      : null,
+                ),
               ),
               const SizedBox(height: 8),
               SingleChildScrollView(
@@ -362,48 +325,38 @@ class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
                 child: Row(
                   children: [
                     FilterChip(
-                      label: const Text('All Active'),
-                      selected: _selectedStatus == null,
+                      label: const Text('All RFQs'),
+                      selected: _selectedStatusFilter == null,
                       onSelected: (_) =>
-                          setState(() => _selectedStatus = null),
+                          setState(() => _selectedStatusFilter = null),
                     ),
                     const SizedBox(width: 6),
                     FilterChip(
                       label: const Text('Draft'),
-                      selected: _selectedStatus == RestockInquiryStatus.draft,
+                      selected: _selectedStatusFilter == RfqStatus.draft,
                       onSelected: (_) => setState(
-                          () => _selectedStatus = RestockInquiryStatus.draft),
+                          () => _selectedStatusFilter = RfqStatus.draft),
                     ),
                     const SizedBox(width: 6),
                     FilterChip(
                       label: const Text('Sent'),
-                      selected: _selectedStatus == RestockInquiryStatus.sent,
+                      selected: _selectedStatusFilter == RfqStatus.sent,
+                      onSelected: (_) =>
+                          setState(() => _selectedStatusFilter = RfqStatus.sent),
+                    ),
+                    const SizedBox(width: 6),
+                    FilterChip(
+                      label: const Text('Quoted'),
+                      selected: _selectedStatusFilter == RfqStatus.quoted,
                       onSelected: (_) => setState(
-                          () => _selectedStatus = RestockInquiryStatus.sent),
+                          () => _selectedStatusFilter = RfqStatus.quoted),
                     ),
                     const SizedBox(width: 6),
                     FilterChip(
-                      label: const Text('Partially Fulfilled'),
-                      selected: _selectedStatus ==
-                          RestockInquiryStatus.partiallyFulfilled,
-                      onSelected: (_) => setState(() => _selectedStatus =
-                          RestockInquiryStatus.partiallyFulfilled),
-                    ),
-                    const SizedBox(width: 6),
-                    FilterChip(
-                      label: const Text('Fulfilled'),
-                      selected:
-                          _selectedStatus == RestockInquiryStatus.fulfilled,
-                      onSelected: (_) => setState(() =>
-                          _selectedStatus = RestockInquiryStatus.fulfilled),
-                    ),
-                    const SizedBox(width: 6),
-                    FilterChip(
-                      label: const Text('Cancelled'),
-                      selected:
-                          _selectedStatus == RestockInquiryStatus.cancelled,
-                      onSelected: (_) => setState(() =>
-                          _selectedStatus = RestockInquiryStatus.cancelled),
+                      label: const Text('Converted to PO'),
+                      selected: _selectedStatusFilter == RfqStatus.converted,
+                      onSelected: (_) => setState(
+                          () => _selectedStatusFilter = RfqStatus.converted),
                     ),
                   ],
                 ),
@@ -412,63 +365,25 @@ class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
           ),
         ),
 
-        // Summary KPI Strip
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: Theme.of(context)
-                .colorScheme
-                .primaryContainer
-                .withValues(alpha: 0.25),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context)
-                  .colorScheme
-                  .primary
-                  .withValues(alpha: 0.2),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Showing ${filtered.length} Inquiry record${filtered.length != 1 ? 's' : ''}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              Text(
-                '$totalItemsCount total pcs • Est: ${formatPeso(totalEstimatedValue)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.green.shade800,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Global Inquiry Cards List
+        // Cards List
         Expanded(
           child: filtered.isEmpty
               ? Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.inventory_outlined,
+                      Icon(Icons.request_quote_outlined,
                           size: 64,
                           color: Theme.of(context)
                               .colorScheme
                               .onSurfaceVariant
                               .withValues(alpha: 0.15)),
                       const SizedBox(height: 16),
-                      const Text('No restock inquiries found.',
-                          style: TextStyle(color: Colors.grey)),
+                      const Text('No RFQs found',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      const Text('Tap "+ New RFQ" below to ask suppliers for price quotes.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 )
@@ -476,8 +391,8 @@ class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
                   padding: const EdgeInsets.all(16),
                   itemCount: filtered.length,
                   itemBuilder: (ctx, idx) {
-                    final inquiry = filtered[idx];
-                    return _GlobalInquiryCard(inquiry: inquiry);
+                    final rfq = filtered[idx];
+                    return _RfqCard(rfq: rfq);
                   },
                 ),
         ),
@@ -486,307 +401,228 @@ class _GlobalInquiriesTabState extends State<_GlobalInquiriesTab> {
   }
 }
 
-// ── GLOBAL INQUIRY CARD ───────────────────────────────────────────────────────
+class _RfqCard extends StatelessWidget {
+  final Rfq rfq;
 
-class _GlobalInquiryCard extends StatelessWidget {
-  final RestockInquiry inquiry;
-  const _GlobalInquiryCard({required this.inquiry});
+  const _RfqCard({required this.rfq});
 
   @override
   Widget build(BuildContext context) {
-    final bool isDraft = inquiry.status == RestockInquiryStatus.draft;
-    final bool isSent = inquiry.status == RestockInquiryStatus.sent ||
-        inquiry.status == RestockInquiryStatus.acknowledged ||
-        inquiry.status == RestockInquiryStatus.partiallyFulfilled;
+    final bool isDraft = rfq.status == RfqStatus.draft;
+    final bool isSent = rfq.status == RfqStatus.sent;
+    final bool isQuoted = rfq.status == RfqStatus.quoted;
+    final bool isConverted = rfq.status == RfqStatus.converted;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: isDraft
-              ? Colors.grey.shade300
-              : isSent
-                  ? Colors.blue.shade200
-                  : Colors.green.shade200,
+    Color badgeColor = Colors.grey;
+    if (isSent) badgeColor = Colors.blue;
+    if (isQuoted) badgeColor = Colors.orange;
+    if (isConverted) badgeColor = Colors.teal;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: badgeColor.withValues(alpha: 0.4)),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header Row: Supplier Name, Ref #, and Status Badge
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.primaryContainer,
-                  child: Text(
-                    inquiry.supplierName.isNotEmpty
-                        ? inquiry.supplierName[0].toUpperCase()
-                        : 'S',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Row: Supplier Name, RFQ #, Status Badge
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
+                    child: Text(
+                      rfq.supplierName.isNotEmpty
+                          ? rfq.supplierName[0].toUpperCase()
+                          : 'R',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                rfq.supplierName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900, fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: badgeColor),
+                              ),
+                              child: Text(
+                                rfq.status.displayName.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: badgeColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          'RFQ #${rfq.rfqNumber} • ${DateFormat('MMM d, yyyy').format(rfq.createdAt)}',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              // Item Breakdown Chips Preview
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: rfq.items.map((item) {
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${item.productName}: ${item.requestedQty} pcs' +
+                          (item.quotedUnitPrice != null
+                              ? ' (${formatPeso(item.quotedUnitPrice!)})'
+                              : ''),
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              const Divider(height: 20),
+
+              // Footer: Totals & Action Buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              inquiry.supplierName,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w900, fontSize: 15),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          _StatusBadge(status: inquiry.status),
-                        ],
-                      ),
                       Text(
-                        'Ref: ${inquiry.inquiryNumber} • Placed ${DateFormat('MMM d, yyyy').format(inquiry.createdAt)}',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.grey),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        '${rfq.items.length} items (${rfq.totalRequestedQty} total pcs)',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontWeight: FontWeight.bold),
                       ),
+                      if (rfq.totalQuotedValue > 0)
+                        Text(
+                          'Quoted: ${formatPeso(rfq.totalQuotedValue)}',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.green.shade800),
+                        ),
                     ],
                   ),
-                ),
-              ],
-            ),
 
-            const SizedBox(height: 10),
-
-            // Item Breakdown Chips
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: inquiry.items.map((item) {
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outlineVariant
-                          .withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Text(
-                    '${item.productName}: ${item.requestedQty} ${item.unit}',
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-                );
-              }).toList(),
-            ),
-
-            const Divider(height: 20),
-
-            // Footer Summary & Actions Bar
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${inquiry.items.length} items (${inquiry.totalRequestedQty} total pcs)',
-                      style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'Total: ${formatPeso(inquiry.totalOrderedValue)}',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.green.shade800),
-                    ),
-                  ],
-                ),
-
-                Row(
-                  children: [
-                    if (isDraft) ...[
-                      ElevatedButton.icon(
-                        onPressed: () => sendRestockEmail(context, inquiry),
-                        icon: const Icon(Icons.send_rounded, size: 14),
-                        label: const Text('EMAIL',
-                            style: TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          await context
-                              .read<RestockProvider>()
-                              .sendInquiry(inquiry);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    'Inquiry #${inquiry.inquiryNumber} recorded as Sent.'),
-                              ),
+                  Row(
+                    children: [
+                      if (isDraft)
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            RfqBuilderSheet.show(
+                              context: context,
+                              initialRfq: rfq,
                             );
-                          }
-                        },
-                        icon: const Icon(Icons.check_circle_rounded, size: 14),
-                        label: const Text('MARK SENT',
-                            style: TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade700,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          visualDensity: VisualDensity.compact,
+                          },
+                          icon: const Icon(Icons.edit_rounded, size: 14),
+                          label: const Text('EDIT RFQ',
+                              style: TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        )
+                      else if (isSent || isQuoted)
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            RfqDetailDialog.show(
+                              context: context,
+                              rfq: rfq,
+                            );
+                          },
+                          icon: const Icon(
+                              Icons.shopping_cart_checkout_rounded,
+                              size: 14),
+                          label: Text(
+                              isQuoted ? 'CONVERT TO PO' : 'ENTER QUOTES',
+                              style: const TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade800,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        )
+                      else if (isConverted)
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            RfqDetailDialog.show(
+                              context: context,
+                              rfq: rfq,
+                            );
+                          },
+                          icon: const Icon(Icons.visibility_outlined, size: 14),
+                          label: const Text('VIEW PO DETAILS',
+                              style: TextStyle(fontSize: 11)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            visualDensity: VisualDensity.compact,
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined,
-                            size: 18, color: Colors.blue),
-                        onPressed: () {
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            shape: const RoundedRectangleBorder(
-                                borderRadius: BorderRadius.vertical(
-                                    top: Radius.circular(24))),
-                            builder: (_) =>
-                                RestockInquirySheet(inquiry: inquiry),
-                          );
-                        },
-                      ),
-                    ] else if (isSent) ...[
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          ReceiveDeliverySheet.show(
-                            context: context,
-                            inquiry: inquiry,
-                          );
-                        },
-                        icon: const Icon(Icons.check_circle_outline_rounded,
-                            size: 14),
-                        label: const Text('VERIFY & RECEIVE',
-                            style: TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade800,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.email_outlined,
-                            size: 18, color: Colors.blue),
-                        onPressed: () {
-                          sendRestockEmail(context, inquiry);
-                          context
-                              .read<RestockProvider>()
-                              .resendInquiry(inquiry);
-                        },
-                      ),
                     ],
-                  ],
-                ),
-              ],
-            ),
-          ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final RestockInquiryStatus status;
-  const _StatusBadge({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    Color bg;
-    Color fg;
-    String label;
-
-    switch (status) {
-      case RestockInquiryStatus.draft:
-        bg = Colors.grey.shade100;
-        fg = Colors.grey.shade800;
-        label = 'DRAFT';
-        break;
-      case RestockInquiryStatus.pending:
-        bg = Colors.orange.shade50;
-        fg = Colors.orange.shade900;
-        label = 'PENDING';
-        break;
-      case RestockInquiryStatus.sent:
-        bg = Colors.blue.shade50;
-        fg = Colors.blue.shade900;
-        label = 'SENT';
-        break;
-      case RestockInquiryStatus.acknowledged:
-        bg = Colors.cyan.shade50;
-        fg = Colors.cyan.shade900;
-        label = 'ACKNOWLEDGED';
-        break;
-      case RestockInquiryStatus.partiallyFulfilled:
-        bg = Colors.purple.shade50;
-        fg = Colors.purple.shade900;
-        label = 'PARTIAL';
-        break;
-      case RestockInquiryStatus.fulfilled:
-        bg = Colors.green.shade50;
-        fg = Colors.green.shade900;
-        label = 'FULFILLED';
-        break;
-      case RestockInquiryStatus.cancelled:
-        bg = Colors.red.shade50;
-        fg = Colors.red.shade900;
-        label = 'CANCELLED';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: fg.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          color: fg,
-        ),
-      ),
-    );
-  }
-}
+// ── SUPPLIER CARD ─────────────────────────────────────────────────────────────
 
 class _SupplierCard extends StatelessWidget {
   final Supplier supplier;
@@ -799,277 +635,189 @@ class _SupplierCard extends StatelessWidget {
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
-      } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot initiate call to $phone')),
-        );
       }
     } catch (_) {}
   }
 
-  Future<void> _sendSms(BuildContext context, String phone,
-      [String? supplierName]) async {
-    if (phone.isEmpty) return;
-    final String message = (supplierName != null &&
-            supplierName.trim().isNotEmpty)
-        ? 'Hello $supplierName, this is GDC Store regarding inventory supply restocking.'
-        : 'Hello, this is GDC Store regarding inventory supply restocking.';
-    final Uri uri = Uri(
-      scheme: 'sms',
-      path: phone,
-      queryParameters: {'body': message},
-    );
+  Future<void> _sendEmail(BuildContext context, String email) async {
+    if (email.isEmpty) return;
+    final Uri uri = Uri(scheme: 'mailto', path: email);
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
-      } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot open SMS to $phone')),
-        );
       }
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: isDark ? 0 : 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: colorScheme.outline.withValues(alpha: isDark ? 0.2 : 0.4),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.push(
+        onTap: () {
+          Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => SupplierDetailScreen(supplier: supplier))),
+              builder: (_) => SupplierDetailScreen(supplier: supplier),
+            ),
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor: isDark
-                        ? colorScheme.primaryContainer
-                        : colorScheme.primary.withValues(alpha: 0.12),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
                     child: Text(
                       supplier.name.isNotEmpty
                           ? supplier.name[0].toUpperCase()
                           : 'S',
                       style: TextStyle(
-                          color: isDark
-                              ? colorScheme.onPrimaryContainer
-                              : colorScheme.primary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16),
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           supplier.name,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: colorScheme.onSurface,
-                                  ),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          supplier.category,
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        if (supplier.contactName.isNotEmpty)
+                          Text(
+                            supplier.contactName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                  if (lowStockCount > 0) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.amber.shade900.withValues(alpha: 0.3)
-                            : Colors.amber.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.amber.shade700.withValues(alpha: 0.6)
-                              : Colors.amber.shade300,
+                  PopupMenuButton<String>(
+                    onSelected: (val) {
+                      if (val == 'edit') {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(24))),
+                          builder: (_) => SupplierSheet(supplier: supplier),
+                        );
+                      } else if (val == 'rfq') {
+                        RfqBuilderSheet.show(
+                          context: context,
+                          initialSupplier: supplier,
+                        );
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'rfq',
+                        child: Row(
+                          children: [
+                            Icon(Icons.request_quote_rounded, size: 18),
+                            SizedBox(width: 8),
+                            Text('Create RFQ'),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            size: 13,
-                            color: isDark
-                                ? Colors.amber.shade300
-                                : Colors.amber.shade900,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$lowStockCount LOW',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: isDark
-                                  ? Colors.amber.shade200
-                                  : Colors.amber.shade900,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ],
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit, size: 18),
+                            SizedBox(width: 8),
+                            Text('Edit Details'),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  supplier.category,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (lowStockCount > 0) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 14, color: Colors.amber.shade900),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$lowStockCount low stock item${lowStockCount > 1 ? 's' : ''}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
+                  if (supplier.phone.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.phone_outlined, size: 20),
+                      onPressed: () => _makeCall(context, supplier.phone),
                     ),
-                    child: Icon(
-                      Icons.person_outline_rounded,
-                      size: 13,
-                      color: colorScheme.onSurfaceVariant,
+                  if (supplier.email.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.email_outlined, size: 20),
+                      onPressed: () => _sendEmail(context, supplier.email),
                     ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.add_shopping_cart, size: 16),
+                    label: const Text('RFQ'),
+                    onPressed: () {
+                      RfqBuilderSheet.show(
+                        context: context,
+                        initialSupplier: supplier,
+                      );
+                    },
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      supplier.contactName.isEmpty
-                          ? 'No contact person'
-                          : supplier.contactName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (supplier.phone.isNotEmpty) ...[
-                    Material(
-                      color: isDark
-                          ? Colors.green.shade900.withValues(alpha: 0.35)
-                          : Colors.green.shade50,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                          color: isDark
-                              ? Colors.green.shade800
-                              : Colors.green.shade200,
-                        ),
-                      ),
-                      child: InkWell(
-                        onTap: () => _makeCall(context, supplier.phone),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.phone_rounded,
-                                size: 14,
-                                color: isDark
-                                    ? Colors.green.shade300
-                                    : Colors.green.shade700,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Call',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: isDark
-                                      ? Colors.green.shade300
-                                      : Colors.green.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Material(
-                      color: isDark
-                          ? Colors.blue.shade900.withValues(alpha: 0.35)
-                          : Colors.blue.shade50,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                          color: isDark
-                              ? Colors.blue.shade800
-                              : Colors.blue.shade200,
-                        ),
-                      ),
-                      child: InkWell(
-                        onTap: () =>
-                            _sendSms(context, supplier.phone, supplier.name),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.sms_rounded,
-                                size: 14,
-                                color: isDark
-                                    ? Colors.blue.shade300
-                                    : Colors.blue.shade700,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'SMS',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: isDark
-                                      ? Colors.blue.shade300
-                                      : Colors.blue.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ],

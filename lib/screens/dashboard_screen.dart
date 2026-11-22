@@ -19,7 +19,6 @@ import '../models/store_settings.dart';
 import '../utils/format.dart';
 import '../shared/services/time_service.dart';
 import '../widgets/receive_delivery_sheet.dart';
-import '../widgets/batch_expiration_widget.dart';
 import 'admin_app.dart';
 import 'supplier_detail_screen.dart';
 import 'supplier_management_screen.dart';
@@ -105,6 +104,7 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final endDate = params.endDate;
 
   final periodTx = params.transactions.where((t) {
+    if (t.isRefunded) return false;
     final txDate = t.createdAt.toLocal();
     return txDate.isAfter(startDate.subtract(const Duration(milliseconds: 1))) &&
         txDate.isBefore(endDate.add(const Duration(milliseconds: 1)));
@@ -112,7 +112,12 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   periodTx.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   final double gross = periodTx.fold(0.0, (sum, t) {
-    final val = t.total;
+    final val = t.netTotal;
+    return sum + ((val.isNaN || val.isInfinite) ? 0.0 : val);
+  });
+
+  final double cogs = periodTx.fold(0.0, (sum, t) {
+    final val = t.netCogs;
     return sum + ((val.isNaN || val.isInfinite) ? 0.0 : val);
   });
 
@@ -123,23 +128,9 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   }).toList();
 
   final double loss = periodLossRecords.fold(0.0, (sum, l) {
-    final unit = l.unitPrice;
-    final safeUnit = (unit.isNaN || unit.isInfinite) ? 0.0 : unit;
-    return sum + (safeUnit * l.qty);
+    final unit = l.totalLoss;
+    return sum + ((unit.isNaN || unit.isInfinite) ? 0.0 : unit);
   });
-
-  final double cogs = periodTx.fold(0.0, (sum, t) {
-    return sum +
-        t.items.fold(0.0, (itemSum, item) {
-          final cost = item.costPrice;
-          final safeCost = (cost.isNaN || cost.isInfinite) ? 0.0 : cost;
-          return itemSum + (safeCost * item.qty);
-        });
-  });
-
-  final double rawNetProfit = gross - cogs - loss;
-  final double netProfit =
-      (rawNetProfit.isNaN || rawNetProfit.isInfinite) ? 0.0 : rawNetProfit;
 
   final double exp = params.expenses.where((e) {
     final eDate = e.createdAt.toLocal();
@@ -150,19 +141,24 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
     return sum + ((amt.isNaN || amt.isInfinite) ? 0.0 : amt);
   });
 
+  final double rawNetProfit = gross - cogs - exp - loss;
+  final double netProfit =
+      (rawNetProfit.isNaN || rawNetProfit.isInfinite) ? 0.0 : rawNetProfit;
+
   final numDays = endDate.difference(startDate).inDays + 1;
   final safeDays = numDays > 0 ? numDays : 1;
   final priorStart = startDate.subtract(Duration(days: safeDays));
   final priorEnd = startDate.subtract(const Duration(milliseconds: 1));
 
   final priorTx = params.transactions.where((t) {
+    if (t.isRefunded) return false;
     final pDate = t.createdAt.toLocal();
     return pDate.isAfter(priorStart.subtract(const Duration(milliseconds: 1))) &&
         pDate.isBefore(priorEnd.add(const Duration(milliseconds: 1)));
   });
 
   final double priorGross = priorTx.fold(0.0, (sum, t) {
-    final val = t.total;
+    final val = t.netTotal;
     return sum + ((val.isNaN || val.isInfinite) ? 0.0 : val);
   });
 
@@ -213,18 +209,6 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
           matchingProduct = params.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
         } catch (_) {}
       }
-      if (matchingProduct == null) {
-        final normItemName = item.name.trim().toLowerCase();
-        for (final p in params.products) {
-          final pNorm = p.name.trim().toLowerCase();
-          if (pNorm == normItemName ||
-              normItemName.startsWith(pNorm) ||
-              pNorm.startsWith(normItemName)) {
-            matchingProduct = p;
-            break;
-          }
-        }
-      }
 
       if (matchingProduct != null) {
         productIdMovementCounts[matchingProduct.id] =
@@ -259,6 +243,7 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final chartMetrics = _computeChartMetricsForPeriod(
     params.transactions,
     params.lossRecords,
+    params.expenses,
     startDate: startDate,
     endDate: endDate,
   );
@@ -285,7 +270,8 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
 
 List<_DailyMetric> _computeChartMetricsForPeriod(
   List<StoreTransaction> transactions,
-  List<LossRecord> lossRecords, {
+  List<LossRecord> lossRecords,
+  List<Expense> expenses, {
   required DateTime startDate,
   required DateTime endDate,
 }) {
@@ -300,6 +286,7 @@ List<_DailyMetric> _computeChartMetricsForPeriod(
     final dayStr = DateFormat('yyyy-MM-dd').format(currentDay);
 
     final dayTx = transactions.where((t) {
+      if (t.isRefunded) return false;
       try {
         return DateFormat('yyyy-MM-dd').format(t.createdAt.toLocal()) == dayStr;
       } catch (_) {
@@ -313,21 +300,24 @@ List<_DailyMetric> _computeChartMetricsForPeriod(
       } catch (_) {
         return false;
       }
-    }).fold(0.0, (sum, l) => sum + (l.unitPrice * l.qty));
+    }).fold(0.0, (sum, l) => sum + l.totalLoss);
 
-    final gross = dayTx.fold(0.0, (sum, t) => sum + t.total);
-    final cogs = dayTx.fold(
-        0.0,
-        (sum, t) =>
-            sum +
-            t.items
-                .fold(0.0, (iSum, item) => iSum + (item.costPrice * item.qty)));
-    final profit = gross - cogs - dayLoss;
+    final dayExp = expenses.where((e) {
+      try {
+        return DateFormat('yyyy-MM-dd').format(e.createdAt.toLocal()) == dayStr;
+      } catch (_) {
+        return false;
+      }
+    }).fold(0.0, (sum, e) => sum + e.amount);
+
+    final gross = dayTx.fold(0.0, (sum, t) => sum + t.netTotal);
+    final cogs = dayTx.fold(0.0, (sum, t) => sum + t.netCogs);
+    final profit = gross - cogs - dayExp - dayLoss;
 
     final safeGross =
         (gross.isNaN || gross.isInfinite || gross < 0) ? 0.0 : gross;
     final safeProfit =
-        (profit.isNaN || profit.isInfinite || profit < 0) ? 0.0 : profit;
+        (profit.isNaN || profit.isInfinite) ? 0.0 : profit;
 
     list.add(_DailyMetric(
       date: currentDay,
@@ -352,6 +342,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ChartPeriod _selectedPeriod = ChartPeriod.thisWeek;
   DateTimeRange? _customDateRange;
 
+  @override
+  void initState() {
+    super.initState();
+    TimeService.instance.addListener(_onTimeChanged);
+  }
+
+  void _onTimeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    TimeService.instance.removeListener(_onTimeChanged);
+    super.dispose();
+  }
+
   (DateTime start, DateTime end, String label, String daysLabel) _calculatePeriodRange() {
     final now = TimeService.now;
     final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
@@ -374,10 +380,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       case ChartPeriod.thisMonth:
         return (
-          todayStart.subtract(const Duration(days: 29)),
+          DateTime(now.year, now.month, 1, 0, 0, 0, 0),
           todayEnd,
           'This month',
-          '30d',
+          'This Month',
         );
       case ChartPeriod.custom:
         if (_customDateRange != null) {
@@ -894,8 +900,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             const SizedBox(height: 24),
                             _buildLowStockWarnings(context, data, inventory),
-                            const SizedBox(height: 16),
-                            const BatchExpirationWidget(),
                             const SizedBox(height: 24),
                             _buildChartSection(
                               context,
@@ -1156,7 +1160,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const _Divider(),
                   Expanded(
                     child: _MiniStat('Units Sold',
-                        '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + i.qty))}'),
+                        '${data.todayTx.fold(0, (s, t) => s + t.items.fold(0, (a, i) => a + (t.isRefunded ? 0 : (i.qty - i.returnedQty).clamp(0, 999999))))}'),
                   ),
                   const _Divider(),
                   Expanded(

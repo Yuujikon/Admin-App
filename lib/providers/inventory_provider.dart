@@ -533,7 +533,7 @@ class InventoryProvider extends BaseProvider {
         ? product.calculateUnitCostFromPack(sanitizedCost)
         : sanitizedCost;
 
-    // 3. Create the FEFO Batch
+    // 3. Create the FIFO Batch
     final newBatch = ProductBatch(
       id: const Uuid().v4(),
       productId: product.id,
@@ -842,12 +842,7 @@ class InventoryProvider extends BaseProvider {
           int remainingToDeduct = item.qty;
           final List<ProductBatch> currentBatches = List.from(p.batches);
 
-          currentBatches.sort((a, b) {
-            if (a.expiryDate != null && b.expiryDate != null) {
-              return a.expiryDate!.compareTo(b.expiryDate!);
-            }
-            return a.createdAt.compareTo(b.createdAt);
-          });
+          currentBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
           final List<ProductBatch> updatedBatches = [];
           final List<BatchDepletionRecord> depletedBatches = [];

@@ -32,18 +32,27 @@ class _ReportsScreenState extends State<ReportsScreen>
   String _movementSelectedCategory = 'All';
   _MovementFilterMode _movementFilterMode = _MovementFilterMode.fastMoving;
 
+  String _itemsSoldSearchQuery = '';
+  String _itemsSoldSelectedCategory = 'All';
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 3,
+      length: 4,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 2),
+      initialIndex: widget.initialTab.clamp(0, 3),
     );
+    TimeService.instance.addListener(_onTimeChanged);
+  }
+
+  void _onTimeChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    TimeService.instance.removeListener(_onTimeChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -60,12 +69,12 @@ class _ReportsScreenState extends State<ReportsScreen>
         final start = todayStart.subtract(const Duration(days: 6));
         return DateTimeRange(start: start, end: todayEnd);
       case ReportPeriod.thisMonth:
-        final start = todayStart.subtract(const Duration(days: 29));
+        final start = DateTime(now.year, now.month, 1, 0, 0, 0, 0);
         return DateTimeRange(start: start, end: todayEnd);
       case ReportPeriod.custom:
         return _customRange ??
             DateTimeRange(
-              start: todayStart.subtract(const Duration(days: 6)),
+              start: DateTime(now.year, now.month, 1, 0, 0, 0, 0),
               end: todayEnd,
             );
     }
@@ -357,41 +366,36 @@ class _ReportsScreenState extends State<ReportsScreen>
 
     // Filter transactions within selected range
     final filteredTx = inventory.transactions.where((t) {
-      if (t.isRefunded) return false;
       final txDate = t.createdAt.toLocal();
-      return txDate
-              .isAfter(range.start.subtract(const Duration(seconds: 1))) &&
-          txDate.isBefore(range.end.add(const Duration(seconds: 1)));
+      return !txDate.isBefore(range.start) && !txDate.isAfter(range.end);
     }).toList();
 
     // Filter expenses within selected range
     final filteredExp = expenses.where((e) {
       final eDate = e.createdAt.toLocal();
-      return eDate
-              .isAfter(range.start.subtract(const Duration(seconds: 1))) &&
-          eDate.isBefore(range.end.add(const Duration(seconds: 1)));
+      return !eDate.isBefore(range.start) && !eDate.isAfter(range.end);
     }).toList();
 
     // Filter loss records within selected range
     final filteredLoss = inventory.lossRecords.where((l) {
       final lDate = l.createdAt.toLocal();
-      return lDate
-              .isAfter(range.start.subtract(const Duration(seconds: 1))) &&
-          lDate.isBefore(range.end.add(const Duration(seconds: 1)));
+      return !lDate.isBefore(range.start) && !lDate.isAfter(range.end);
     }).toList();
 
-    // 1. Core Metrics Aggregation
-    final double grossRevenue = filteredTx.fold(0.0, (sum, t) => sum + t.total);
-    final double trueCogs = filteredTx.fold(
-        0.0,
-        (sum, t) =>
-            sum +
-            t.items.fold(0.0, (iSum, item) {
-              final double itemCogs = item.totalCogs > 0
-                  ? item.totalCogs
-                  : (item.costPrice * item.qty);
-              return iSum + itemCogs;
-            }));
+    // Calculate total valid non-refunded transaction count and total net units sold
+    final int totalTxCount = filteredTx.where((t) => !t.isRefunded).length;
+    int totalUnitsSold = 0;
+    for (final tx in filteredTx) {
+      if (tx.isRefunded) continue;
+      for (final item in tx.items) {
+        final int netQty = (item.qty - item.returnedQty).clamp(0, 999999);
+        totalUnitsSold += netQty;
+      }
+    }
+
+    // 1. Core Metrics Aggregation using netTotal and netCogs
+    final double grossRevenue = filteredTx.fold(0.0, (sum, t) => sum + t.netTotal);
+    final double trueCogs = filteredTx.fold(0.0, (sum, t) => sum + t.netCogs);
     final double grossProfit = grossRevenue - trueCogs;
 
     final double totalExpenses =
@@ -406,24 +410,39 @@ class _ReportsScreenState extends State<ReportsScreen>
     // 2. Category Performance Breakdown
     final Map<String, _CategoryPerformance> categoryPerformance = {};
     for (final tx in filteredTx) {
+      if (tx.isRefunded) continue;
       for (final item in tx.items) {
-        String cat = 'Others';
-        try {
-          final p =
-              inventory.products.firstWhere((p) => p.id == item.productId);
-          cat = p.category;
-        } catch (_) {}
+        final int netQty = (item.qty - item.returnedQty).clamp(0, 999999);
+        if (netQty <= 0) continue;
 
-        final rev = item.price * item.qty;
-        final cogs =
-            item.totalCogs > 0 ? item.totalCogs : (item.costPrice * item.qty);
+        String cat = 'Others';
+        if (item.productId.isNotEmpty) {
+          try {
+            final p =
+                inventory.products.firstWhere((p) => p.id == item.productId);
+            if (p.category.trim().isNotEmpty) cat = p.category;
+          } catch (_) {}
+        }
+        if (cat == 'Others') {
+          try {
+            final p = inventory.products.firstWhere((p) =>
+                p.name.trim().toLowerCase() == item.name.trim().toLowerCase());
+            if (p.category.trim().isNotEmpty) cat = p.category;
+          } catch (_) {}
+        }
+
+        final rev = item.price * netQty;
+        final double unitCogs = item.totalCogs > 0
+            ? (item.totalCogs / item.qty)
+            : item.costPrice;
+        final cogs = unitCogs * netQty;
 
         if (!categoryPerformance.containsKey(cat)) {
           categoryPerformance[cat] = _CategoryPerformance(category: cat);
         }
         categoryPerformance[cat]!.grossSales += rev;
         categoryPerformance[cat]!.cogs += cogs;
-        categoryPerformance[cat]!.quantitySold += item.qty;
+        categoryPerformance[cat]!.quantitySold += netQty;
       }
     }
 
@@ -434,7 +453,6 @@ class _ReportsScreenState extends State<ReportsScreen>
     final Map<String, _ProductMovementData> itemMovements = {};
 
     for (final p in inventory.products) {
-      if (p.status != ProductStatus.published) continue;
       itemMovements[p.id] = _ProductMovementData(
         productId: p.id,
         name: p.name,
@@ -454,26 +472,16 @@ class _ReportsScreenState extends State<ReportsScreen>
         Product? matchingProduct;
         if (item.productId.isNotEmpty) {
           try {
-            matchingProduct = inventory.products.firstWhere((p) => p.id == item.productId);
+            matchingProduct =
+                inventory.products.firstWhere((p) => p.id == item.productId);
           } catch (_) {}
         }
         if (matchingProduct == null) {
           final normItemName = item.name.trim().toLowerCase();
           try {
-            matchingProduct = inventory.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
+            matchingProduct = inventory.products.firstWhere(
+                (p) => p.name.trim().toLowerCase() == normItemName);
           } catch (_) {}
-        }
-        if (matchingProduct == null) {
-          final normItemName = item.name.trim().toLowerCase();
-          for (final p in inventory.products) {
-            final pNorm = p.name.trim().toLowerCase();
-            if (pNorm == normItemName ||
-                normItemName.startsWith(pNorm) ||
-                pNorm.startsWith(normItemName)) {
-              matchingProduct = p;
-              break;
-            }
-          }
         }
 
         if (matchingProduct != null) {
@@ -486,9 +494,11 @@ class _ReportsScreenState extends State<ReportsScreen>
             );
           }
           itemMovements[matchingProduct.id]!.qtySold += netQty;
-          itemMovements[matchingProduct.id]!.totalRevenue += (item.price * netQty);
+          itemMovements[matchingProduct.id]!.totalRevenue +=
+              (item.price * netQty);
         } else {
-          final key = item.productId.isNotEmpty ? item.productId : item.name.trim();
+          final key =
+              item.productId.isNotEmpty ? item.productId : item.name.trim();
           if (!itemMovements.containsKey(key)) {
             itemMovements[key] = _ProductMovementData(
               productId: item.productId,
@@ -537,6 +547,22 @@ class _ReportsScreenState extends State<ReportsScreen>
               text: 'Financial Overview',
             ),
             Tab(
+              icon: const Icon(Icons.shopping_bag_rounded, size: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Items Sold'),
+                  if (totalUnitsSold > 0) ...[
+                    const SizedBox(width: 6),
+                    Badge(
+                      label: Text('$totalUnitsSold'),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Tab(
               icon: const Icon(Icons.delete_sweep_rounded, size: 20),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -557,7 +583,7 @@ class _ReportsScreenState extends State<ReportsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Fast & Slow Moving'),
+                  const Text('Fast & Slow'),
                   if (fastMovingList.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Badge(
@@ -688,10 +714,22 @@ class _ReportsScreenState extends State<ReportsScreen>
                   totalExpenses: totalExpenses,
                   totalLoss: totalLoss,
                   netProfit: netProfit,
+                  totalUnitsSold: totalUnitsSold,
+                  totalTxCount: totalTxCount,
                   sortedCategories: sortedCategories,
                 ),
 
-                // TAB 2: LOSS & WASTE DETAILS
+                // TAB 2: ITEMS SOLD BREAKDOWN
+                _buildItemsSoldTab(
+                  context,
+                  periodLabel: periodLabel,
+                  allMovements: allMovements,
+                  totalUnitsSold: totalUnitsSold,
+                  totalTxCount: totalTxCount,
+                  categories: categoriesList,
+                ),
+
+                // TAB 3: LOSS & WASTE DETAILS
                 _buildLossWasteTab(
                   context,
                   periodLabel: periodLabel,
@@ -700,7 +738,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                   totalLossInPeriod: totalLoss,
                 ),
 
-                // TAB 3: FAST & SLOW MOVING
+                // TAB 4: FAST & SLOW MOVING
                 _buildProductMovementTab(
                   context,
                   periodLabel: periodLabel,
@@ -727,6 +765,8 @@ class _ReportsScreenState extends State<ReportsScreen>
     required double totalExpenses,
     required double totalLoss,
     required double netProfit,
+    required int totalUnitsSold,
+    required int totalTxCount,
     required List<_CategoryPerformance> sortedCategories,
   }) {
     final semantic = Theme.of(context).semantic;
@@ -778,6 +818,86 @@ class _ReportsScreenState extends State<ReportsScreen>
                           color: profitMargin >= 0
                               ? semantic.success
                               : Theme.of(context).colorScheme.error),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.shopping_bag_outlined,
+                              size: 18, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Units Sold',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.primary),
+                                ),
+                                Text(
+                                  '$totalUnitsSold items',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      color: Theme.of(context).colorScheme.primary),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.receipt_long_outlined,
+                              size: 18, color: Colors.teal.shade800),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Transactions',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.teal.shade900),
+                                ),
+                                Text(
+                                  '$totalTxCount sales',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.teal.shade900),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -893,6 +1013,8 @@ class _ReportsScreenState extends State<ReportsScreen>
             loss: totalLoss,
             net: netProfit,
             margin: profitMargin,
+            totalUnitsSold: totalUnitsSold,
+            totalTxCount: totalTxCount,
             categories: sortedCategories,
           ),
           icon: const Icon(Icons.picture_as_pdf_rounded),
@@ -903,6 +1025,243 @@ class _ReportsScreenState extends State<ReportsScreen>
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildItemsSoldTab(
+    BuildContext context, {
+    required String periodLabel,
+    required List<_ProductMovementData> allMovements,
+    required int totalUnitsSold,
+    required int totalTxCount,
+    required List<String> categories,
+  }) {
+    List<_ProductMovementData> soldItems =
+        allMovements.where((m) => m.qtySold > 0).toList()
+          ..sort((a, b) => b.qtySold.compareTo(a.qtySold));
+
+    if (_itemsSoldSelectedCategory != 'All') {
+      soldItems = soldItems
+          .where((m) => m.category == _itemsSoldSelectedCategory)
+          .toList();
+    }
+
+    if (_itemsSoldSearchQuery.trim().isNotEmpty) {
+      final q = _itemsSoldSearchQuery.trim().toLowerCase();
+      soldItems = soldItems.where((m) {
+        return m.name.toLowerCase().contains(q) ||
+            m.category.toLowerCase().contains(q) ||
+            m.productId.toLowerCase().contains(q);
+      }).toList();
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        // KPI Summary Header
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outline
+                  .withValues(alpha: 0.5),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'ITEMS SOLD SUMMARY ($periodLabel)'.toUpperCase(),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.primary,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _movementStatBox(
+                      context,
+                      title: 'Units Sold',
+                      value: '$totalUnitsSold',
+                      icon: Icons.shopping_bag_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  Expanded(
+                    child: _movementStatBox(
+                      context,
+                      title: 'Transactions',
+                      value: '$totalTxCount',
+                      icon: Icons.receipt_long_rounded,
+                      color: Colors.teal.shade700,
+                    ),
+                  ),
+                  Expanded(
+                    child: _movementStatBox(
+                      context,
+                      title: 'Unique SKUs',
+                      value: '${soldItems.length}',
+                      icon: Icons.category_rounded,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Search & Category Filter
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search sold items...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onChanged: (v) => setState(() => _itemsSoldSearchQuery = v),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _itemsSoldSelectedCategory,
+                  items: ['All', ...categories].map((c) {
+                    return DropdownMenuItem(
+                      value: c,
+                      child: Text(c, style: const TextStyle(fontSize: 13)),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _itemsSoldSelectedCategory = val);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (soldItems.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.shopping_bag_outlined,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No items sold recorded for $periodLabel',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Check date filters or Sales History tab for past orders.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          Card(
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: soldItems.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final item = soldItems[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .primaryContainer
+                        .withValues(alpha: 0.5),
+                    child: Text(
+                      '#${index + 1}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    item.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Category: ${item.category} • Stock Remaining: ${item.currentStock}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${item.qtySold} sold',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        formatPeso(item.totalRevenue),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
       ],
     );
   }
@@ -1238,6 +1597,8 @@ class _ReportsScreenState extends State<ReportsScreen>
     required double loss,
     required double net,
     required double margin,
+    required int totalUnitsSold,
+    required int totalTxCount,
     required List<_CategoryPerformance> categories,
   }) async {
     final pdf = pw.Document();
@@ -1258,6 +1619,24 @@ class _ReportsScreenState extends State<ReportsScreen>
               pw.Text('Period: $periodLabel',
                   style: const pw.TextStyle(fontSize: 14)),
               pw.Divider(height: 24),
+              pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Sales Transactions:'),
+                    pw.Text('$totalTxCount',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  ]),
+              pw.SizedBox(height: 4),
+              pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Total Units Sold:'),
+                    pw.Text('$totalUnitsSold items',
+                        style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blue900)),
+                  ]),
+              pw.SizedBox(height: 4),
               pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [

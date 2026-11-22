@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Represents a distinct delivery lot/batch of a single product for FEFO (First Expiring, First Out) inventory management.
+/// Represents a distinct delivery lot/batch of a single product for FIFO (First In, First Out) inventory management.
 class ProductBatch {
   /// Unique batch identifier.
   final String batchId;

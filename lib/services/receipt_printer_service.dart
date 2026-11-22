@@ -340,20 +340,12 @@ class ReceiptPrinterService {
         styles: const PosStyles(bold: true)));
 
     for (final item in order.items) {
-      final leftStr = '[  ] ${item.qty}x ${item.name}';
-      final rightStr = cleanPeso(formatPeso(item.price * item.qty));
-      bytes.addAll(generator.text(
-          formatLine(leftStr, rightStr, width: widthChars),
-          styles: const PosStyles(bold: true)));
+      final lineStr = '[  ] ${item.qty}x ${item.name}';
+      bytes.addAll(generator.text(lineStr, styles: const PosStyles(bold: true)));
     }
 
     bytes.addAll(generator.text('=' * widthChars,
         styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(generator.text(
-        formatLine('TOTAL VALUE:', cleanPeso(formatPeso(order.total)),
-            width: widthChars),
-        styles: const PosStyles(
-            bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
     if (order.notes.isNotEmpty) {
       bytes.addAll(generator.text('-' * widthChars,
           styles: const PosStyles(align: PosAlign.center)));

@@ -55,19 +55,29 @@ class LossRecord {
   /// Factory constructor for parsing Firestore [DocumentSnapshot].
   factory LossRecord.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>? ?? {};
+    final int qty = (d['qty'] as num? ?? 0).toInt();
+    final double rawUnitPrice =
+        (d['unitPrice'] ?? d['unitLossCost'] ?? d['costPrice'] ?? 0 as num)
+            .toDouble();
+    final double totalLossOverride =
+        (d['totalLoss'] as num?)?.toDouble() ?? 0.0;
+    final double finalUnitPrice = rawUnitPrice > 0
+        ? rawUnitPrice
+        : (qty > 0 ? (totalLossOverride / qty) : 0.0);
+
     return LossRecord(
       id: doc.id,
       productId: d['productId'] ?? '',
       productName: d['productName'] ?? 'Unknown',
-      qty: (d['qty'] as num? ?? 0).toInt(),
-      unitPrice: (d['unitPrice'] as num? ?? 0).toDouble(),
+      qty: qty,
+      unitPrice: finalUnitPrice,
       type: LossType.values.firstWhere(
         (e) => e.name == (d['type'] ?? 'lost'),
         orElse: () => LossType.lost,
       ),
       notes: d['notes'] ?? '',
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      processedBy: d['processedBy'],
+      processedBy: d['processedBy'] ?? d['reportedBy'],
       referenceId: d['referenceId'],
     );
   }

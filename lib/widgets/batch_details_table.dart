@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import '../models/product.dart';
 import '../config/theme.dart';
 
-/// Material 3 Data Table Widget displaying all active & historical FEFO batches
+/// Material 3 Data Table Widget displaying all active & historical FIFO batches
 /// for a selected product in the Admin Inventory Management view.
 class BatchDetailsTable extends StatefulWidget {
   final Product product;
@@ -24,7 +24,7 @@ class BatchDetailsTable extends StatefulWidget {
 }
 
 class _BatchDetailsTableState extends State<BatchDetailsTable> {
-  int _sortColumnIndex = 1; // Default sort by Expiration Date
+  int _sortColumnIndex = 0; // Default sort by Date Received (FIFO)
   bool _sortAscending = true;
   bool _filterActiveOnly = true;
 
@@ -49,7 +49,7 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
         case 0: // Batch ID / Date Received
           comparison = a.dateReceived.compareTo(b.dateReceived);
           break;
-        case 1: // Expiration Date (FEFO Primary)
+        case 1: // Expiration Date
           if (a.expirationDate == null && b.expirationDate == null) {
             comparison = 0;
           } else if (a.expirationDate == null) {
@@ -131,7 +131,7 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                         ),
                       ),
                       Text(
-                        'Total FEFO Tracked Stock: $totalActiveStock ${widget.product.unit}',
+                        'Total FIFO Tracked Stock: $totalActiveStock ${widget.product.unit}',
                         style: theme.textTheme.bodyMedium,
                       ),
                     ],
@@ -277,7 +277,7 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                       },
                     ),
                     DataColumn(
-                      label: const Text('FEFO Status'),
+                      label: const Text('FIFO Status'),
                       onSort: (columnIndex, ascending) {
                         setState(() {
                           _sortColumnIndex = columnIndex;

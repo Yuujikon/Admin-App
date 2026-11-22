@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 import '../models/order.dart';
 import '../providers/printer_provider.dart';
 import '../services/receipt_printer_service.dart';
-import '../utils/format.dart';
 
 /// Packing Slip PDF Printing Helper for GDC Sari-Sari Admin.
 class PackingSlipPrinter {
@@ -418,10 +417,6 @@ class PackingSlipPrinter {
                                 fontSize: 10, fontWeight: pw.FontWeight.bold),
                           ),
                         ),
-                        pw.Text(
-                          formatPeso(item.price * item.qty),
-                          style: const pw.TextStyle(fontSize: 9),
-                        ),
                       ],
                     ),
                   );
@@ -429,19 +424,6 @@ class PackingSlipPrinter {
 
                 pw.SizedBox(height: 6),
                 pw.Divider(thickness: 1),
-
-                // Total Value
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text('TOTAL VALUE:',
-                        style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                    pw.Text(formatPeso(order.total),
-                        style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold, fontSize: 13)),
-                  ],
-                ),
                 if (order.notes.isNotEmpty) ...[
                   pw.SizedBox(height: 6),
                   pw.Container(

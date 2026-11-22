@@ -9,7 +9,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   group('End-to-End System Integration Test Suite', () {
-    testWidgets('Full Loop: Intake -> Multi-Batch -> POS FEFO Checkout -> COGS Audit', (WidgetTester tester) async {
+    testWidgets('Full Loop: Intake -> Multi-Batch -> POS FIFO Checkout -> COGS Audit', (WidgetTester tester) async {
       // ----------------------------------------------------------------------
       // Step 1: Ingest Mock Product with Initial Batch #1
       // ----------------------------------------------------------------------
@@ -82,20 +82,15 @@ void main() {
       );
 
       // ----------------------------------------------------------------------
-      // Step 4: Perform In-Memory FEFO Batch Stock Deduction (FEFO Logic)
+      // Step 4: Perform In-Memory FIFO Batch Stock Deduction (FIFO Logic)
       // ----------------------------------------------------------------------
       int remainingToDeduct = initialCartItem.qty; // 15 pcs
       final List<ProductBatch> sortedBatches = List.from(updatedProductMultiBatch.batches);
 
-      // Sort by FEFO (expiry date ascending)
-      sortedBatches.sort((a, b) {
-        if (a.expiryDate != null && b.expiryDate != null) {
-          return a.expiryDate!.compareTo(b.expiryDate!);
-        }
-        return a.createdAt.compareTo(b.createdAt);
-      });
+      // Sort by FIFO (date created ascending)
+      sortedBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-      // Verify Batch #1 is sorted first (expires in 15 days vs 60 days)
+      // Verify Batch #1 is sorted first (received 2 days ago vs today)
       expect(sortedBatches.first.id, 'batch-001');
 
       final List<ProductBatch> postCheckoutBatches = [];

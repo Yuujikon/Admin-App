@@ -14,8 +14,13 @@ import 'package:uuid/uuid.dart';
 import '../models/catalog_product.dart';
 import '../models/restock_inquiry.dart';
 import '../models/delivery_log.dart';
+import '../models/rfq.dart';
+import '../models/purchase_order.dart';
+import '../models/receiving_record.dart';
+import '../models/inventory_batch_record.dart';
 import '../shared/services/time_service.dart';
 import '../shared/services/admin_messaging_service.dart';
+import 'audit_log_service.dart';
 
 /// Payload model representing a single line item delivery payload received during stock reconciliation.
 class DeliveryItemPayload {
@@ -91,6 +96,12 @@ class FirestoreService {
   CollectionReference get _restockInquiries =>
       _db.collection('restock_inquiries');
   CollectionReference get _deliveryLogs => _db.collection('delivery_logs');
+  CollectionReference get _rfqs => _db.collection('rfqs');
+  CollectionReference get _purchaseOrders => _db.collection('purchase_orders');
+  CollectionReference get _receivingRecords =>
+      _db.collection('receiving_records');
+  CollectionReference get _inventoryBatches =>
+      _db.collection('inventory_batches');
   DocumentReference get _settings =>
       _db.collection('settings').doc('store_settings');
 
@@ -157,16 +168,60 @@ class FirestoreService {
     return list;
   }
 
-  Future<void> addProduct(Product p) => _products.add(p.toFirestore());
+  Future<void> addProduct(Product p) async {
+    final docRef = await _products.add(p.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Inventory',
+        action: 'CREATE',
+        targetId: docRef.id,
+        targetName: p.name,
+        summary: 'Inventory record created for [${p.name}] (ID: ${docRef.id}).',
+        afterData: p.toFirestore(),
+      );
+    } catch(e) {}
+  }
 
-  Future<void> updateProduct(Product p) =>
-      _products.doc(p.id).update(p.toFirestore());
+  Future<void> updateProduct(Product p) async {
+    await _products.doc(p.id).update(p.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Inventory',
+        action: 'UPDATE',
+        targetId: p.id,
+        targetName: p.name,
+        summary: 'Inventory record updated for [${p.name}] (ID: ${p.id}).',
+        afterData: p.toFirestore(),
+      );
+    } catch(e) {}
+  }
 
-  Future<void> deleteProduct(String productId) =>
-      _products.doc(productId).delete();
+  Future<void> deleteProduct(String productId) async {
+    await _products.doc(productId).delete();
+    try {
+      await AuditLogService().logAction(
+        module: 'Inventory',
+        action: 'DELETE',
+        targetId: productId,
+        targetName: 'Product $productId',
+        summary: 'Inventory record deleted for product (ID: $productId).',
+      );
+    } catch(e) {}
+  }
 
-  Future<void> updateStock(String productId, int newStock) =>
-      _products.doc(productId).update({'stock': newStock});
+  Future<void> updateStock(String productId, int newStock) async {
+    await _products.doc(productId).update({'stock': newStock});
+    try {
+      await AuditLogService().logAction(
+        module: 'Inventory',
+        action: 'STOCK_ADJUST',
+        targetId: productId,
+        targetName: 'Product $productId',
+        summary: 'Inventory stock manually adjusted to [$newStock] for product (ID: $productId).',
+        afterData: {'stock': newStock},
+      );
+    } catch(e) {}
+  }
 
   Future<void> decrementStockBatch(List<CartItem> items) async {
     final batch = _db.batch();
@@ -209,7 +264,7 @@ class FirestoreService {
     await batch.commit();
   }
 
-  /// Just clear the reservedStock without affecting main stock (e.g. for cancelled orders)
+  /// Decrement reservedStock for all items when an order is cancelled.
   Future<void> clearReservedStockBatch(List<CartItem> items) async {
     final batch = _db.batch();
     for (final item in items) {
@@ -266,7 +321,7 @@ class FirestoreService {
     final txDocRef = _transactions.doc(tx.id);
     batch.set(txDocRef, tx.toFirestore());
 
-    // 2. Perform in-memory FIFO/FEFO batch deduction and stock updates across products
+    // 2. Perform in-memory FIFO batch deduction and stock updates across products
     for (final item in tx.items) {
       final productIndex =
           cachedProducts.indexWhere((p) => p.id == item.productId);
@@ -282,17 +337,12 @@ class FirestoreService {
           'stock': FieldValue.increment(-item.qty),
         });
       } else {
-        // In-memory FIFO/FEFO Batch Deduction
+        // In-memory FIFO Batch Deduction
         int remainingToDeduct = item.qty;
         final List<ProductBatch> currentBatches = List.from(product.batches);
 
-        // Sort by expiry date / created date ascending (FIFO / FEFO)
-        currentBatches.sort((a, b) {
-          if (a.expiryDate != null && b.expiryDate != null) {
-            return a.expiryDate!.compareTo(b.expiryDate!);
-          }
-          return a.createdAt.compareTo(b.createdAt);
-        });
+        // Sort by created date ascending (FIFO)
+        currentBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
         final List<ProductBatch> updatedBatches = [];
 
@@ -318,10 +368,8 @@ class FirestoreService {
           }
         }
 
-        final int newStock = (product.stock - item.qty).clamp(0, 999999);
-
         batch.update(productDocRef, {
-          'stock': newStock,
+          'stock': FieldValue.increment(-item.qty),
           'batches': {for (var b in updatedBatches) b.id: b.toMap()},
         });
       }
@@ -337,6 +385,15 @@ class FirestoreService {
           },
           SetOptions(merge: true));
     }
+
+    await AuditLogService().logAction(
+      module: 'POS',
+      action: 'SALE_COMPLETE',
+      targetId: tx.id,
+      targetName: 'Tx #${tx.id.substring(0, 5)}',
+      summary: 'Sale transaction completed. Total: [₱${tx.total.toStringAsFixed(2)}] for [${tx.items.length}] items.',
+      batch: batch,
+    );
 
     // Commit batch atomically to local cache (completes instantly offline!)
     try {
@@ -370,6 +427,15 @@ class FirestoreService {
           });
         }
       }
+
+      await AuditLogService().logAction(
+        module: 'POS',
+        action: 'VOID_SALE',
+        targetId: tx.id,
+        targetName: 'Tx #${tx.id.substring(0, 5)}',
+        summary: 'Sale transaction voided/refunded. Total amount refunded: [₱${tx.total.toStringAsFixed(2)}].',
+        batch: batch,
+      );
 
       await batch.commit();
     } catch (e) {
@@ -514,6 +580,19 @@ class FirestoreService {
           }
           // Note: 1-to-1 Swap with sellable restock (!isCashRefund && !isDamagedSwap) has net 0 stock change.
         }
+        
+        final logRef = _db.collection('audit_logs').doc();
+        transaction.set(logRef, {
+           'timestamp': FieldValue.serverTimestamp(),
+           'actorId': 'system', // could pass processedBy if available, but hardcode for now
+           'actorEmail': 'system', 
+           'actorRole': 'system',
+           'module': 'POS',
+           'action': 'RETURN_ITEM',
+           'targetId': transactionId,
+           'targetName': 'Tx #${transactionId.substring(0, 5)}',
+           'summary': 'Processed return for ${returnQty}x of $productId',
+        });
       });
     } catch (e) {
       debugPrint('Error processing item return: $e');
@@ -637,11 +716,13 @@ class FirestoreService {
               if (vid != null) 'variantId': vid,
               'productName': refItem['name'] ?? '',
               'qty': rQty,
+              'unitPrice': price,
               'unitLossCost': price,
               'totalLoss': price * rQty,
               'type': condition == 'expired' ? 'expired' : 'damaged',
               'notes':
                   'Refund Write-off ($condition) for Receipt #$transactionId',
+              'processedBy': processedBy,
               'reportedBy': processedBy,
               'createdAt': FieldValue.serverTimestamp(),
             });
@@ -659,6 +740,20 @@ class FirestoreService {
         'totalAmount': totalRefundAmount,
         'processedBy': processedBy,
       });
+      
+      final logRef = _db.collection('audit_logs').doc();
+      transaction.set(logRef, {
+         'timestamp': FieldValue.serverTimestamp(),
+         'actorId': processedBy,
+         'actorEmail': processedBy, 
+         'actorRole': 'admin',
+         'module': 'POS',
+         'action': 'VOID_SALE',
+         'targetId': transactionId,
+         'targetName': 'Tx #${transactionId.substring(0, 5)}',
+         'summary': 'Processed multi-item refund of ₱${totalRefundAmount.toStringAsFixed(2)}',
+      });
+      
     });
   }
 
@@ -692,12 +787,46 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(Supplier.fromFirestore).toList());
 
-  Future<void> addSupplier(Supplier s) => _suppliers.add(s.toFirestore());
+  Future<void> addSupplier(Supplier s) async {
+    final docRef = await _suppliers.add(s.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'CREATE',
+        targetId: docRef.id,
+        targetName: s.name,
+        summary: 'Supplier record created for [${s.name}] (ID: ${docRef.id}).',
+        afterData: s.toFirestore(),
+      );
+    } catch(e) {}
+  }
 
-  Future<void> updateSupplier(Supplier s) =>
-      _suppliers.doc(s.id).update(s.toFirestore());
+  Future<void> updateSupplier(Supplier s) async {
+    await _suppliers.doc(s.id).update(s.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'UPDATE',
+        targetId: s.id,
+        targetName: s.name,
+        summary: 'Supplier record updated for [${s.name}] (ID: ${s.id}).',
+        afterData: s.toFirestore(),
+      );
+    } catch(e) {}
+  }
 
-  Future<void> deleteSupplier(String id) => _suppliers.doc(id).delete();
+  Future<void> deleteSupplier(String id) async {
+    await _suppliers.doc(id).delete();
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'DELETE',
+        targetId: id,
+        targetName: 'Supplier $id',
+        summary: 'Supplier record deleted for ID: [$id].',
+      );
+    } catch(e) {}
+  }
 
   // ── Loss & Waste ───────────────────────────────────────────────────────────
 
@@ -720,6 +849,16 @@ class FirestoreService {
     batch.update(_products.doc(record.productId), {
       'stock': FieldValue.increment(-record.qty),
     });
+    
+    await AuditLogService().logAction(
+      module: 'Inventory',
+      action: 'STOCK_ADJUST',
+      targetId: record.productId,
+      targetName: 'Product ${record.productId}',
+      summary: 'Inventory loss recorded: deducted [${record.qty}] units. Reason: [${record.notes}].',
+      batch: batch,
+    );
+    
     return batch.commit();
   }
 
@@ -745,15 +884,26 @@ class FirestoreService {
   Future<DocumentReference> addOrder(PreOrder order) =>
       _orders.add(order.toFirestore());
 
-  Future<void> updateOrder(PreOrder order) =>
-      _orders.doc(order.id).update(order.toFirestore());
+  Future<void> updateOrder(PreOrder order) async {
+    await _orders.doc(order.id).update(order.toFirestore());
+  }
 
   Future<void> updateOrderStatus(String orderId, OrderStatus status,
-          {String? reason}) =>
-      _orders.doc(orderId).update({
+          {String? reason}) async {
+      await _orders.doc(orderId).update({
         'status': status.name,
         if (reason != null) 'rejectionReason': reason,
       });
+      try {
+        await AuditLogService().logAction(
+          module: 'Pre-Orders',
+          action: 'STATUS_CHANGE',
+          targetId: orderId,
+          targetName: 'Order #${orderId.substring(0, 5)}',
+          summary: 'Order status transitioned to [${status.name}]' + (reason != null ? ' Reason: [$reason].' : '.'),
+        );
+      } catch(e) {}
+  }
 
   Future<void> bulkUpdateOrders(List<PreOrder> orders) async {
     if (orders.isEmpty) return;
@@ -980,63 +1130,80 @@ class FirestoreService {
     }
   }
 
-  /// Approves a customer's account unlock appeal, unlocking account and emailing confirmation.
-  Future<void> approveCustomerAppeal(String customerId,
-      {String? adminNotes}) async {
-    final docRef = _customers.doc(customerId);
-    final snap = await docRef.get();
+  /// Lifts/removes ordering restriction for a customer with optional resolution notes and optional offense reset.
+  Future<void> liftCustomerRestriction({
+    required String customerId,
+    String? reason,
+    bool resetOffenses = false,
+  }) async {
+    final now = TimeService.now;
     String? email;
     String name = 'Customer';
-    int? nextOffenseCount;
+    int currentOffenses = 0;
+    List<Map<String, dynamic>> history = [];
+
+    final docRef = _customers.doc(customerId);
+    final snap = await docRef.get();
 
     if (snap.exists) {
       final data = snap.data() as Map<String, dynamic>? ?? {};
       email = data['email'] as String?;
       name = data['name'] as String? ?? 'Customer';
-      
-      final currentOffenses = (data['offenseCount'] as num? ?? 0).toInt();
-      nextOffenseCount = currentOffenses > 0 ? currentOffenses - 1 : 0;
-
-      await docRef.update({
-        'isPermanentlyLocked': false,
-        'restrictedUntil': null,
-        'offenseCount': nextOffenseCount,
-        'appealStatus': 'approved',
-        'appealReviewedAt': Timestamp.now(),
-      });
+      currentOffenses = (data['offenseCount'] as num? ?? 0).toInt();
+      history =
+          List<Map<String, dynamic>>.from(data['offenseHistory'] as List? ?? []);
     }
 
     final userDocRef = _users.doc(customerId);
     final userSnap = await userDocRef.get();
+
     if (userSnap.exists) {
       final uData = userSnap.data() as Map<String, dynamic>? ?? {};
       email ??= uData['email'] as String?;
       name = uData['name'] as String? ?? name;
-      
-      final currentOffenses = (uData['offenseCount'] as num? ?? 0).toInt();
-      final newOffenseCount = nextOffenseCount ?? (currentOffenses > 0 ? currentOffenses - 1 : 0);
+      if (currentOffenses == 0) {
+        currentOffenses = (uData['offenseCount'] as num? ?? 0).toInt();
+      }
+      if (history.isEmpty) {
+        history =
+            List<Map<String, dynamic>>.from(uData['offenseHistory'] as List? ?? []);
+      }
+    }
 
-      await userDocRef.update({
-        'isPermanentlyLocked': false,
-        'restrictedUntil': null,
-        'offenseCount': newOffenseCount,
-        'appealStatus': 'approved',
-        'appealReviewedAt': Timestamp.now(),
-      });
+    final int updatedOffenseCount = resetOffenses ? 0 : currentOffenses;
+
+    final removalLog = {
+      'offenseNumber': currentOffenses,
+      'timestamp': Timestamp.fromDate(now),
+      'orderId': 'LIFT_RESTRICTION',
+      'reason': reason != null && reason.isNotEmpty
+          ? reason
+          : 'Restriction lifted by store management / complaint resolution',
+      'restrictionHours': 0,
+      'isPermanentLock': false,
+      'flaggedType': 'Restriction Lifted',
+    };
+    history.add(removalLog);
+
+    final Map<String, dynamic> updateMap = {
+      'restrictedUntil': null,
+      'isPermanentlyLocked': false,
+      'offenseCount': updatedOffenseCount,
+      'appealStatus': 'approved',
+      'appealReviewedAt': Timestamp.fromDate(now),
+      'offenseHistory': history,
+    };
+
+    if (snap.exists) {
+      await docRef.update(updateMap);
+    }
+
+    if (userSnap.exists) {
+      await userDocRef.update(updateMap);
     } else if (email != null && email.isNotEmpty) {
       final userQuery = await _users.where('email', isEqualTo: email).get();
       for (final uDoc in userQuery.docs) {
-        final uData = uDoc.data() as Map<String, dynamic>? ?? {};
-        final currentOffenses = (uData['offenseCount'] as num? ?? 0).toInt();
-        final newOffenseCount = nextOffenseCount ?? (currentOffenses > 0 ? currentOffenses - 1 : 0);
-
-        await uDoc.reference.update({
-          'isPermanentlyLocked': false,
-          'restrictedUntil': null,
-          'offenseCount': newOffenseCount,
-          'appealStatus': 'approved',
-          'appealReviewedAt': Timestamp.now(),
-        });
+        await uDoc.reference.update(updateMap);
       }
     }
 
@@ -1050,19 +1217,46 @@ class FirestoreService {
         await aDoc.reference.update({
           'status': 'approved',
           'appealStatus': 'approved',
-          'reviewedAt': Timestamp.now(),
+          'reviewedAt': Timestamp.fromDate(now),
+          'resolutionNotes': reason,
         });
+      }
+      if (email != null && email.isNotEmpty) {
+        final appealsEmailQuery = await _db
+            .collection('appeals')
+            .where('customerEmail', isEqualTo: email)
+            .get();
+        for (final aDoc in appealsEmailQuery.docs) {
+          await aDoc.reference.update({
+            'status': 'approved',
+            'appealStatus': 'approved',
+            'reviewedAt': Timestamp.fromDate(now),
+            'resolutionNotes': reason,
+          });
+        }
       }
     } catch (_) {}
 
     if (email != null && email.isNotEmpty) {
+      final noteText =
+          reason != null && reason.isNotEmpty ? '\n\nNote: $reason' : '';
       await AdminMessagingService().sendNotification(
         recipientEmail: email,
-        title: 'GDC Store - Account Unlock Appeal ACCEPTED',
+        title: 'GDC Store - Ordering Restriction Lifted',
         body:
-            'Hello $name,\n\nYour account unlock appeal has been reviewed and ACCEPTED by GDC Sari-Sari Store Management. Your account is now fully unlocked and you may resume placing pre-orders.\n\nThank you for your cooperation.',
+            'Hello $name,\n\nYour account ordering restriction has been removed by GDC Sari-Sari Store Management following complaint review.$noteText\n\nYou may now resume placing pre-orders.',
       );
     }
+  }
+
+  /// Approves a customer's account unlock appeal, unlocking account and emailing confirmation.
+  Future<void> approveCustomerAppeal(String customerId,
+      {String? adminNotes, bool resetOffenses = false}) async {
+    await liftCustomerRestriction(
+      customerId: customerId,
+      reason: adminNotes ?? 'Customer appeal approved by management',
+      resetOffenses: resetOffenses,
+    );
   }
 
   /// Rejects a customer's account unlock appeal and emails decision.
@@ -1080,7 +1274,7 @@ class FirestoreService {
 
       await docRef.update({
         'appealStatus': 'rejected',
-        'appealReviewedAt': Timestamp.now(),
+        'appealReviewedAt': Timestamp.fromDate(TimeService.now),
       });
     }
 
@@ -1093,14 +1287,14 @@ class FirestoreService {
 
       await userDocRef.update({
         'appealStatus': 'rejected',
-        'appealReviewedAt': Timestamp.now(),
+        'appealReviewedAt': Timestamp.fromDate(TimeService.now),
       });
     } else if (email != null && email.isNotEmpty) {
       final userQuery = await _users.where('email', isEqualTo: email).get();
       for (final uDoc in userQuery.docs) {
         await uDoc.reference.update({
           'appealStatus': 'rejected',
-          'appealReviewedAt': Timestamp.now(),
+          'appealReviewedAt': Timestamp.fromDate(TimeService.now),
         });
       }
     }
@@ -1114,7 +1308,7 @@ class FirestoreService {
         await aDoc.reference.update({
           'status': 'rejected',
           'appealStatus': 'rejected',
-          'reviewedAt': Timestamp.now(),
+          'reviewedAt': Timestamp.fromDate(TimeService.now),
         });
       }
     } catch (_) {}
@@ -1545,4 +1739,366 @@ class FirestoreService {
       .orderBy('createdAt', descending: true)
       .snapshots()
       .map((s) => s.docs.map(DeliveryLog.fromFirestore).toList());
+
+  // ── RFQ Operations ─────────────────────────────────────────────────────────
+
+  Stream<List<Rfq>> rfqsStream() => _rfqs
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(Rfq.fromFirestore).toList());
+
+  Future<void> addRfq(Rfq rfq) async {
+    final docRef = await _rfqs.add(rfq.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'CREATE',
+        targetId: docRef.id,
+        targetName: 'RFQ ${rfq.rfqNumber}',
+        summary: 'Request for Quotation created for RFQ Number: [${rfq.rfqNumber}].',
+      );
+    } catch(e) {}
+  }
+
+  Future<void> updateRfq(Rfq rfq) async {
+    await _rfqs.doc(rfq.id).update(rfq.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'UPDATE',
+        targetId: rfq.id,
+        targetName: 'RFQ ${rfq.rfqNumber}',
+        summary: 'Request for Quotation updated for RFQ Number: [${rfq.rfqNumber}].',
+      );
+    } catch(e) {}
+  }
+
+  Future<void> updateRfqStatus(String id, RfqStatus status) async {
+      await _rfqs.doc(id).update({
+        'status': status.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      try {
+        await AuditLogService().logAction(
+          module: 'Suppliers',
+          action: 'STATUS_CHANGE',
+          targetId: id,
+          targetName: 'RFQ $id',
+          summary: 'RFQ status transitioned to [${status.name}].',
+        );
+      } catch(e) {}
+  }
+
+  Future<String> convertRfqToPurchaseOrder(Rfq rfq, String poNumber) async {
+    final batch = _db.batch();
+
+    // 1. Lock RFQ status to converted
+    final rfqRef = _rfqs.doc(rfq.id);
+    batch.update(rfqRef, {
+      'status': RfqStatus.converted.name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // 2. Create Purchase Order document
+    final poRef = _purchaseOrders.doc();
+    final poItems = rfq.items.map((i) {
+      return PurchaseOrderItem(
+        productId: i.productId,
+        productName: i.productName,
+        sku: i.sku,
+        orderedQty: i.requestedQty,
+        receivedQty: 0,
+        unitCost: i.quotedUnitPrice ?? 0.0,
+      );
+    }).toList();
+
+    final po = PurchaseOrder(
+      id: poRef.id,
+      poNumber: poNumber,
+      rfqId: rfq.id,
+      supplierId: rfq.supplierId,
+      supplierName: rfq.supplierName,
+      status: PurchaseOrderStatus.pendingDelivery,
+      orderDate: DateTime.now(),
+      items: poItems,
+    );
+
+    batch.set(poRef, po.toFirestore());
+    await batch.commit();
+    return poRef.id;
+  }
+
+  // ── Purchase Order Operations ──────────────────────────────────────────────
+
+  Stream<List<PurchaseOrder>> purchaseOrdersStream() => _purchaseOrders
+      .orderBy('orderDate', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(PurchaseOrder.fromFirestore).toList());
+
+  /// FIFO sorted pending purchase orders (oldest pending order date first)
+  Stream<List<PurchaseOrder>> fifoPurchaseOrdersStream() => _purchaseOrders
+      .orderBy('orderDate', descending: false)
+      .snapshots()
+      .map((s) {
+    final all = s.docs.map(PurchaseOrder.fromFirestore).toList();
+    return all
+        .where((po) =>
+            po.status == PurchaseOrderStatus.pendingDelivery ||
+            po.status == PurchaseOrderStatus.partiallyReceived)
+        .toList();
+  });
+
+  Future<void> createPurchaseOrder(PurchaseOrder po) async {
+    final docRef = await _purchaseOrders.add(po.toFirestore());
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'CREATE',
+        targetId: docRef.id,
+        targetName: 'PO ${po.poNumber}',
+        summary: 'Purchase Order created for PO Number: [${po.poNumber}].',
+      );
+    } catch(e) {}
+  }
+
+  Future<void> updatePurchaseOrderStatus(
+          String id, PurchaseOrderStatus status) async {
+      await _purchaseOrders.doc(id).update({
+        'status': status.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      try {
+        await AuditLogService().logAction(
+          module: 'Suppliers',
+          action: 'STATUS_CHANGE',
+          targetId: id,
+          targetName: 'PO $id',
+          summary: 'Purchase Order status transitioned to [${status.name}].',
+        );
+      } catch(e) {}
+  }
+
+  Future<void> shortClosePurchaseOrder(
+      String poId, List<PurchaseOrderItem> updatedItems) async {
+    await _purchaseOrders.doc(poId).update({
+      'status': PurchaseOrderStatus.shortClosed.name,
+      'items': updatedItems.map((i) => i.toMap()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    try {
+      await AuditLogService().logAction(
+        module: 'Suppliers',
+        action: 'SHORT_CLOSE',
+        targetId: poId,
+        targetName: 'PO $poId',
+        summary: 'Purchase Order short-closed with [${updatedItems.length}] valid items remaining.',
+      );
+    } catch(e) {}
+  }
+
+  // ── Receiving Records & Inventory Batches Streams ──────────────────────────
+
+  Stream<List<ReceivingRecord>> receivingRecordsStream() => _receivingRecords
+      .orderBy('receivedAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(ReceivingRecord.fromFirestore).toList());
+
+  Stream<List<InventoryBatchRecord>> inventoryBatchesStream() => _inventoryBatches
+      .orderBy('receivedAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(InventoryBatchRecord.fromFirestore).toList());
+
+  // ── Atomic PO Stock Receiving Workflow ────────────────────────────────────
+
+  Future<void> processPoDeliveryAtomic({
+    required String poId,
+    required PurchaseOrder currentPo,
+    required String deliveryReceiptNo,
+    required Map<String, int> receivedQtyMap,
+    required Map<String, DateTime?> expiryDateMap,
+    required Map<String, double> unitCostMap,
+    required List<Product> cachedProducts,
+    required String receivedBy,
+    String? discrepancyNote,
+    bool syncProductCostPrice = false,
+    bool shortCloseRemaining = false,
+  }) async {
+    final batch = _db.batch();
+
+    // 1. Prepare receiving record document
+    final receivingRecordRef = _receivingRecords.doc();
+    final List<ReceivingItem> itemsReceivedForRecord = [];
+
+    // 2. Prepare updated PO items list
+    final List<PurchaseOrderItem> updatedPoItems = [];
+
+    for (final poItem in currentPo.items) {
+      final int qtyReceivingNow = receivedQtyMap[poItem.productId] ?? 0;
+      final int remaining = poItem.remainingQty;
+
+      // Guardrail validation
+      if (qtyReceivingNow > remaining) {
+        throw Exception(
+            'Cannot receive $qtyReceivingNow units for ${poItem.productName}. Maximum remaining is $remaining.');
+      }
+
+      final int newTotalReceivedQty = poItem.receivedQty + qtyReceivingNow;
+      final double effectiveUnitCost =
+          unitCostMap[poItem.productId] ?? poItem.unitCost;
+
+      updatedPoItems.add(poItem.copyWith(
+        receivedQty: newTotalReceivedQty,
+        unitCost: effectiveUnitCost,
+      ));
+
+      if (qtyReceivingNow > 0) {
+        final String newBatchId = const Uuid().v4();
+        final DateTime? expiry = expiryDateMap[poItem.productId];
+
+        itemsReceivedForRecord.add(ReceivingItem(
+          productId: poItem.productId,
+          productName: poItem.productName,
+          qty: qtyReceivingNow,
+          batchId: newBatchId,
+        ));
+
+        // 3. Create top-level `inventory_batches/{batchId}` document
+        final inventoryBatchRef = _inventoryBatches.doc(newBatchId);
+        batch.set(inventoryBatchRef, {
+          'batchId': newBatchId,
+          'productId': poItem.productId,
+          'poId': poId,
+          'receiptId': receivingRecordRef.id,
+          'quantityRemaining': qtyReceivingNow,
+          'unitCost': effectiveUnitCost,
+          'receivedAt': FieldValue.serverTimestamp(),
+          'expiryDate': expiry != null ? Timestamp.fromDate(expiry) : null,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        // 4. Update parent Product document stock, cost, and embedded batches
+        final prodIndex =
+            cachedProducts.indexWhere((p) => p.id == poItem.productId);
+        if (prodIndex >= 0) {
+          final prod = cachedProducts[prodIndex];
+          final prodRef = _products.doc(prod.id);
+
+          final newProductBatch = ProductBatch(
+            batchId: newBatchId,
+            productId: prod.id,
+            quantityRemaining: qtyReceivingNow,
+            unitCost: effectiveUnitCost,
+            dateReceived: DateTime.now(),
+            expirationDate: expiry,
+            invoiceNumber: deliveryReceiptNo,
+          );
+
+          final updatedBatches = [...prod.batches, newProductBatch];
+          final int updatedStock = prod.stock + qtyReceivingNow;
+
+          DateTime? earliestExp;
+          for (var b in updatedBatches) {
+            if (b.quantity > 0 && b.expiryDate != null) {
+              if (earliestExp == null || b.expiryDate!.isBefore(earliestExp)) {
+                earliestExp = b.expiryDate;
+              }
+            }
+          }
+
+          final Map<String, dynamic> prodUpdateData = {
+            'stock': updatedStock,
+            'batches': {for (var b in updatedBatches) b.id: b.toMap()},
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+
+          if (syncProductCostPrice && effectiveUnitCost > 0) {
+            prodUpdateData['costPrice'] = effectiveUnitCost;
+          }
+
+          if (earliestExp != null) {
+            prodUpdateData['expiryDate'] = Timestamp.fromDate(earliestExp);
+          }
+
+          batch.update(prodRef, prodUpdateData);
+        }
+
+        // 5. Create DeliveryLog for backward compatibility with audit logs
+        final deliveryLogRef = _deliveryLogs.doc();
+        batch.set(deliveryLogRef, {
+          'productId': poItem.productId,
+          'productName': poItem.productName,
+          'qtyReceived': qtyReceivingNow,
+          'unitCost': effectiveUnitCost,
+          'totalValue': qtyReceivingNow * effectiveUnitCost,
+          'expiryDate': expiry != null ? Timestamp.fromDate(expiry) : null,
+          'invoiceNumber': deliveryReceiptNo,
+          'receivedBy': receivedBy,
+          'notes': discrepancyNote,
+          'orderedQty': poItem.orderedQty,
+          'orderedUnitCost': poItem.unitCost,
+          'supplierId': currentPo.supplierId,
+          'supplierName': currentPo.supplierName,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    // Write receiving_records document
+    batch.set(receivingRecordRef, {
+      'poId': poId,
+      'deliveryReceiptNo': deliveryReceiptNo,
+      'receivedAt': FieldValue.serverTimestamp(),
+      'discrepancyNote': discrepancyNote,
+      'itemsReceived': itemsReceivedForRecord.map((i) => i.toMap()).toList(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // 6. Calculate PO Status
+    PurchaseOrderStatus newStatus;
+    if (shortCloseRemaining) {
+      newStatus = PurchaseOrderStatus.shortClosed;
+    } else {
+      final bool allDone =
+          updatedPoItems.every((item) => item.receivedQty >= item.orderedQty);
+      final bool anyReceived =
+          updatedPoItems.any((item) => item.receivedQty > 0);
+
+      if (allDone) {
+        newStatus = PurchaseOrderStatus.completed;
+      } else if (anyReceived) {
+        newStatus = PurchaseOrderStatus.partiallyReceived;
+      } else {
+        newStatus = PurchaseOrderStatus.pendingDelivery;
+      }
+    }
+
+    final poRef = _purchaseOrders.doc(poId);
+    batch.update(poRef, {
+      'status': newStatus.name,
+      'items': updatedPoItems.map((i) => i.toMap()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    await AuditLogService().logAction(
+      module: 'Inventory',
+      action: 'RECEIVE_STOCK',
+      targetId: poId,
+      targetName: 'PO $poId / DR $deliveryReceiptNo',
+      summary: 'Delivery receipt processed. Received [${itemsReceivedForRecord.length}] items. Purchase Order status transitioned to [${newStatus.name}].',
+      batch: batch,
+    );
+
+    try {
+      await batch.commit();
+    } catch (e) {
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('unavailable') ||
+          errStr.contains('deadline-exceeded')) {
+        debugPrint(
+            'PO Delivery WriteBatch committed to local cache while offline.');
+      } else {
+        rethrow;
+      }
+    }
+  }
 }

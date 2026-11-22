@@ -9,6 +9,7 @@ import '../services/notification_service.dart';
 import '../utils/email_validator.dart';
 import '../utils/format.dart';
 import '../utils/totp.dart';
+import '../services/audit_log_service.dart';
 
 /// User role authorization levels.
 enum UserRole { admin, trustedPartner, none }
@@ -515,6 +516,16 @@ class AppAuthProvider extends ChangeNotifier {
 
   /// Signs out current user and resets auth session flags.
   Future<void> logout() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      await AuditLogService().logAction(
+        module: 'Auth',
+        action: 'LOGOUT',
+        targetId: user.uid,
+        targetName: user.email ?? 'Unknown',
+        summary: 'User ${user.email} logged out',
+      );
+    }
     _userSub?.cancel();
     await _auth.signOut();
     _role = UserRole.none;

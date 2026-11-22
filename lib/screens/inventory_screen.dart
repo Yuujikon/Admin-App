@@ -18,6 +18,7 @@ import 'supplier_management_screen.dart';
 import 'inventory_records_screen.dart';
 import '../config/theme.dart';
 import '../../utils/format.dart';
+import '../../widgets/admin_filter_bar.dart';
 
 class InventoryScreen extends StatefulWidget {
   final String? initialCategory;
@@ -32,6 +33,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Map<FocusNode, TextEditingController> _focusMap = {};
   String _search = '';
   late String _cat;
+
+  Map<String, bool> _filterOuts = {
+    'Hide Out of Stock': false,
+    'Hide Low Stock': false,
+    'Bundles Only': false,
+    'Single Items Only': false,
+  };
 
   @override
   void initState() {
@@ -73,6 +81,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final threshold = p.lowStockThreshold;
       if (_cat == 'Low Stock') return p.totalStock <= threshold;
       return _cat == 'All' || p.category == _cat;
+    }).where((p) {
+      if (_filterOuts['Hide Out of Stock'] == true && p.totalStock <= 0) {
+        return false;
+      }
+      if (_filterOuts['Hide Low Stock'] == true &&
+          p.totalStock <= p.lowStockThreshold) {
+        return false;
+      }
+      final isBulkOrBundle = p.category == 'Bundle' ||
+          (p.itemsPerCase != null && p.itemsPerCase! > 1);
+      if (_filterOuts['Bundles Only'] == true && !isBulkOrBundle) {
+        return false;
+      }
+      if (_filterOuts['Single Items Only'] == true && isBulkOrBundle) {
+        return false;
+      }
+      return true;
     }).where((p) {
       final query = _search.toLowerCase();
       return query.isEmpty ||
@@ -184,72 +209,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ),
                   ),
 
-                  // Search Bar
+                  // Automated Search & Filter Bar
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        focusNode: _searchFocus,
-                        onChanged: (v) => setState(() => _search = v),
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          hintText: 'Search products…',
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_search.isNotEmpty)
-                                IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () => setState(() {
-                                    _searchCtrl.clear();
-                                    _search = '';
-                                    _searchFocus.requestFocus();
-                                  }),
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.qr_code_scanner_rounded),
-                                onPressed: () async {
-                                  final res = await showDialog<String>(
-                                      context: context,
-                                      useRootNavigator: true,
-                                      builder: (_) => const ScannerDialog());
-                                  if (res != null && res.isNotEmpty) {
-                                    _searchCtrl.text = res;
-                                    setState(() => _search = res);
-                                    _searchFocus.requestFocus();
-                                  }
-                                },
-                              ),
-                            ],
+                      child: AdminFilterBar(
+                        searchQuery: _search,
+                        searchHint: 'Search by product, brand, or barcode…',
+                        categoryOptions: cats,
+                        selectedCategory: _cat,
+                        onCategoryChanged: (c) => setState(() => _cat = c),
+                        filterOutOptions: _filterOuts,
+                        onFilterOutChanged: (outs) =>
+                            setState(() => _filterOuts = outs),
+                        onSearchChanged: (v) => setState(() => _search = v),
+                        totalCount: products.length,
+                        filteredCount: filtered.length,
+                        itemUnit: 'products',
+                        extraActions: [
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.qr_code_scanner_rounded),
+                            tooltip: 'Scan Barcode',
+                            onPressed: () async {
+                              final res = await showDialog<String>(
+                                  context: context,
+                                  useRootNavigator: true,
+                                  builder: (_) => const ScannerDialog());
+                              if (res != null && res.isNotEmpty) {
+                                _searchCtrl.text = res;
+                                setState(() => _search = res);
+                                _searchFocus.requestFocus();
+                              }
+                            },
                           ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-                  // Category Chips Row
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 44,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: cats.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, i) => FilterChip(
-                          label: Text(cats[i]),
-                          selected: _cat == cats[i],
-                          onSelected: (_) => setState(() {
-                            _cat = cats[i];
-                            if (_cat == 'All') {
-                              _searchCtrl.clear();
-                              _search = '';
-                            }
-                          }),
-                        ),
+                        ],
                       ),
                     ),
                   ),

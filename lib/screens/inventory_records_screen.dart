@@ -7,6 +7,9 @@ import '../models/product.dart';
 import '../models/loss_record.dart';
 import '../models/shift_session.dart';
 import '../models/restock_inquiry.dart';
+import '../models/transaction.dart';
+import '../models/refund_request.dart';
+import '../models/order.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/shift_provider.dart';
 import '../providers/restock_provider.dart';
@@ -16,14 +19,17 @@ import '../widgets/premium_components.dart';
 import '../services/firestore_service.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
+import '../widgets/admin_filter_bar.dart';
 
 enum _RecordTab {
   deliveryLogs,
   batchLots,
+  salesTransactions,
   lossWaste,
   refundRecords,
   registerShifts,
   supplierInquiries,
+  auditReconciliations,
   allTimeline
 }
 
@@ -91,28 +97,81 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final products = inventory.products;
     final lossRecords = inventory.lossRecords;
     final inquiries = restockProvider.inquiries;
-
+    final transactions = inventory.transactions;
+    final refundRequests = inventory.refundRequests;
     final allShifts = shiftProvider.allShifts;
 
-    // Filtered Supplier Restock Inquiries
-    final filteredInquiries = inquiries.where((inquiry) {
-      final date = inquiry.sentAt ?? inquiry.createdAt;
-      if (!_matchesDateFilter(date)) return false;
-
+    // 1. Filtered Delivery Logs
+    final filteredLogs = deliveryLogs.where((log) {
+      if (!_matchesDateFilter(log.createdAt)) return false;
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase();
-      return inquiry.supplierName.toLowerCase().contains(q) ||
-          inquiry.inquiryNumber.toLowerCase().contains(q) ||
-          inquiry.items.any((i) => i.productName.toLowerCase().contains(q));
+      return log.productName.toLowerCase().contains(q) ||
+          (log.invoiceNumber?.toLowerCase().contains(q) ?? false) ||
+          log.receivedBy.toLowerCase().contains(q) ||
+          (log.notes?.toLowerCase().contains(q) ?? false);
     }).toList();
+    filteredLogs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    filteredInquiries.sort((a, b) {
-      final dateA = a.sentAt ?? a.createdAt;
-      final dateB = b.sentAt ?? b.createdAt;
-      return dateB.compareTo(dateA);
-    });
+    // 2. Aggregated Batch Lots from all products
+    final List<_BatchRecordWrapper> allBatches = [];
+    for (final p in products) {
+      for (final b in p.batches) {
+        allBatches.add(_BatchRecordWrapper(product: p, batch: b));
+      }
+    }
+    final filteredBatches = allBatches.where((wrapper) {
+      if (!_matchesDateFilter(wrapper.batch.dateReceived)) return false;
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      return wrapper.product.name.toLowerCase().contains(q) ||
+          wrapper.batch.id.toLowerCase().contains(q) ||
+          (wrapper.batch.invoiceNumber?.toLowerCase().contains(q) ?? false);
+    }).toList();
+    filteredBatches.sort(
+        (a, b) => b.batch.dateReceived.compareTo(a.batch.dateReceived));
 
-    // Filtered Register Shifts
+    // 3. Filtered Sales Stock Depletion Transactions
+    final filteredSales = transactions.where((tx) {
+      if (!_matchesDateFilter(tx.createdAt)) return false;
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      final itemsStr = tx.items.map((i) => i.name).join(' ').toLowerCase();
+      return tx.id.toLowerCase().contains(q) ||
+          (tx.orderId?.toLowerCase().contains(q) ?? false) ||
+          (tx.customerEmail?.toLowerCase().contains(q) ?? false) ||
+          tx.paymentMethod.name.toLowerCase().contains(q) ||
+          itemsStr.contains(q);
+    }).toList();
+    filteredSales.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // 4. Filtered Loss/Waste Records
+    final filteredLosses = lossRecords.where((loss) {
+      if (!_matchesDateFilter(loss.createdAt)) return false;
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      return loss.productName.toLowerCase().contains(q) ||
+          loss.type.name.toLowerCase().contains(q) ||
+          loss.notes.toLowerCase().contains(q);
+    }).toList();
+    filteredLosses.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // 5. Filtered Refund Records & Stock Returns
+    final filteredRefunds = refundRequests.where((ref) {
+      if (!_matchesDateFilter(ref.createdAt)) return false;
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      final itemsStr = ref.items.map((i) => i.name).join(' ').toLowerCase();
+      return ref.id.toLowerCase().contains(q) ||
+          ref.transactionId.toLowerCase().contains(q) ||
+          ref.customerEmail.toLowerCase().contains(q) ||
+          ref.customerName.toLowerCase().contains(q) ||
+          ref.reason.toLowerCase().contains(q) ||
+          itemsStr.contains(q);
+    }).toList();
+    filteredRefunds.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // 6. Filtered Register Shifts
     final filteredShifts = allShifts.where((shift) {
       final matchStart = _matchesDateFilter(shift.openedAt);
       final matchEnd =
@@ -126,77 +185,156 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           'shift'.contains(q) ||
           'register'.contains(q);
     }).toList();
+    filteredShifts.sort((a, b) => b.openedAt.compareTo(a.openedAt));
 
-    // Filtered Delivery Logs
-    final filteredLogs = deliveryLogs.where((log) {
-      if (!_matchesDateFilter(log.createdAt)) return false;
+    // 7. Filtered Supplier Restock Inquiries
+    final filteredInquiries = inquiries.where((inquiry) {
+      final date = inquiry.sentAt ?? inquiry.createdAt;
+      if (!_matchesDateFilter(date)) return false;
+
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase();
-      return log.productName.toLowerCase().contains(q) ||
-          (log.invoiceNumber?.toLowerCase().contains(q) ?? false) ||
-          log.receivedBy.toLowerCase().contains(q) ||
-          (log.notes?.toLowerCase().contains(q) ?? false);
+      return inquiry.supplierName.toLowerCase().contains(q) ||
+          inquiry.inquiryNumber.toLowerCase().contains(q) ||
+          inquiry.items.any((i) => i.productName.toLowerCase().contains(q));
     }).toList();
+    filteredInquiries.sort((a, b) {
+      final dateA = a.sentAt ?? a.createdAt;
+      final dateB = b.sentAt ?? b.createdAt;
+      return dateB.compareTo(dateA);
+    });
 
-    // Aggregated Batch Lots from all products
-    final List<_BatchRecordWrapper> allBatches = [];
-    for (final p in products) {
-      for (final b in p.batches) {
-        allBatches.add(_BatchRecordWrapper(product: p, batch: b));
+    // 8. Filtered Shelf Audit Reconciliations (Overages & Shortages)
+    final List<_AuditRecordWrapper> filteredAudits = [];
+    for (final log in deliveryLogs) {
+      if ((log.notes?.toLowerCase().contains('audit') ?? false) ||
+          log.receivedBy.toLowerCase().contains('audit')) {
+        if (!_matchesDateFilter(log.createdAt)) continue;
+        if (_searchQuery.isNotEmpty) {
+          final q = _searchQuery.toLowerCase();
+          if (!log.productName.toLowerCase().contains(q) &&
+              !(log.notes?.toLowerCase().contains(q) ?? false) &&
+              !log.receivedBy.toLowerCase().contains(q)) continue;
+        }
+        filteredAudits.add(_AuditRecordWrapper(
+          title: 'Shelf Audit Overage',
+          productName: log.productName,
+          qty: log.qtyReceived,
+          isOverage: true,
+          cost: log.totalValue,
+          notes: log.notes ?? 'Stock surplus verified during physical audit',
+          auditor: log.receivedBy,
+          timestamp: log.createdAt,
+          originalData: log,
+        ));
       }
     }
+    for (final loss in lossRecords) {
+      if (loss.notes.toLowerCase().contains('audit')) {
+        if (!_matchesDateFilter(loss.createdAt)) continue;
+        if (_searchQuery.isNotEmpty) {
+          final q = _searchQuery.toLowerCase();
+          if (!loss.productName.toLowerCase().contains(q) &&
+              !loss.notes.toLowerCase().contains(q)) continue;
+        }
+        filteredAudits.add(_AuditRecordWrapper(
+          title: 'Shelf Audit Shortage',
+          productName: loss.productName,
+          qty: loss.qty,
+          isOverage: false,
+          cost: loss.totalLoss,
+          notes: loss.notes,
+          auditor: loss.processedBy ?? 'Shelf Audit',
+          timestamp: loss.createdAt,
+          originalData: loss,
+        ));
+      }
+    }
+    filteredAudits.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-    final filteredBatches = allBatches.where((wrapper) {
-      if (!_matchesDateFilter(wrapper.batch.dateReceived)) return false;
-      if (_searchQuery.isEmpty) return true;
-      final q = _searchQuery.toLowerCase();
-      return wrapper.product.name.toLowerCase().contains(q) ||
-          wrapper.batch.id.toLowerCase().contains(q) ||
-          (wrapper.batch.invoiceNumber?.toLowerCase().contains(q) ?? false);
-    }).toList();
-
-    // Sort batches FEFO or newest received
-    filteredBatches
-        .sort((a, b) => b.batch.dateReceived.compareTo(a.batch.dateReceived));
-
-    // Filtered Loss/Waste Records
-    final filteredLosses = lossRecords.where((loss) {
-      if (!_matchesDateFilter(loss.createdAt)) return false;
-      if (_searchQuery.isEmpty) return true;
-      final q = _searchQuery.toLowerCase();
-      return loss.productName.toLowerCase().contains(q) ||
-          loss.type.name.toLowerCase().contains(q) ||
-          loss.notes.toLowerCase().contains(q);
-    }).toList();
-
-    // Combined Timeline Items
+    // 9. Combined Chronological Activity Timeline ("RECORD EVERYTHING")
     final List<_TimelineItem> timelineItems = [];
+
+    // Deliveries
     for (final l in filteredLogs) {
+      final isAuditLog = (l.notes?.toLowerCase().contains('audit') ?? false) ||
+          l.receivedBy.toLowerCase().contains('audit');
       timelineItems.add(_TimelineItem(
-        title: 'Stock Delivery Received',
+        title: isAuditLog ? 'Shelf Audit Overage' : 'Stock Delivery Received',
         productName: l.productName,
         qtyText: '+${l.qtyReceived}',
         isPositive: true,
         costText: formatPeso(l.totalValue),
-        subText: 'Invoice: ${l.invoiceNumber ?? "N/A"} • By ${l.receivedBy}',
+        subText: isAuditLog
+            ? 'Audit Overage • ${l.notes ?? "Surplus added"}'
+            : 'Invoice: ${l.invoiceNumber ?? "N/A"} • By ${l.receivedBy}',
         timestamp: l.createdAt,
-        type: _TimelineType.delivery,
+        type: isAuditLog ? _TimelineType.audit : _TimelineType.delivery,
         originalData: l,
       ));
     }
-    for (final loss in filteredLosses) {
+
+    // Sales Outflows
+    for (final tx in filteredSales) {
+      final totalQtySold = tx.items.fold<int>(0, (sum, i) => sum + (tx.isRefunded ? 0 : (i.qty - i.returnedQty).clamp(0, 999999)));
+      final itemSnippet = tx.items.map((i) => '${i.name} (x${i.qty})').join(', ');
+      final shortTxId =
+          tx.id.length >= 8 ? tx.id.substring(0, 8).toUpperCase() : tx.id;
+
       timelineItems.add(_TimelineItem(
-        title: 'Inventory Loss / Waste',
+        title: 'Sales Checkout Depletion',
+        productName: itemSnippet.isNotEmpty ? itemSnippet : 'Store Items',
+        qtyText: '-$totalQtySold items',
+        isPositive: false,
+        costText: formatPeso(tx.total),
+        subText:
+            'Tx #$shortTxId • Pay: ${tx.paymentMethod.name.toUpperCase()} • ${tx.customerEmail ?? "Walk-in"}',
+        timestamp: tx.createdAt,
+        type: _TimelineType.sale,
+        originalData: tx,
+      ));
+    }
+
+    // Loss Write-offs & Shortages
+    for (final loss in filteredLosses) {
+      final isAuditLoss = loss.notes.toLowerCase().contains('audit');
+      timelineItems.add(_TimelineItem(
+        title: isAuditLoss ? 'Shelf Audit Shortage' : 'Inventory Write-off',
         productName: loss.productName,
         qtyText: '-${loss.qty}',
         isPositive: false,
         costText: formatPeso(loss.totalLoss),
-        subText: 'Reason: ${loss.type.name.capitalize()}',
+        subText: isAuditLoss
+            ? 'Audit Shortage • ${loss.notes}'
+            : 'Reason: ${loss.type.name.capitalize()}',
         timestamp: loss.createdAt,
-        type: _TimelineType.loss,
+        type: isAuditLoss ? _TimelineType.audit : _TimelineType.loss,
         originalData: loss,
       ));
     }
+
+    // Customer Refunds
+    for (final ref in filteredRefunds) {
+      final totalQtyRef = ref.items.fold<int>(0, (sum, i) => sum + i.qty);
+      final itemSnippet = ref.items.map((i) => '${i.name} (x${i.qty})').join(', ');
+      final shortRefId =
+          ref.id.length >= 8 ? ref.id.substring(0, 8).toUpperCase() : ref.id;
+
+      timelineItems.add(_TimelineItem(
+        title: 'Customer Refund / Stock Return',
+        productName: itemSnippet.isNotEmpty ? itemSnippet : 'Refund Items',
+        qtyText: '+$totalQtyRef items',
+        isPositive: true,
+        costText: formatPeso(ref.total),
+        subText:
+            'Refund #$shortRefId • Status: ${ref.status.name.toUpperCase()} • ${ref.customerName}',
+        timestamp: ref.createdAt,
+        type: _TimelineType.refund,
+        originalData: ref,
+      ));
+    }
+
+    // Register Shifts
     for (final shift in filteredShifts) {
       timelineItems.add(_TimelineItem(
         title: 'Register Shift Started',
@@ -205,7 +343,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         isPositive: true,
         costText: formatPeso(shift.openingFloat),
         subText:
-            'Opened: ${DateFormat('h:mm a').format(shift.openedAt)} • Status: ${shift.status == ShiftStatus.active ? "ACTIVE SHIFT" : "Closed"}',
+            'Opened: ${DateFormat('h:mm a').format(shift.openedAt)} • Status: ${shift.status == ShiftStatus.active ? "ACTIVE" : "Closed"}',
         timestamp: shift.openedAt,
         type: _TimelineType.shiftStart,
         originalData: shift,
@@ -233,6 +371,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         ));
       }
     }
+
+    // Restock Inquiries
     for (final inquiry in filteredInquiries) {
       final date = inquiry.sentAt ?? inquiry.createdAt;
       final itemsSummary = inquiry.items
@@ -240,9 +380,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           .join(', ');
 
       timelineItems.add(_TimelineItem(
-        title: 'Supplier Restock Inquiry Sent',
+        title: 'Supplier Restock Order Sent',
         productName: 'Supplier: ${inquiry.supplierName}',
-        qtyText: '${inquiry.totalRequestedQty} requested',
+        qtyText: '${inquiry.totalRequestedQty} items',
         isPositive: true,
         costText: formatPeso(inquiry.totalOrderedValue),
         subText:
@@ -252,13 +392,19 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         originalData: inquiry,
       ));
     }
+
+    // Sort complete timeline descending by timestamp
     timelineItems.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-    // KPI Metrics
+    // KPI Summary Metrics
     final totalDeliveryVal =
         deliveryLogs.fold<double>(0, (sum, l) => sum + l.totalValue);
     final totalDeliveryQty =
         deliveryLogs.fold<int>(0, (sum, l) => sum + l.qtyReceived);
+    final totalSalesVal =
+        filteredSales.fold<double>(0, (sum, s) => sum + s.total);
+    final totalSalesQty = filteredSales.fold<int>(
+        0, (sum, s) => sum + s.items.fold<int>(0, (iSum, item) => iSum + item.qty));
     final activeLotsCount =
         allBatches.where((b) => b.batch.quantityRemaining > 0).length;
     final totalLossVal =
@@ -310,41 +456,40 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                   context,
                   totalDeliveryVal: totalDeliveryVal,
                   totalDeliveryQty: totalDeliveryQty,
+                  totalSalesVal: totalSalesVal,
+                  totalSalesQty: totalSalesQty,
                   activeLotsCount: activeLotsCount,
                   totalLossVal: totalLossVal,
                 ),
                 const SizedBox(height: 10),
               ],
 
-              // ── Search & Audit Action Controls ──────────────────────────
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (v) => setState(() => _searchQuery = v),
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        hintText:
-                            'Search by product name, invoice #, received by…',
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear_rounded, size: 18),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() => _searchQuery = '');
-                                },
-                              )
-                            : null,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ),
+              // ── Automated Search & Audit Action Controls ──────────────────
+              AdminFilterBar(
+                searchQuery: _searchQuery,
+                searchHint:
+                    'Search product, invoice #, cashier, customer, supplier…',
+                dateFilter: switch (_dateFilter) {
+                  _DateFilter.today => AdminDateFilter.today,
+                  _DateFilter.thisWeek => AdminDateFilter.thisWeek,
+                  _DateFilter.thisMonth => AdminDateFilter.thisMonth,
+                  _DateFilter.all => AdminDateFilter.all,
+                },
+                onDateFilterChanged: (adf) {
+                  setState(() {
+                    _dateFilter = switch (adf) {
+                      AdminDateFilter.today => _DateFilter.today,
+                      AdminDateFilter.thisWeek => _DateFilter.thisWeek,
+                      AdminDateFilter.thisMonth => _DateFilter.thisMonth,
+                      AdminDateFilter.all => _DateFilter.all,
+                    };
+                  });
+                },
+                onSearchChanged: (v) => setState(() => _searchQuery = v),
+                totalCount: timelineItems.length,
+                filteredCount: timelineItems.length,
+                itemUnit: 'records',
+                extraActions: [
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: () {
@@ -430,10 +575,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     _buildTabChip('Active Lots (${filteredBatches.length})',
                         _RecordTab.batchLots, Icons.inventory_2_outlined),
                     const SizedBox(width: 6),
+                    _buildTabChip(
+                        'Sales & Depletions (${filteredSales.length})',
+                        _RecordTab.salesTransactions,
+                        Icons.shopping_cart_checkout_rounded),
+                    const SizedBox(width: 6),
                     _buildTabChip('Loss & Spoilage (${filteredLosses.length})',
                         _RecordTab.lossWaste, Icons.delete_outline_rounded),
                     const SizedBox(width: 6),
-                    _buildTabChip('Refund Records', _RecordTab.refundRecords,
+                    _buildTabChip(
+                        'Refund Records (${filteredRefunds.length})',
+                        _RecordTab.refundRecords,
                         Icons.published_with_changes_rounded),
                     const SizedBox(width: 6),
                     _buildTabChip('Register Shifts (${filteredShifts.length})',
@@ -444,30 +596,33 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                         _RecordTab.supplierInquiries,
                         Icons.mark_email_read_outlined),
                     const SizedBox(width: 6),
-                    _buildTabChip('Combined Timeline', _RecordTab.allTimeline,
+                    _buildTabChip(
+                        'Audit Reconciliations (${filteredAudits.length})',
+                        _RecordTab.auditReconciliations,
+                        Icons.fact_check_outlined),
+                    const SizedBox(width: 6),
+                    _buildTabChip(
+                        'Combined Timeline (${timelineItems.length})',
+                        _RecordTab.allTimeline,
                         Icons.history_rounded),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
 
-              // ── Main Content View ─────────────────────────────────────────
+              // Main Active Tab View Content
               Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async {
-                    context.read<InventoryProvider>().initialize();
-                    await Future.delayed(const Duration(milliseconds: 500));
-                  },
-                  child: _buildTabContent(
-                    context,
-                    filteredLogs: filteredLogs,
-                    filteredBatches: filteredBatches,
-                    filteredLosses: filteredLosses,
-                    filteredShifts: filteredShifts,
-                    filteredInquiries: filteredInquiries,
-                    timelineItems: timelineItems,
-                    products: products,
-                  ),
+                child: _buildTabContent(
+                  filteredLogs: filteredLogs,
+                  filteredBatches: filteredBatches,
+                  filteredSales: filteredSales,
+                  filteredLosses: filteredLosses,
+                  filteredRefunds: filteredRefunds,
+                  filteredShifts: filteredShifts,
+                  filteredInquiries: filteredInquiries,
+                  filteredAudits: filteredAudits,
+                  timelineItems: timelineItems,
+                  products: products,
                 ),
               ),
             ],
@@ -480,13 +635,13 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
   String _getDateFilterLabel(_DateFilter filter) {
     switch (filter) {
       case _DateFilter.today:
-        return 'Date: Today';
+        return 'Today';
       case _DateFilter.thisWeek:
-        return 'Date: This Week';
+        return 'This Week';
       case _DateFilter.thisMonth:
-        return 'Date: This Month';
+        return 'This Month';
       case _DateFilter.all:
-        return 'Date: All Time';
+        return 'All Time';
     }
   }
 
@@ -494,16 +649,18 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final isSelected = _activeTab == tab;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return ChoiceChip(
+    return FilterChip(
       showCheckmark: false,
-      avatar: Icon(icon,
-          size: 16,
-          color: isSelected ? Colors.white : colorScheme.onSurfaceVariant),
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: isSelected ? Colors.white : colorScheme.onSurfaceVariant,
+      ),
       label: Text(
         label,
         style: TextStyle(
-          fontWeight: FontWeight.bold,
           fontSize: 12,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           color: isSelected ? Colors.white : colorScheme.onSurface,
         ),
       ),
@@ -518,6 +675,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     BuildContext context, {
     required double totalDeliveryVal,
     required int totalDeliveryQty,
+    required double totalSalesVal,
+    required int totalSalesQty,
     required int activeLotsCount,
     required double totalLossVal,
   }) {
@@ -544,7 +703,16 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _metricCard(
               context,
               width: cardWidth,
-              title: 'Active FEFO Lots',
+              title: 'Total Sales Depleted',
+              value: formatPeso(totalSalesVal),
+              subtext: '$totalSalesQty units sold',
+              icon: Icons.shopping_cart_checkout_rounded,
+              color: Colors.orange.shade800,
+            ),
+            _metricCard(
+              context,
+              width: cardWidth,
+              title: 'Active FIFO Lots',
               value: '$activeLotsCount Lots',
               subtext: 'In active rotation',
               icon: Icons.inventory_2_rounded,
@@ -558,16 +726,6 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
               subtext: 'Expired/Damaged',
               icon: Icons.remove_shopping_cart_rounded,
               color: Colors.red.shade700,
-            ),
-            _metricCard(
-              context,
-              width: cardWidth,
-              title: 'Stock Records',
-              value:
-                  '${context.watch<InventoryProvider>().deliveryLogs.length}',
-              subtext: 'Total logged entries',
-              icon: Icons.assignment_turned_in_rounded,
-              color: Colors.purple.shade700,
             ),
           ],
         );
@@ -644,13 +802,15 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
-  Widget _buildTabContent(
-    BuildContext context, {
+  Widget _buildTabContent({
     required List<DeliveryLog> filteredLogs,
     required List<_BatchRecordWrapper> filteredBatches,
+    required List<StoreTransaction> filteredSales,
     required List<LossRecord> filteredLosses,
+    required List<RefundRequest> filteredRefunds,
     required List<ShiftSession> filteredShifts,
     required List<RestockInquiry> filteredInquiries,
+    required List<_AuditRecordWrapper> filteredAudits,
     required List<_TimelineItem> timelineItems,
     required List<Product> products,
   }) {
@@ -659,7 +819,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         if (filteredLogs.isEmpty) {
           return const PremiumEmptyState(
             icon: Icons.local_shipping_outlined,
-            title: 'No Delivery Logs Found',
+            title: 'No Stock Arrivals Recorded',
             subtitle:
                 'No stock arrivals match your filters. Use "Receive Delivery" to record incoming stock.',
           );
@@ -675,15 +835,29 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         if (filteredBatches.isEmpty) {
           return const PremiumEmptyState(
             icon: Icons.inventory_2_outlined,
-            title: 'No Batch Lots Found',
-            subtitle:
-                'No active or historical inventory lots match your search query.',
+            title: 'No Active Product Lots',
+            subtitle: 'No inventory product batches match your filter.',
           );
         }
         return ListView.separated(
           itemCount: filteredBatches.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (ctx, i) => _buildBatchLotRow(ctx, filteredBatches[i]),
+        );
+
+      case _RecordTab.salesTransactions:
+        if (filteredSales.isEmpty) {
+          return const PremiumEmptyState(
+            icon: Icons.shopping_cart_checkout_rounded,
+            title: 'No Sales Transactions Recorded',
+            subtitle:
+                'No POS sales or order checkout stock depletions match your filter.',
+          );
+        }
+        return ListView.separated(
+          itemCount: filteredSales.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, i) => _buildSaleTransactionRow(ctx, filteredSales[i]),
         );
 
       case _RecordTab.lossWaste:
@@ -702,58 +876,26 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         );
 
       case _RecordTab.refundRecords:
-        return StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FirestoreService().refundRecordsStream(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(
-                  child: Text('Error loading refund records: ${snapshot.error}'));
-            }
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final allLogs = snapshot.data ?? [];
-            final filteredLogs = allLogs.where((log) {
-              final date = log['refundedAt'] as DateTime;
-              if (!_matchesDateFilter(date)) return false;
-
-              if (_searchQuery.isEmpty) return true;
-              final q = _searchQuery.toLowerCase();
-              final txId =
-                  (log['transactionId']?.toString() ?? '').toLowerCase();
-              final email =
-                  (log['customerEmail']?.toString() ?? '').toLowerCase();
-              final processedBy =
-                  (log['processedBy']?.toString() ?? '').toLowerCase();
-              return txId.contains(q) ||
-                  email.contains(q) ||
-                  processedBy.contains(q);
-            }).toList();
-
-            if (filteredLogs.isEmpty) {
-              return const PremiumEmptyState(
-                icon: Icons.published_with_changes_rounded,
-                title: 'No Refund Records Found',
-                subtitle:
-                    'No itemized refund records match your search or date filter.',
-              );
-            }
-
-            return ListView.separated(
-              itemCount: filteredLogs.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (ctx, i) =>
-                  _buildRefundRecordRow(ctx, filteredLogs[i]),
-            );
-          },
+        if (filteredRefunds.isEmpty) {
+          return const PremiumEmptyState(
+            icon: Icons.published_with_changes_rounded,
+            title: 'No Refund Records Found',
+            subtitle:
+                'No itemized refund records match your search or date filter.',
+          );
+        }
+        return ListView.separated(
+          itemCount: filteredRefunds.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, i) =>
+              _buildRefundRecordRow(ctx, filteredRefunds[i]),
         );
 
       case _RecordTab.registerShifts:
         if (filteredShifts.isEmpty) {
           return const PremiumEmptyState(
             icon: Icons.point_of_sale_rounded,
-            title: 'No Register Shift Sessions',
+            title: 'No Register Shifts Logged',
             subtitle:
                 'No cashier register shift sessions match your search or date filter.',
           );
@@ -779,6 +921,22 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           itemBuilder: (ctx, i) => _buildInquiryRow(ctx, filteredInquiries[i]),
         );
 
+      case _RecordTab.auditReconciliations:
+        if (filteredAudits.isEmpty) {
+          return const PremiumEmptyState(
+            icon: Icons.fact_check_outlined,
+            title: 'No Shelf Audits Recorded',
+            subtitle:
+                'No physical count discrepancy reconciliations match your filter.',
+          );
+        }
+        return ListView.separated(
+          itemCount: filteredAudits.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, i) =>
+              _buildAuditReconciliationRow(ctx, filteredAudits[i]),
+        );
+
       case _RecordTab.allTimeline:
         if (timelineItems.isEmpty) {
           return const PremiumEmptyState(
@@ -799,8 +957,6 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
   Widget _buildDeliveryLogRow(
       BuildContext context, DeliveryLog log, List<Product> products) {
     final theme = Theme.of(context);
-    final isExpired = log.isExpired;
-    final isNearExpiry = log.isNearExpiration;
 
     return Card(
       elevation: 0,
@@ -851,69 +1007,41 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                 spacing: 8,
                 runSpacing: 2,
                 children: [
-                  Text('Unit Cost: ${formatPeso(log.unitCost)}',
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600)),
-                  Text('• Total: ${formatPeso(log.totalValue)}',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(formatDate(log.createdAt),
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: theme.colorScheme.onSurfaceVariant)),
+                  Text(
+                    'Cost: ${formatPeso(log.unitCost)} • Total: ${formatPeso(log.totalValue)}',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
                   if (log.invoiceNumber != null &&
-                      log.invoiceNumber!.isNotEmpty) ...[
+                      log.invoiceNumber!.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer
-                            .withValues(alpha: 0.4),
+                        color: Colors.blue.shade700.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Text('Inv #${log.invoiceNumber}',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary)),
+                      child: Text(
+                        'Inv #${log.invoiceNumber}',
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade700),
+                      ),
                     ),
-                  ],
-                  if (isExpired)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: Colors.red.shade100,
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text('Expired',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red.shade900)),
-                    )
-                  else if (isNearExpiry)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: Colors.amber.shade100,
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text('Near Expiry (${log.daysUntilExpiration}d)',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.amber.shade900)),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Received by ${log.receivedBy} • ${DateFormat('MMM d, yyyy • h:mm a').format(log.createdAt)}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant),
                     ),
+                  ),
                 ],
               ),
             ],
@@ -925,14 +1053,26 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
-  Widget _buildBatchLotRow(BuildContext context, _BatchRecordWrapper wrapper) {
+  Widget _buildBatchLotRow(
+      BuildContext context, _BatchRecordWrapper wrapper) {
     final theme = Theme.of(context);
     final batch = wrapper.batch;
     final product = wrapper.product;
-
+    final isDepleted = batch.quantityRemaining <= 0;
     final isExpired = batch.isExpired;
     final isNearExpiry = batch.isNearExpiration;
-    final hasStock = batch.quantityRemaining > 0;
+
+    final statusColor = isDepleted
+        ? Colors.grey
+        : (isExpired
+            ? Colors.red
+            : (isNearExpiry ? Colors.orange.shade800 : Colors.green.shade800));
+
+    final statusLabel = isDepleted
+        ? 'DEPLETED'
+        : (isExpired
+            ? 'EXPIRED'
+            : (isNearExpiry ? 'NEAR EXPIRY' : 'ACTIVE LOT'));
 
     return Card(
       elevation: 0,
@@ -945,28 +1085,26 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ProductDetailScreen(product: product),
+            ),
+          );
+        },
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: hasStock
-                ? (isExpired
-                    ? Colors.red.shade50
-                    : (isNearExpiry
-                        ? Colors.amber.shade50
-                        : Colors.blue.shade50))
-                : Colors.grey.shade100,
+            color: statusColor.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(
-            Icons.inventory_2_outlined,
-            color: hasStock
-                ? (isExpired
-                    ? Colors.red.shade800
-                    : (isNearExpiry
-                        ? Colors.amber.shade900
-                        : Colors.blue.shade800))
-                : Colors.grey,
+            isDepleted
+                ? Icons.inventory_2_outlined
+                : (isExpired ? Icons.event_busy : Icons.inventory_rounded),
+            color: statusColor,
             size: 24,
           ),
         ),
@@ -980,17 +1118,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: hasStock ? Colors.blue.shade800 : Colors.grey.shade400,
+                color: statusColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                '${batch.quantityRemaining} rem.',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    fontSize: 12),
+                statusLabel,
+                style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1001,49 +1139,119 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                  'Received: ${formatDate(batch.dateReceived)} • Unit Cost: ${formatPeso(batch.unitCost)}',
-                  style: const TextStyle(fontSize: 12)),
-              const SizedBox(height: 4),
+                'Batch #${batch.id.length >= 8 ? batch.id.substring(0, 8) : batch.id} • Stock: ${batch.quantityRemaining} / ${batch.quantity} ${product.unit}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
               Wrap(
-                spacing: 6,
-                runSpacing: 4,
+                spacing: 8,
+                runSpacing: 2,
                 children: [
+                  Text(
+                    'Unit Cost: ${formatPeso(batch.unitCost)}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
                   if (batch.invoiceNumber != null &&
                       batch.invoiceNumber!.isNotEmpty)
-                    Text('Inv: #${batch.invoiceNumber}',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey)),
-                  if (batch.expirationDate != null)
+                    Text('• Inv: #${batch.invoiceNumber}',
+                        style:
+                            const TextStyle(fontSize: 11, color: Colors.blue)),
+                  if (batch.expiryDate != null)
                     Text(
-                      'Expires: ${DateFormat('MMM d, y').format(batch.expirationDate!)}',
+                      '• Expiry: ${DateFormat('MMM d, yyyy').format(batch.expiryDate!)}',
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isExpired
-                            ? Colors.red.shade800
-                            : (isNearExpiry
-                                ? Colors.amber.shade900
-                                : Colors.grey.shade700),
-                      ),
-                    )
-                  else
-                    const Text('No Expiry Date',
-                        style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          fontSize: 11,
+                          fontWeight: isExpired || isNearExpiry
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: isExpired || isNearExpiry
+                              ? statusColor
+                              : theme.colorScheme.onSurfaceVariant),
+                    ),
                 ],
               ),
             ],
           ),
         ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ProductDetailScreen(product: product),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+      ),
+    );
+  }
+
+  Widget _buildSaleTransactionRow(
+      BuildContext context, StoreTransaction tx) {
+    final theme = Theme.of(context);
+    final totalQty = tx.items.fold<int>(0, (sum, i) => sum + i.qty);
+    final shortTxId =
+        tx.id.length >= 8 ? tx.id.substring(0, 8).toUpperCase() : tx.id;
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        onTap: () => _showSaleTransactionDetailModal(context, tx),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade800.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(Icons.shopping_cart_checkout_rounded,
+              color: Colors.orange.shade800, size: 24),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Sale Tx #$shortTxId',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
-          );
-        },
+            Text(
+              '-$totalQty items',
+              style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Colors.orange.shade800,
+                  fontSize: 14),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Total: ${formatPeso(tx.total)} • Payment: ${tx.paymentMethod.name.toUpperCase()}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Customer: ${tx.customerEmail ?? "Walk-in"} • ${DateFormat('MMM d, yyyy • h:mm a').format(tx.createdAt)}',
+                style: TextStyle(
+                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
       ),
     );
   }
@@ -1062,15 +1270,16 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
+        onTap: () => _showLossRecordDetailModal(context, loss),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.red.shade800.withValues(alpha: 0.12),
+            color: Colors.red.shade700.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Icon(Icons.delete_outline_rounded,
-              color: Colors.red.shade800, size: 24),
+          child: Icon(Icons.remove_shopping_cart_rounded,
+              color: Colors.red.shade700, size: 24),
         ),
         title: Row(
           children: [
@@ -1085,7 +1294,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
               '-${loss.qty} units',
               style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: Colors.red.shade800,
+                  color: Colors.red.shade700,
                   fontSize: 14),
             ),
           ],
@@ -1096,27 +1305,30 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                  'Type: ${loss.type.name.capitalize()} • Total: ${formatPeso(loss.totalLoss)}',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600)),
+                'Loss Val: ${formatPeso(loss.totalLoss)} • Reason: ${loss.type.name.capitalize()}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 2),
-              Text(formatDate(loss.createdAt),
-                  style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                '${loss.notes.isNotEmpty ? loss.notes : "No notes"} • ${DateFormat('MMM d, yyyy • h:mm a').format(loss.createdAt)}',
+                style: TextStyle(
+                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
       ),
     );
   }
 
-  Widget _buildTimelineRow(
-      BuildContext context, _TimelineItem item, List<Product> products) {
+  Widget _buildRefundRecordRow(BuildContext context, RefundRequest refund) {
     final theme = Theme.of(context);
-
-    final isShift = item.type == _TimelineType.shiftStart ||
-        item.type == _TimelineType.shiftEnd;
-    final isInquiry = item.type == _TimelineType.supplierInquiry;
+    final totalQty = refund.items.fold<int>(0, (sum, i) => sum + i.qty);
 
     return Card(
       elevation: 0,
@@ -1129,52 +1341,209 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
-        onTap: item.originalData is RestockInquiry
-            ? () => _showInquiryDetailModal(
-                context, item.originalData as RestockInquiry)
-            : (item.originalData is ShiftSession
-                ? () => _showShiftDetailModal(
-                    context, item.originalData as ShiftSession)
-                : (item.originalData is DeliveryLog
-                    ? () => _showDeliveryLogDetailModal(
-                        context, item.originalData as DeliveryLog, products)
-                    : null)),
+        onTap: () => _showRefundRecordDetailModal(context, refund),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: isInquiry
-                ? Colors.blue.shade800.withValues(alpha: 0.12)
-                : (item.type == _TimelineType.shiftStart
-                    ? Colors.amber.shade800.withValues(alpha: 0.12)
-                    : (item.type == _TimelineType.shiftEnd
-                        ? Colors.purple.shade800.withValues(alpha: 0.12)
-                        : (item.isPositive
-                            ? Colors.green.shade800.withValues(alpha: 0.12)
-                            : Colors.red.shade800.withValues(alpha: 0.12)))),
+            color: Colors.blue.shade700.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Icon(
-            isInquiry
-                ? Icons.mark_email_read_outlined
-                : (item.type == _TimelineType.shiftStart
-                    ? Icons.point_of_sale_rounded
-                    : (item.type == _TimelineType.shiftEnd
-                        ? Icons.lock_clock_rounded
-                        : (item.isPositive
-                            ? Icons.add_shopping_cart_rounded
-                            : Icons.remove_shopping_cart_rounded))),
-            color: isInquiry
-                ? Colors.blue.shade800
-                : (item.type == _TimelineType.shiftStart
-                    ? Colors.amber.shade800
-                    : (item.type == _TimelineType.shiftEnd
-                        ? Colors.purple.shade800
-                        : (item.isPositive
-                            ? Colors.green.shade800
-                            : Colors.red.shade800))),
-            size: 24,
+          child: Icon(Icons.published_with_changes_rounded,
+              color: Colors.blue.shade700, size: 24),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Refund #${refund.id.length >= 8 ? refund.id.substring(0, 8).toUpperCase() : refund.id}',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            Text(
+              '+$totalQty returned',
+              style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Colors.blue.shade700,
+                  fontSize: 14),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Refund Val: ${formatPeso(refund.total)} • Status: ${refund.status.name.toUpperCase()}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Customer: ${refund.customerName} • ${DateFormat('MMM d, yyyy • h:mm a').format(refund.createdAt)}',
+                style: TextStyle(
+                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
           ),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+      ),
+    );
+  }
+
+  Widget _buildAuditReconciliationRow(
+      BuildContext context, _AuditRecordWrapper audit) {
+    final theme = Theme.of(context);
+    final color = audit.isOverage ? Colors.teal.shade700 : Colors.amber.shade900;
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        onTap: () => _showAuditReconciliationDetailModal(context, audit),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(Icons.fact_check_rounded, color: color, size: 24),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                audit.productName,
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            Text(
+              '${audit.isOverage ? "+" : "-"}${audit.qty} units',
+              style: TextStyle(
+                  fontWeight: FontWeight.w900, color: color, fontSize: 14),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${audit.title} • Valuation: ${formatPeso(audit.cost)}',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Auditor: ${audit.auditor} • ${DateFormat('MMM d, yyyy • h:mm a').format(audit.timestamp)}',
+                style: TextStyle(
+                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+      ),
+    );
+  }
+
+  Widget _buildTimelineRow(
+      BuildContext context, _TimelineItem item, List<Product> products) {
+    final theme = Theme.of(context);
+
+    final isShift = item.type == _TimelineType.shiftStart ||
+        item.type == _TimelineType.shiftEnd;
+    final isInquiry = item.type == _TimelineType.supplierInquiry;
+    final isAudit = item.type == _TimelineType.audit;
+    final isSale = item.type == _TimelineType.sale;
+    final isRefund = item.type == _TimelineType.refund;
+
+    final IconData icon = isAudit
+        ? Icons.fact_check_rounded
+        : (isSale
+            ? Icons.shopping_cart_checkout_rounded
+            : (isRefund
+                ? Icons.published_with_changes_rounded
+                : (isInquiry
+                    ? Icons.mark_email_read_outlined
+                    : (item.type == _TimelineType.shiftStart
+                        ? Icons.point_of_sale_rounded
+                        : (item.type == _TimelineType.shiftEnd
+                            ? Icons.lock_clock_rounded
+                            : (item.isPositive
+                                ? Icons.move_to_inbox_rounded
+                                : Icons.remove_shopping_cart_rounded))))));
+
+    final Color color = isAudit
+        ? (item.isPositive ? Colors.teal.shade700 : Colors.amber.shade900)
+        : (isSale
+            ? Colors.orange.shade800
+            : (isRefund
+                ? Colors.blue.shade700
+                : (isInquiry
+                    ? Colors.blue.shade800
+                    : (item.type == _TimelineType.shiftStart
+                        ? Colors.amber.shade800
+                        : (item.type == _TimelineType.shiftEnd
+                            ? Colors.purple.shade800
+                            : (item.isPositive
+                                ? Colors.green.shade800
+                                : Colors.red.shade700))))));
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        onTap: () {
+          if (item.originalData is RestockInquiry) {
+            _showInquiryDetailModal(
+                context, item.originalData as RestockInquiry);
+          } else if (item.originalData is ShiftSession) {
+            _showShiftDetailModal(context, item.originalData as ShiftSession);
+          } else if (item.originalData is DeliveryLog) {
+            _showDeliveryLogDetailModal(
+                context, item.originalData as DeliveryLog, products);
+          } else if (item.originalData is StoreTransaction) {
+            _showSaleTransactionDetailModal(
+                context, item.originalData as StoreTransaction);
+          } else if (item.originalData is LossRecord) {
+            _showLossRecordDetailModal(
+                context, item.originalData as LossRecord);
+          } else if (item.originalData is RefundRequest) {
+            _showRefundRecordDetailModal(
+                context, item.originalData as RefundRequest);
+          }
+        },
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: color, size: 24),
         ),
         title: Row(
           children: [
@@ -1193,9 +1562,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     ? (item.type == _TimelineType.shiftStart
                         ? Colors.amber.shade800
                         : Colors.purple.shade800)
-                    : (item.isPositive
-                        ? Colors.green.shade800
-                        : Colors.red.shade800),
+                    : (item.isPositive ? Colors.green.shade800 : color),
                 fontSize: 14,
               ),
             ),
@@ -1237,7 +1604,6 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final isActive = shift.status == ShiftStatus.active;
     final isShort = shift.isShortage;
     final isOver = shift.isOverage;
-
     final totalSales = shift.cashSales;
 
     return Card(
@@ -1351,10 +1717,6 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       RestockInquiryStatus.cancelled => Colors.red.shade700,
     };
 
-    final itemsSummary = inquiry.items
-        .map((i) => '${i.productName} (${i.requestedQty} ${i.unit})')
-        .join(', ');
-
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
@@ -1411,22 +1773,15 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Inquiry #${inquiry.inquiryNumber} • Est. Value: ${formatPeso(inquiry.totalOrderedValue)}',
+                'Inquiry #${inquiry.inquiryNumber} • Val: ${formatPeso(inquiry.totalOrderedValue)}',
                 style:
                     const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 2),
               Text(
-                'Items (${inquiry.items.length}): $itemsSummary',
+                'Items: ${inquiry.items.length} requested • ${DateFormat('MMM d, yyyy').format(inquiry.sentAt ?? inquiry.createdAt)}',
                 style: TextStyle(
                     fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Sent/Created: ${DateFormat('MMM d, yyyy • h:mm a').format(inquiry.sentAt ?? inquiry.createdAt)}',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
           ),
@@ -1437,150 +1792,24 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
-  void _showInquiryDetailModal(BuildContext context, RestockInquiry inquiry) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade800.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(
-                    Icons.mark_email_read_outlined,
-                    color: Colors.blue.shade800,
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Supplier: ${inquiry.supplierName}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 18)),
-                      Text('Restock Inquiry #${inquiry.inquiryNumber}',
-                          style: TextStyle(
-                              color: Colors.grey.shade600, fontSize: 13)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            _detailRow('Inquiry Status', inquiry.status.name.toUpperCase(),
-                isBold: true, color: Colors.blue.shade800),
-            _detailRow('Supplier Name', inquiry.supplierName),
-            if (inquiry.supplierContact != null &&
-                inquiry.supplierContact!.isNotEmpty)
-              _detailRow('Supplier Contact', inquiry.supplierContact!),
-            _detailRow('Date Created',
-                DateFormat('MMM d, yyyy • h:mm a').format(inquiry.createdAt)),
-            if (inquiry.sentAt != null)
-              _detailRow('Date Sent',
-                  DateFormat('MMM d, yyyy • h:mm a').format(inquiry.sentAt!)),
-            _detailRow(
-                'Total Items Requested', '${inquiry.totalRequestedQty} units',
-                isBold: true),
-            _detailRow(
-                'Total Estimated Value', formatPeso(inquiry.totalOrderedValue),
-                isBold: true, color: GdcColors.primaryGreen),
-            const SizedBox(height: 16),
-            const Text('Requested Items Breakdown',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            const SizedBox(height: 8),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 200),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outlineVariant
-                        .withValues(alpha: 0.3)),
-              ),
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.all(12),
-                itemCount: inquiry.items.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (ctx, i) {
-                  final item = inquiry.items[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.productName,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13)),
-                              Text('Unit Cost: ${formatPeso(item.costPrice)}',
-                                  style: const TextStyle(
-                                      fontSize: 11, color: Colors.grey)),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          '${item.requestedQty} ${item.unit}',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Theme.of(context).colorScheme.primary),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
+  // ── Detail Modals ──────────────────────────────────────────────────────────
 
   void _showDeliveryLogDetailModal(
       BuildContext context, DeliveryLog log, List<Product> products) {
-    Product? matchedProduct;
+    Product? linkedProduct;
     try {
-      matchedProduct = products.firstWhere((p) => p.id == log.productId);
+      linkedProduct = products.firstWhere((p) => p.id == log.productId);
     } catch (_) {}
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1604,43 +1833,46 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     color: Colors.green.shade800.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(Icons.local_shipping_rounded,
+                  child: Icon(Icons.move_to_inbox_rounded,
                       color: Colors.green.shade800, size: 28),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(log.productName,
                           style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 18)),
-                      Text('Stock Delivery Record',
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      Text('Stock Delivery Arrival Entry',
                           style: TextStyle(
-                              color: Colors.grey.shade600, fontSize: 13)),
+                              fontSize: 12,
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
                     ],
                   ),
                 ),
               ],
             ),
-            const Divider(height: 32),
-            _detailRow('Quantity Received', '+${log.qtyReceived} units',
-                isBold: true),
-            _detailRow('Unit Cost (COGS)', formatPeso(log.unitCost)),
-            _detailRow('Total Delivery Value', formatPeso(log.totalValue),
-                isBold: true, color: GdcColors.primaryGreen),
-            _detailRow('Invoice Number', log.invoiceNumber ?? 'Not specified'),
-            _detailRow(
-                'Expiration Date',
-                log.expiryDate != null
-                    ? DateFormat('MMM d, yyyy').format(log.expiryDate!)
-                    : 'No expiration date'),
+            const Divider(height: 28),
+            _detailRow('Quantity Received', '+${log.qtyReceived} units'),
+            _detailRow('Unit Cost Price', formatPeso(log.unitCost)),
+            _detailRow('Total Valuation', formatPeso(log.totalValue)),
             _detailRow('Received By', log.receivedBy),
-            _detailRow('Date & Time', formatDate(log.createdAt)),
+            _detailRow('Invoice / DR Number', log.invoiceNumber ?? 'N/A'),
+            _detailRow(
+                'Received Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                    .format(log.createdAt)),
+            if (log.expiryDate != null)
+              _detailRow('Expiry Date',
+                  DateFormat('MMM d, yyyy').format(log.expiryDate!)),
             if (log.notes != null && log.notes!.isNotEmpty)
-              _detailRow('Notes', log.notes!),
+              _detailRow('Notes / Discrepancies', log.notes!),
             const SizedBox(height: 20),
-            if (matchedProduct != null)
+            if (linkedProduct != null)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -1649,16 +1881,14 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            ProductDetailScreen(product: matchedProduct!),
+                        builder: (_) => ProductDetailScreen(
+                            product: linkedProduct!),
                       ),
                     );
                   },
                   icon: const Icon(Icons.inventory_2_outlined),
-                  label: const Text('View Product Stock & Batches'),
+                  label: const Text('View Product Profile'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: GdcColors.primaryGreen,
-                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
@@ -1671,17 +1901,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
-  void _showShiftDetailModal(BuildContext context, ShiftSession shift) {
-    final isActive = shift.status == ShiftStatus.active;
-    final totalSales = shift.cashSales;
-    final variance = shift.cashDifference;
-
+  void _showSaleTransactionDetailModal(
+      BuildContext context, StoreTransaction tx) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1702,225 +1932,442 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: isActive
-                        ? Colors.amber.shade800.withValues(alpha: 0.12)
-                        : Colors.purple.shade800.withValues(alpha: 0.12),
+                    color: Colors.orange.shade800.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(
-                    isActive
-                        ? Icons.point_of_sale_rounded
-                        : Icons.lock_clock_rounded,
-                    color: isActive
-                        ? Colors.amber.shade800
-                        : Colors.purple.shade800,
-                    size: 28,
-                  ),
+                  child: Icon(Icons.shopping_cart_checkout_rounded,
+                      color: Colors.orange.shade800, size: 28),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Shift: ${shift.cashierName}',
+                      Text('Sale Tx #${tx.id.length >= 8 ? tx.id.substring(0, 8).toUpperCase() : tx.id}',
                           style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 18)),
-                      Text(
-                        isActive
-                            ? 'Active Cashier Register Shift'
-                            : 'Closed Register Shift Session',
-                        style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 13),
-                      ),
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      const Text('POS / Checkout Stock Depletion Record',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
               ],
             ),
-            const Divider(height: 32),
-            _detailRow('Cashier Name', shift.cashierName, isBold: true),
-            _detailRow('Session Status', isActive ? 'ACTIVE SHIFT' : 'CLOSED',
-                color:
-                    isActive ? Colors.amber.shade800 : Colors.purple.shade800),
-            _detailRow('Opened At',
-                DateFormat('MMM d, yyyy • h:mm a').format(shift.openedAt)),
-            if (shift.closedAt != null)
-              _detailRow('Closed At',
-                  DateFormat('MMM d, yyyy • h:mm a').format(shift.closedAt!)),
-            _detailRow('Opening Float', formatPeso(shift.openingFloat)),
-            _detailRow('Cash Sales', formatPeso(shift.cashSales)),
-            _detailRow('Total Shift Sales', formatPeso(totalSales),
-                isBold: true),
-            if (shift.totalCashDrops > 0)
-              _detailRow('Mid-Shift Cash Drops',
-                  '-${formatPeso(shift.totalCashDrops)}',
-                  color: Colors.orange.shade800),
-            _detailRow('Expected Cash Drawer', formatPeso(shift.expectedCash)),
-            if (shift.actualCashCounted != null)
-              _detailRow(
-                  'Actual Cash Counted', formatPeso(shift.actualCashCounted!),
-                  isBold: true),
-            if (!isActive && shift.actualCashCounted != null)
-              _detailRow(
-                'Drawer Variance',
-                variance == 0
-                    ? '₱0.00 (Balanced)'
-                    : (variance > 0
-                        ? '+${formatPeso(variance)} (Overage)'
-                        : '-${formatPeso(variance.abs())} (Shortage)'),
-                isBold: true,
-                color: variance == 0
-                    ? Colors.green.shade800
-                    : (variance > 0
-                        ? Colors.blue.shade800
-                        : Colors.red.shade800),
-              ),
-            const SizedBox(height: 20),
+            const Divider(height: 28),
+            _detailRow('Transaction Total', formatPeso(tx.total)),
+            _detailRow('Payment Method', tx.paymentMethod.name.toUpperCase()),
+            _detailRow('Cash Tendered', formatPeso(tx.cashTendered)),
+            _detailRow('Change Given', formatPeso(tx.changeGiven)),
+            _detailRow('Customer Email', tx.customerEmail ?? 'Walk-in Customer'),
+            _detailRow('Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(tx.createdAt)),
+            const SizedBox(height: 12),
+            const Text('Line Items Sold:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            ...tx.items.map((i) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${i.name} (x${i.qty})',
+                          style: const TextStyle(fontSize: 13)),
+                      Text(formatPeso(i.price * i.qty),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                )),
           ],
         ),
       ),
     );
   }
 
-  Widget _detailRow(String label, String value,
-      {bool isBold = false, Color? color}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label,
-              style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500)),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: TextStyle(
-                fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                fontSize: isBold ? 14 : 13,
-                color: color,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRefundRecordRow(
-      BuildContext context, Map<String, dynamic> log) {
-    final theme = Theme.of(context);
-    final dateStr = DateFormat('MMM d, yyyy • h:mm a')
-        .format(log['refundedAt'] as DateTime);
-    final items = (log['items'] as List? ?? []);
-
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+  void _showLossRecordDetailModal(BuildContext context, LossRecord loss) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.published_with_changes_rounded,
-                          color: Colors.red, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Refund Receipt #${(log['transactionId']?.toString() ?? '').toUpperCase()}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        Text(
-                          dateStr,
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade100,
-                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.red.shade700.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Text(
-                    formatPeso(log['totalAmount'] as double? ?? 0.0),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.red.shade900,
-                    ),
+                  child: Icon(Icons.remove_shopping_cart_rounded,
+                      color: Colors.red.shade700, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(loss.productName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      const Text('Inventory Write-off / Loss Log',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-
-            Text(
-              'Customer: ${(log['customerEmail']?.toString() ?? '').isNotEmpty ? log['customerEmail'] : "Walk-in"} • Processed By: ${log['processedBy']}',
-              style: TextStyle(
-                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-
-            ...items.map((raw) {
-              final m = raw is Map ? raw : {};
-              final qty = (m['qty'] as num? ?? 1).toInt();
-              final name = m['name']?.toString() ?? 'Item';
-              final price = (m['price'] as num? ?? 0.0).toDouble();
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '• ${qty}x $name',
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      formatPeso(price * qty),
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.red.shade900),
-                    ),
-                  ],
-                ),
-              );
-            }),
+            const Divider(height: 28),
+            _detailRow('Quantity Written Off', '-${loss.qty} units'),
+            _detailRow('Unit Valuation', formatPeso(loss.unitPrice)),
+            _detailRow('Total Loss Cost', formatPeso(loss.totalLoss)),
+            _detailRow('Loss Category', loss.type.name.capitalize()),
+            _detailRow('Processed By', loss.processedBy ?? 'System / Staff'),
+            _detailRow('Notes / Reason',
+                loss.notes.isNotEmpty ? loss.notes : 'No extra notes'),
+            _detailRow('Logged Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(loss.createdAt)),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showRefundRecordDetailModal(
+      BuildContext context, RefundRequest refund) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade700.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(Icons.published_with_changes_rounded,
+                      color: Colors.blue.shade700, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Refund #${refund.id.length >= 8 ? refund.id.substring(0, 8).toUpperCase() : refund.id}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      const Text('Customer Return & Inventory Stock Return',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            _detailRow('Refund Total', formatPeso(refund.total)),
+            _detailRow('Status', refund.status.name.toUpperCase()),
+            _detailRow('Customer Name', refund.customerName),
+            _detailRow('Customer Email', refund.customerEmail),
+            _detailRow('Reason', refund.reason),
+            _detailRow('Processed By', refund.processedByEmail ?? 'Admin'),
+            _detailRow('Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(refund.createdAt)),
+            const SizedBox(height: 12),
+            const Text('Returned Items:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            ...refund.items.map((i) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${i.name} (x${i.qty})',
+                          style: const TextStyle(fontSize: 13)),
+                      Text(formatPeso(i.price * i.qty),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showShiftDetailModal(BuildContext context, ShiftSession shift) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade800.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(Icons.point_of_sale_rounded,
+                      color: Colors.purple.shade800, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Cashier Shift: ${shift.cashierName}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      Text(
+                          'Session Status: ${shift.status == ShiftStatus.active ? "Active" : "Closed"}',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            _detailRow('Opening Float', formatPeso(shift.openingFloat)),
+            _detailRow('Cash Sales Recorded', formatPeso(shift.cashSales)),
+            _detailRow('Actual Cash Counted',
+                formatPeso(shift.actualCashCounted ?? 0)),
+            _detailRow('Cash Difference / Variance',
+                formatPeso(shift.cashDifference)),
+            _detailRow('Opened At',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(shift.openedAt)),
+            if (shift.closedAt != null)
+              _detailRow('Closed At',
+                  DateFormat('EEEE, MMM d, yyyy • h:mm a').format(shift.closedAt!)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showInquiryDetailModal(BuildContext context, RestockInquiry inquiry) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade800.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(Icons.mark_email_read_outlined,
+                      color: Colors.blue.shade800, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Supplier: ${inquiry.supplierName}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      Text('Request for Quotation (RFQ) #${inquiry.inquiryNumber}',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            _detailRow('Status', inquiry.status.name.toUpperCase()),
+            _detailRow('Total Ordered Value',
+                formatPeso(inquiry.totalOrderedValue)),
+            _detailRow('Total Items Requested', '${inquiry.totalRequestedQty}'),
+            _detailRow('Date Created',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(inquiry.createdAt)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAuditReconciliationDetailModal(
+      BuildContext context, _AuditRecordWrapper audit) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (audit.isOverage
+                            ? Colors.teal.shade700
+                            : Colors.amber.shade900)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(Icons.fact_check_rounded,
+                      color: audit.isOverage
+                          ? Colors.teal.shade700
+                          : Colors.amber.shade900,
+                      size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(audit.productName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 2),
+                      Text(audit.title,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            _detailRow('Discrepancy Quantity',
+                '${audit.isOverage ? "+" : "-"}${audit.qty} units'),
+            _detailRow('Audit Valuation', formatPeso(audit.cost)),
+            _detailRow('Auditor / Staff', audit.auditor),
+            _detailRow('Discrepancy Notes', audit.notes),
+            _detailRow('Audit Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(audit.timestamp)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(fontSize: 13, color: Colors.grey)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1933,7 +2380,40 @@ class _BatchRecordWrapper {
   _BatchRecordWrapper({required this.product, required this.batch});
 }
 
-enum _TimelineType { delivery, loss, shiftStart, shiftEnd, supplierInquiry }
+class _AuditRecordWrapper {
+  final String title;
+  final String productName;
+  final int qty;
+  final bool isOverage;
+  final double cost;
+  final String notes;
+  final String auditor;
+  final DateTime timestamp;
+  final dynamic originalData;
+
+  _AuditRecordWrapper({
+    required this.title,
+    required this.productName,
+    required this.qty,
+    required this.isOverage,
+    required this.cost,
+    required this.notes,
+    required this.auditor,
+    required this.timestamp,
+    required this.originalData,
+  });
+}
+
+enum _TimelineType {
+  delivery,
+  sale,
+  loss,
+  refund,
+  shiftStart,
+  shiftEnd,
+  supplierInquiry,
+  audit
+}
 
 class _TimelineItem {
   final String title;

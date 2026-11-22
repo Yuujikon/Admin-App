@@ -17,6 +17,7 @@ import '../widgets/restock_inquiry_sheet.dart';
 import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/add_product_sheet.dart';
 import '../widgets/product_edit_sheet.dart';
+import '../widgets/rfq_builder_sheet.dart';
 
 class SupplierDetailScreen extends StatefulWidget {
   final Supplier supplier;
@@ -255,6 +256,25 @@ class _OverviewTab extends StatelessWidget {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      RfqBuilderSheet.show(
+                        context: context,
+                        initialSupplier: supplier,
+                      );
+                    },
+                    icon: const Icon(Icons.request_quote_rounded, size: 16),
+                    label: const Text('Create RFQ',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade800,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ],
@@ -1284,7 +1304,7 @@ class _RestockTabState extends State<_RestockTab> {
                 );
               },
               icon: const Icon(Icons.description_outlined),
-              label: const Text('GENERATE & SHARE SUPPLIER RESTOCK ORDER'),
+              label: const Text('GENERATE & SHARE REQUEST FOR QUOTATION (RFQ)'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
@@ -1304,7 +1324,7 @@ class _RestockTabState extends State<_RestockTab> {
     String adminName,
   ) {
     final buffer =
-        StringBuffer('[GDC SARI-SARI STORE] SUPPLIER RESTOCK ORDER\n');
+        StringBuffer('[GDC SARI-SARI STORE] REQUEST FOR QUOTATION (RFQ) & RESTOCK ORDER\n');
     buffer.writeln('Supplier: ${supplier.name}');
     if (supplier.contactName.isNotEmpty) {
       buffer.writeln('Contact Person: ${supplier.contactName}');
@@ -1312,7 +1332,7 @@ class _RestockTabState extends State<_RestockTab> {
     buffer.writeln('Phone: ${supplier.phone}');
     buffer.writeln('Date: ${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
     buffer.writeln('----------------------------------------');
-    buffer.writeln('Requested Supply Items:');
+    buffer.writeln('Requested Supply Items (RFQ):');
 
     double totalEstimatedCost = 0;
 
@@ -1339,6 +1359,7 @@ class _RestockTabState extends State<_RestockTab> {
 
     buffer.writeln('----------------------------------------');
     buffer.writeln('Estimated Supply Total: ${formatPeso(totalEstimatedCost)}');
+    buffer.writeln('Please provide price quotation and delivery lead time.');
     buffer.writeln('Authorized By: $adminName');
 
     final poText = buffer.toString();
@@ -1347,7 +1368,7 @@ class _RestockTabState extends State<_RestockTab> {
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('Supplier Restock Order Summary'),
+        title: const Text('Request for Quotation (RFQ) Summary'),
         content: Container(
           width: 480,
           constraints: const BoxConstraints(maxWidth: 480),
@@ -1387,12 +1408,12 @@ class _RestockTabState extends State<_RestockTab> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text(
-                          'Supplier Restock Order copied to clipboard! 📋')),
+                          'Request for Quotation (RFQ) copied to clipboard! 📋')),
                 );
               }
             },
             icon: const Icon(Icons.copy_rounded, size: 16),
-            label: const Text('Copy Restock Order'),
+            label: const Text('Copy RFQ Order'),
           ),
           ElevatedButton.icon(
             onPressed: () async {
@@ -1406,12 +1427,12 @@ class _RestockTabState extends State<_RestockTab> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text(
-                          'Restock Order copied to clipboard! Paste directly into messaging app.')),
+                          'RFQ details copied to clipboard! Paste directly into messaging app.')),
                 );
               }
             },
             icon: const Icon(Icons.send_rounded, size: 16),
-            label: const Text('Share via SMS'),
+            label: const Text('Share RFQ via SMS'),
           ),
         ],
       ),
@@ -2117,9 +2138,13 @@ void showEmailSetupGuideDialog(BuildContext context,
 void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
     {bool updateStatus = true}) async {
   final inventory = context.read<InventoryProvider>();
-  final buffer = StringBuffer('Dear ${inquiry.supplierName},\n\n');
+  final buffer = StringBuffer('REQUEST FOR QUOTATION (RFQ)\n');
+  buffer.writeln('RFQ Reference No: ${inquiry.inquiryNumber}');
+  buffer.writeln('Date: ${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
+  buffer.writeln('Supplier: ${inquiry.supplierName}\n');
+  buffer.writeln('Dear ${inquiry.supplierName},\n');
   buffer.writeln(
-      'Good day! We would like to request a restock for the following items:\n');
+      'Good day! Please treat this message as our formal Request for Quotation (RFQ) / Restock Request for the following items:\n');
   for (final item in inquiry.items) {
     buffer.writeln('• ${item.productName} (SKU: ${item.sku})');
     Product? prod;
@@ -2148,22 +2173,16 @@ void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
     }
     buffer.writeln('');
   }
-  buffer.writeln('\nReference Number: ${inquiry.inquiryNumber}');
-  buffer.writeln(
-      'Please let us know the total amount and estimated delivery date. Thank you!\n\nBest regards,\nGDC Sari-Sari Store');
+  buffer.writeln('Please provide your official price quotation (unit cost, total price, applicable bulk discounts) and estimated delivery lead time.');
+  buffer.writeln('\nThank you!\n\nBest regards,\nGDC Sari-Sari Store');
 
   final body = buffer.toString();
-  final subject = 'Restock Request: ${inquiry.inquiryNumber}';
-  final email = inquiry.supplierContact ?? '';
+  final subject = 'Request for Quotation (RFQ) #${inquiry.inquiryNumber} - GDC Sari-Sari Store';
+  final email = (inquiry.supplierContact ?? '').trim();
 
-  final Uri mailtoUri = Uri(
-    scheme: 'mailto',
-    path: email,
-    queryParameters: {
-      'subject': subject,
-      'body': body,
-    },
-  );
+  final String mailtoUrl =
+      'mailto:$email?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(body)}';
+  final Uri mailtoUri = Uri.parse(mailtoUrl);
 
   bool launched = false;
   try {
@@ -2204,9 +2223,10 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
   }
 
   final inventory = context.read<InventoryProvider>();
-  final buffer = StringBuffer('Hello ${inquiry.supplierName},\n\n');
+  final buffer = StringBuffer('[REQUEST FOR QUOTATION (RFQ)]\n');
+  buffer.writeln('Hello ${inquiry.supplierName},\n');
   buffer.writeln(
-      'This is GDC Store regarding Restock Supply Inquiry #${inquiry.inquiryNumber}.\n');
+      'This is GDC Store sending Request for Quotation (RFQ) #${inquiry.inquiryNumber}.\n');
   buffer.writeln('Requested supply items:');
   for (final item in inquiry.items) {
     Product? prod;
@@ -2234,7 +2254,7 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
     }
   }
   buffer
-      .writeln('\nPlease confirm supply availability and pricing. Thank you!');
+      .writeln('\nPlease reply with your unit price quotation & stock availability. Thank you!');
 
   final msg = buffer.toString();
   final smsUrl = 'sms:$phone?body=${Uri.encodeComponent(msg)}';
@@ -2255,7 +2275,7 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                'SMS details copied to clipboard. Inquiry #${inquiry.inquiryNumber} recorded as Sent.'),
+                'RFQ SMS details copied to clipboard. Inquiry #${inquiry.inquiryNumber} recorded as Sent.'),
           ),
         );
       }
@@ -2270,7 +2290,7 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(
-                'Error launching SMS app. Inquiry #${inquiry.inquiryNumber} recorded as Sent.')),
+                'Error launching SMS app. RFQ #${inquiry.inquiryNumber} recorded as Sent.')),
       );
     }
   }

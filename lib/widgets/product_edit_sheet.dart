@@ -23,6 +23,7 @@ import 'premium_components.dart';
 import '../config/theme.dart';
 import '../services/external_barcode_service.dart';
 import '../utils/barcode_generator.dart';
+import 'action_warning_dialog.dart';
 import '../utils/pricing_engine.dart';
 
 class ProductEditSheet extends StatefulWidget {
@@ -636,6 +637,63 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _price.text = suggested.toStringAsFixed(2);
       _isCalculatingPrice = false;
     }
+  }
+
+  Widget _buildBelowCostWarningBanner() {
+    final boxPrice = double.tryParse(_boxPriceCtrl.text) ?? 0.0;
+    final itemsPerBox = int.tryParse(_itemsPerBoxCtrl.text) ?? 0;
+    final costPrice = double.tryParse(_costPrice.text) ?? 0.0;
+    final double calculatedUnitCost = (boxPrice > 0 && itemsPerBox > 0)
+        ? (boxPrice / itemsPerBox)
+        : costPrice;
+    final double sellingPrice = double.tryParse(_price.text) ?? 0.0;
+
+    if (sellingPrice <= 0 || calculatedUnitCost <= 0 || sellingPrice >= calculatedUnitCost) {
+      return const SizedBox.shrink();
+    }
+
+    final double unitLoss = calculatedUnitCost - sellingPrice;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade500.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amber.shade700, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.amber.shade800, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Selling Price Below Calculated Cost',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber.shade900,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Selling price (${formatPeso(sellingPrice)}) is below calculated unit cost (${formatPeso(calculatedUnitCost)}). Every unit sold will incur a loss of ${formatPeso(unitLoss)}.',
+                  style: TextStyle(
+                    color: Colors.amber.shade900,
+                    fontSize: 11,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onNameOrBrandChanged() {
@@ -1470,6 +1528,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                 ),
                               ],
                             ),
+                            _buildBelowCostWarningBanner(),
                             const SizedBox(height: 10),
 
                             // Initial Quantity (Base Units)
@@ -2416,32 +2475,33 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     }
   }
 
-  void _confirmDelete(BuildContext context) {
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Product?'),
-        content: Text(
-            'Are you sure you want to remove "${_activeProduct?.name}" from your inventory? This cannot be undone.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () async {
-              if (_activeProduct != null) {
-                await context
-                    .read<InventoryProvider>()
-                    .deleteProduct(_activeProduct!.id);
-              }
-              if (ctx.mounted) Navigator.pop(ctx);
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+  void _confirmDelete(BuildContext context) async {
+    final productName = _activeProduct?.name ?? 'this product';
+    final confirm = await ActionWarningDialog.show(
+      context,
+      title: 'Delete Product?',
+      message:
+          'Are you sure you want to permanently remove "$productName" from your inventory database?',
+      confirmLabel: 'Delete Product',
+      cancelLabel: 'Cancel',
+      severity: ActionWarningSeverity.danger,
+      icon: Icons.delete_forever_rounded,
+      requireCheckbox: true,
+      checkboxLabel: 'I understand this action cannot be undone.',
+      details: [
+        'Product name: $productName',
+        'All associated inventory logs and product records will be removed.',
+      ],
     );
+
+    if (confirm && context.mounted) {
+      if (_activeProduct != null) {
+        await context
+            .read<InventoryProvider>()
+            .deleteProduct(_activeProduct!.id);
+      }
+      if (context.mounted) Navigator.pop(context);
+    }
   }
 
   Future<void> _saveProductForm() async {
@@ -2538,6 +2598,44 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
     if (barcode.isEmpty) {
       barcode = BarcodeGenerator.generateInternalBarcode();
+    }
+
+    final boxPrice = double.tryParse(_boxPriceCtrl.text) ?? 0.0;
+    final itemsPerBox = int.tryParse(_itemsPerBoxCtrl.text) ?? 0;
+    final double calculatedUnitCost = (boxPrice > 0 && itemsPerBox > 0)
+        ? (boxPrice / itemsPerBox)
+        : costPrice;
+
+    final List<String> belowCostDetails = [];
+    if (price > 0 && calculatedUnitCost > 0 && price < calculatedUnitCost) {
+      final loss = calculatedUnitCost - price;
+      belowCostDetails.add(
+        'Base Item "$name": Selling ${formatPeso(price)} vs Cost ${formatPeso(calculatedUnitCost)} (Loss: ${formatPeso(loss)}/unit)',
+      );
+    }
+    for (final v in _variants) {
+      final vCost = v.costPrice > 0 ? v.costPrice : calculatedUnitCost;
+      if (v.price > 0 && vCost > 0 && v.price < vCost) {
+        final loss = vCost - v.price;
+        belowCostDetails.add(
+          'Variant "${v.name}": Selling ${formatPeso(v.price)} vs Cost ${formatPeso(vCost)} (Loss: ${formatPeso(loss)}/unit)',
+        );
+      }
+    }
+
+    if (belowCostDetails.isNotEmpty) {
+      final confirm = await ActionWarningDialog.show(
+        context,
+        title: 'Selling Price Below Calculated Cost',
+        message:
+            'One or more prices for "$name" are set below their calculated unit cost. Saving these prices will result in financial loss on sales. Are you sure you want to proceed?',
+        confirmLabel: 'Save Anyway',
+        cancelLabel: 'Edit Price',
+        severity: ActionWarningSeverity.warning,
+        icon: Icons.trending_down_rounded,
+        details: belowCostDetails,
+      );
+      if (!confirm) return;
     }
 
     setState(() => _saving = true);
@@ -2650,14 +2748,25 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
       if (mounted) {
         navigator.pop();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-                'Saved "$name" ($initialQty $unit) straight to Inventory History! ✅'),
-            backgroundColor: Colors.green.shade800,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (belowCostDetails.isNotEmpty) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                  '⚠️ Saved "$name" with selling price(s) below calculated cost.'),
+              backgroundColor: Colors.amber.shade900,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Saved "$name" ($initialQty $unit) straight to Inventory History! ✅'),
+              backgroundColor: Colors.green.shade800,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

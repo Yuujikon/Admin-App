@@ -16,7 +16,7 @@ class _ExpiringBatchItem {
   });
 }
 
-/// Standalone Material 3 Dashboard Widget for FEFO (First Expire, First Out) Batch Expiration Alerts
+/// Standalone Material 3 Dashboard Widget for Batch Expiration Alerts (FIFO Inventory)
 class BatchExpirationWidget extends StatelessWidget {
   const BatchExpirationWidget({super.key});
 
@@ -85,7 +85,7 @@ class BatchExpirationWidget extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '⚠️ FEFO Batch Expiration Warnings (< 30 Days)',
+                    '⚠️ Batch Expiration Warnings (< 30 Days)',
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 14,

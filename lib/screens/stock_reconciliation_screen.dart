@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import '../models/product.dart';
 import '../models/loss_record.dart';
 import '../providers/inventory_provider.dart';
+import '../services/firestore_service.dart';
 import '../utils/format.dart';
 import '../widgets/premium_components.dart';
+import '../widgets/action_warning_dialog.dart';
 
 class StockReconciliationScreen extends StatefulWidget {
   final Product? initialProduct;
@@ -349,12 +351,7 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
 
   Widget _buildBatchesAuditList(Product p) {
     final batches = List<ProductBatch>.from(p.batches);
-    batches.sort((a, b) {
-      if (a.expiryDate != null && b.expiryDate != null) {
-        return a.expiryDate!.compareTo(b.expiryDate!);
-      }
-      return a.createdAt.compareTo(b.createdAt);
-    });
+    batches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     if (batches.isEmpty) {
       return const PremiumEmptyState(
@@ -368,7 +365,7 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Active Batches (FEFO Sorted)',
+          'Active Batches (FIFO Sorted)',
           style: Theme.of(context)
               .textTheme
               .titleMedium
@@ -520,6 +517,35 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
 
   Future<void> _reconcileStock(
       Product product, InventoryProvider inventory) async {
+    int previewNetAdj = 0;
+    for (var b in product.batches) {
+      final ctrl = _batchCountControllers[b.id];
+      final newQty = int.tryParse(ctrl?.text ?? '') ?? b.quantity;
+      previewNetAdj += (newQty - b.quantity);
+    }
+
+    final confirm = await ActionWarningDialog.show(
+      context,
+      title: 'Confirm Stock Reconciliation?',
+      message:
+          'You are about to adjust stock for "${product.name}" by ${previewNetAdj > 0 ? '+' : ''}$previewNetAdj ${product.unit}.',
+      confirmLabel: 'Reconcile Stock',
+      cancelLabel: 'Cancel',
+      severity: previewNetAdj < 0
+          ? ActionWarningSeverity.danger
+          : ActionWarningSeverity.warning,
+      icon: Icons.inventory_2_rounded,
+      details: [
+        'Product: ${product.name}',
+        'Current Total Stock: ${product.stock} ${product.unit}',
+        'New Stock Level: ${product.stock + previewNetAdj} ${product.unit}',
+        if (previewNetAdj < 0)
+          'Discrepancy shortage of ${previewNetAdj.abs()} will be logged as inventory loss.',
+      ],
+    );
+
+    if (!confirm) return;
+
     setState(() => _isProcessing = true);
 
     try {
@@ -548,6 +574,19 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                   'Audit Discrepancy Reconciliation on Batch #${b.id.length >= 8 ? b.id.substring(0, 8) : b.id}',
               createdAt: DateTime.now(),
             ));
+          } else if (diff > 0) {
+            // If discrepancy (overage/surplus), log a DeliveryLog / Stock arrival record
+            await FirestoreService().logStockArrival(
+              productId: product.id,
+              productName: product.name,
+              qtyReceived: diff,
+              unitCost: b.unitCost > 0 ? b.unitCost : product.costPrice,
+              expiryDate: b.expiryDate,
+              invoiceNumber: b.invoiceNumber,
+              receivedBy: 'Shelf Audit (Overage)',
+              notes:
+                  'Audit Discrepancy Overage Adjustment on Batch #${b.id.length >= 8 ? b.id.substring(0, 8) : b.id}',
+            );
           }
         }
 

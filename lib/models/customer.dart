@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../shared/services/time_service.dart';
 
 /// Customer profile data model supporting ghosting offense escalation and account restriction management.
 class Customer {
@@ -76,7 +77,7 @@ class Customer {
       totalSpent: (map['totalSpent'] ?? 0).toDouble(),
       lastVisit: (map['lastVisit'] as Timestamp?)?.toDate(),
       notes: map['notes'] ?? '',
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? TimeService.now,
       offenseCount: (map['offenseCount'] as num? ?? 0).toInt(),
       restrictedUntil: (map['restrictedUntil'] as Timestamp?)?.toDate(),
       isPermanentlyLocked: map['isPermanentlyLocked'] ?? false,
@@ -116,7 +117,7 @@ class Customer {
   bool get isRestricted {
     if (isPermanentlyLocked) return true;
     if (restrictedUntil == null) return false;
-    return restrictedUntil!.isAfter(DateTime.now());
+    return restrictedUntil!.isAfter(TimeService.now);
   }
 
   /// Calculates restriction penalty duration in hours for a given offense level.

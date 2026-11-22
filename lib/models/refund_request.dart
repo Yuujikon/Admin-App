@@ -80,9 +80,14 @@ class RefundRequest {
 
     RefundCondition? condition;
     if (d['condition'] != null) {
-      try {
-        condition = RefundCondition.values.byName(d['condition']);
-      } catch (_) {}
+      final cStr = d['condition'].toString();
+      if (cStr == 'good' || cStr == 'restockable') {
+        condition = RefundCondition.restockable;
+      } else {
+        try {
+          condition = RefundCondition.values.byName(cStr);
+        } catch (_) {}
+      }
     }
 
     return RefundRequest(

@@ -8,6 +8,8 @@ import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../utils/email_validator.dart';
 import '../widgets/responsive_layout.dart';
+import '../widgets/action_warning_dialog.dart';
+import '../services/audit_log_service.dart';
 
 class UserManagementScreen extends StatelessWidget {
   const UserManagementScreen({super.key});
@@ -655,19 +657,28 @@ class UserManagementScreen extends StatelessWidget {
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
               ),
-              onPressed: () {
-                FirebaseFirestore.instance.collection('users').doc(id).update({
+              onPressed: () async {
+                await FirebaseFirestore.instance.collection('users').doc(id).update({
                   'role': selectedRole,
                   'status': 'approved',
                   'isDisabled': false,
                   'approvedAt': FieldValue.serverTimestamp(),
                 });
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(
-                          'Approved $name ($email) as ${_getRoleLabel(selectedRole)}!')),
+                await AuditLogService().logAction(
+                  module: 'Users',
+                  action: 'ROLE_UPDATE',
+                  targetId: id,
+                  targetName: email,
+                  summary: 'Approved and granted role ${selectedRole}',
                 );
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            'Approved $name ($email) as ${_getRoleLabel(selectedRole)}!')),
+                  );
+                }
               },
               child: const Text('APPROVE & GRANT ACCESS'),
             ),
@@ -678,39 +689,44 @@ class UserManagementScreen extends StatelessWidget {
   }
 
   void _confirmDeny(
-      BuildContext context, String id, String name, String email) {
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Deny Registration Request?'),
-        content: Text(
-            'Are you sure you want to deny $name ($email)? They will be blocked from accessing the staff portal.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () {
-              FirebaseFirestore.instance.collection('users').doc(id).update({
-                'status': 'denied',
-                'role': 'none',
-                'isDisabled': true,
-                'deniedAt': FieldValue.serverTimestamp(),
-              });
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content:
-                        Text('Denied $name ($email) registration request.')),
-              );
-            },
-            child: const Text('DENY REQUEST'),
-          ),
-        ],
-      ),
+      BuildContext context, String id, String name, String email) async {
+    final confirm = await ActionWarningDialog.show(
+      context,
+      title: 'Deny Registration Request?',
+      message:
+          'Are you sure you want to deny $name ($email)? They will be blocked from accessing the staff portal.',
+      confirmLabel: 'Deny Request',
+      cancelLabel: 'Cancel',
+      severity: ActionWarningSeverity.danger,
+      icon: Icons.block_rounded,
+      details: [
+        'User: $name',
+        'Email: $email',
+        'Status will change to denied and account disabled.',
+      ],
     );
+
+    if (confirm) {
+      await FirebaseFirestore.instance.collection('users').doc(id).update({
+        'status': 'denied',
+        'role': 'none',
+        'isDisabled': true,
+        'deniedAt': FieldValue.serverTimestamp(),
+      });
+      await AuditLogService().logAction(
+        module: 'Users',
+        action: 'DENY_ACCESS',
+        targetId: id,
+        targetName: email,
+        summary: 'Denied access request',
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Denied $name ($email) registration request.')),
+        );
+      }
+    }
   }
 
   void _showEditRoleDialog(BuildContext context, String id, String name,
@@ -797,17 +813,26 @@ class UserManagementScreen extends StatelessWidget {
                   }
                 }
 
-                FirebaseFirestore.instance.collection('users').doc(id).update({
+                await FirebaseFirestore.instance.collection('users').doc(id).update({
                   'role': selected,
                   'status': 'approved',
                   'isDisabled': false,
                 });
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(
-                          'Updated $name ($email) role to ${_getRoleLabel(selected)}')),
+                await AuditLogService().logAction(
+                  module: 'Users',
+                  action: 'ROLE_UPDATE',
+                  targetId: id,
+                  targetName: email,
+                  summary: 'Updated role to ${selected}',
                 );
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            'Updated $name ($email) role to ${_getRoleLabel(selected)}')),
+                  );
+                }
               },
               child: const Text('UPDATE ROLE'),
             ),
@@ -947,7 +972,16 @@ class UserManagementScreen extends StatelessWidget {
                 'role': 'disabled',
                 'disabledAt': FieldValue.serverTimestamp(),
               });
-              Navigator.pop(ctx);
+              await AuditLogService().logAction(
+                module: 'Users',
+                action: 'DISABLE_ACCOUNT',
+                targetId: id,
+                targetName: email,
+                summary: 'Disabled user account (previously $currentRole)',
+              );
+              if (context.mounted) {
+                Navigator.pop(ctx);
+              }
 
               final currentUser = FirebaseAuth.instance.currentUser;
               final isSelf =
@@ -992,17 +1026,26 @@ class UserManagementScreen extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green, foregroundColor: Colors.white),
-            onPressed: () {
-              FirebaseFirestore.instance.collection('users').doc(id).update({
+            onPressed: () async {
+              await FirebaseFirestore.instance.collection('users').doc(id).update({
                 'isDisabled': false,
                 'status': 'approved',
                 'role': previousRole,
                 'activatedAt': FieldValue.serverTimestamp(),
               });
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Re-activated $email successfully!')),
+              await AuditLogService().logAction(
+                module: 'Users',
+                action: 'ACTIVATE_ACCOUNT',
+                targetId: id,
+                targetName: email,
+                summary: 'Re-activated user account with role $previousRole',
               );
+              if (context.mounted) {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Re-activated $email successfully!')),
+                );
+              }
             },
             child: const Text('RE-ACTIVATE STAFF'),
           ),

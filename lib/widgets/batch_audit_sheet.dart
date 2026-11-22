@@ -6,6 +6,7 @@ import '../models/loss_record.dart';
 import '../providers/inventory_provider.dart';
 import '../utils/format.dart';
 import 'premium_components.dart';
+import 'action_warning_dialog.dart';
 
 class BatchAuditSheet extends StatefulWidget {
   final Product product;
@@ -25,13 +26,8 @@ class _BatchAuditSheetState extends State<BatchAuditSheet> {
     } catch (_) {}
 
     final List<ProductBatch> batches = List.from(p.batches);
-    // Sort by FEFO (expiry date / created date ascending)
-    batches.sort((a, b) {
-      if (a.expiryDate != null && b.expiryDate != null) {
-        return a.expiryDate!.compareTo(b.expiryDate!);
-      }
-      return a.createdAt.compareTo(b.createdAt);
-    });
+    // Sort by FIFO (created date ascending)
+    batches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     final int totalBatchStock = batches.fold(0, (sum, b) => sum + b.quantity);
 
@@ -329,6 +325,23 @@ class _BatchAuditSheetState extends State<BatchAuditSheet> {
               onPressed: () async {
                 final qty = int.tryParse(qtyCtrl.text) ?? 0;
                 if (qty <= 0 || qty > batch.quantity) return;
+
+                final confirm = await ActionWarningDialog.show(
+                  context,
+                  title: 'Confirm Stock Write-off?',
+                  message:
+                      'Are you sure you want to write off $qty ${product.unit} of "${product.name}"?',
+                  confirmLabel: 'Write-off Stock',
+                  cancelLabel: 'Cancel',
+                  severity: ActionWarningSeverity.danger,
+                  icon: Icons.inventory_2_outlined,
+                  details: [
+                    'Product: ${product.name}',
+                    'Quantity to write off: $qty ${product.unit}',
+                    'Reason: ${lossType.name}',
+                  ],
+                );
+                if (!confirm) return;
 
                 final inventory = context.read<InventoryProvider>();
                 await inventory.logLoss(LossRecord(

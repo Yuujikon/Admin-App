@@ -6,6 +6,6 @@ class LossManagementScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ReportsScreen(initialTab: 1);
+    return const ReportsScreen(initialTab: 2);
   }
 }

@@ -35,9 +35,10 @@ service cloud.firestore {
 
     function isStaff() {
       return isAdmin() ||
+        hasTokenRole('trustedPartner') ||
         hasTokenRole('cashier') ||
         hasTokenRole('inventoryManager') ||
-        (isSignedIn() && getStaffRole() in ['cashier', 'inventoryManager']);
+        (isSignedIn() && getStaffRole() in ['trustedPartner', 'cashier', 'inventoryManager']);
     }
 
     function isCustomerReservationUpdate() {
@@ -63,7 +64,7 @@ service cloud.firestore {
     // Ensure non-staff users cannot modify their own offense counts or active lock fields
     function isNotTamperingOffenses() {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
-      return !affected.hasAny(['offenseCount', 'restrictedUntil', 'isPermanentlyLocked', 'offenseHistory']);
+      return !affected.hasAny(['offenseCount', 'restrictedUntil', 'isPermanentlyLocked', 'offenseHistory', 'ghostedOrders']);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -82,13 +83,29 @@ service cloud.firestore {
 
     match /watched_products/{watchId} {
       allow read: if isSignedIn();
-      allow create, delete: if isSignedIn();
-      allow update: if isStaff();
+      allow create, update, delete: if isSignedIn();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. RESTOCK INQUIRIES & MANAGEMENT
+    // 2. SUPPLIER PROCUREMENT, RECEIVING & INVENTORY MANAGEMENT
     // ─────────────────────────────────────────────────────────────────────────
+    match /rfqs/{rfqId} {
+      allow read, write: if isStaff();
+    }
+
+    match /purchase_orders/{poId} {
+      allow read, write: if isStaff();
+    }
+
+    match /receiving_records/{recordId} {
+      allow read, write: if isStaff();
+    }
+
+    match /inventory_batches/{batchId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
     match /restock_inquiries/{inquiryId} {
       allow read, write: if isSignedIn() || isStaff();
     }
@@ -137,9 +154,9 @@ service cloud.firestore {
     }
 
     match /shifts/{shiftId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
+      allow read: if isAdmin() || isStaff() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
       allow create: if (isStaff() || isSignedIn()) && request.resource.data.get('cashierId', '') == request.auth.uid;
-      allow update: if isAdmin() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
+      allow update: if isAdmin() || isStaff() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
       allow delete: if isAdmin();
     }
 
@@ -148,12 +165,12 @@ service cloud.firestore {
     // ─────────────────────────────────────────────────────────────────────────
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isStaff();
     }
 
     match /store_settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isStaff();
     }
 
     match /system_config/time_simulation {
@@ -224,6 +241,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /refund_records/{recordId} {
+      allow read, write: if isStaff() || isAdmin();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // 7. MAIL COLLECTION (Firebase Trigger Email Extension)
     // ─────────────────────────────────────────────────────────────────────────
@@ -233,11 +254,38 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 8. OTP VERIFICATION REQUESTS (Added for Email/SMS Registration)
+    // 8. OTP VERIFICATION REQUESTS
     // ─────────────────────────────────────────────────────────────────────────
     match /otp_requests/{contactMethod} {
       // Allow anyone (unauthenticated users) to create an OTP request during sign-up
       allow read, create, update, delete: if true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9. APPEALS (Customer Ghosting Restriction Appeals)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /appeals/{appealId} {
+      allow read: if isStaff() || (
+        isSignedIn() && (
+          resource.data.get('userId', '') == request.auth.uid ||
+          (
+            'email' in request.auth.token &&
+            resource.data.get('customerEmail', '') == request.auth.token.email
+          )
+        )
+      );
+      allow create: if isSignedIn() && request.resource.data.get('userId', '') == request.auth.uid;
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10. AUDIT LOGS
+    // ─────────────────────────────────────────────────────────────────────────
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Strict immutability, append-only
     }
   }
 }

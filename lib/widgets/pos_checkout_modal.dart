@@ -10,6 +10,7 @@ import '../providers/order_provider.dart';
 import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 import 'premium_components.dart';
+import 'action_warning_dialog.dart';
 
 /// Modal triggered when an order is ready for Click & Collect cash payment.
 /// Features order summary, walk-in item merging, cash calculator, change display,
@@ -145,6 +146,62 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
     if (!_isCashValid || _isProcessing) return;
 
     setState(() => _isProcessing = true);
+
+    final inventoryProvider = context.read<InventoryProvider>();
+    final List<String> belowCostDetails = [];
+    double totalBelowCostLoss = 0.0;
+
+    for (final item in [...widget.order.items, ..._walkInItems]) {
+      double cost = item.costPrice;
+      if (cost <= 0 && item.productId.isNotEmpty) {
+        try {
+          final p = inventoryProvider.products
+              .firstWhere((prod) => prod.id == item.productId);
+          cost = p.effectiveUnitCost;
+        } catch (_) {}
+      }
+      if (item.price > 0 && cost > 0 && item.price < cost) {
+        final loss = (cost - item.price) * item.qty;
+        totalBelowCostLoss += loss;
+        belowCostDetails.add(
+          '• ${item.name}: Sold @ ${formatPeso(item.price)} vs Cost ${formatPeso(cost)} (Loss: ${formatPeso(loss)})',
+        );
+      }
+    }
+
+    final confirm = await ActionWarningDialog.show(
+      context,
+      title: belowCostDetails.isNotEmpty
+          ? 'Confirm Checkout (Item Below Cost)'
+          : 'Confirm Checkout?',
+      message: belowCostDetails.isNotEmpty
+          ? 'Process payment of ₱${_grandTotal.toStringAsFixed(2)} for Order #${widget.order.orderId}? Warning: Contains item(s) sold below calculated cost.'
+          : 'Process payment of ₱${_grandTotal.toStringAsFixed(2)} for Order #${widget.order.orderId}?',
+      confirmLabel: 'Process Payment',
+      cancelLabel: 'Review',
+      severity: belowCostDetails.isNotEmpty
+          ? ActionWarningSeverity.warning
+          : ActionWarningSeverity.info,
+      icon: belowCostDetails.isNotEmpty
+          ? Icons.trending_down_rounded
+          : Icons.point_of_sale_rounded,
+      details: [
+        'Order Total: ₱${_grandTotal.toStringAsFixed(2)}',
+        if (!widget.order.isPrePaid) ...[
+          'Cash Tendered: ₱${_cashTendered.toStringAsFixed(2)}',
+          'Change Due: ₱${_changeDue.toStringAsFixed(2)}',
+        ],
+        if (belowCostDetails.isNotEmpty) ...[
+          '⚠️ Below Cost Warnings:',
+          ...belowCostDetails,
+          'Total Estimated Sale Loss: ${formatPeso(totalBelowCostLoss)}',
+        ],
+      ],
+    );
+    if (!confirm) {
+      setState(() => _isProcessing = false);
+      return;
+    }
 
     try {
       final orderProvider = context.read<OrderProvider>();
@@ -699,14 +756,6 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              _buildDenominationChip(50),
-              const SizedBox(width: 8),
-              _buildDenominationChip(100),
-              const SizedBox(width: 8),
-              _buildDenominationChip(500),
-              const SizedBox(width: 8),
-              _buildDenominationChip(1000),
-              const SizedBox(width: 8),
               ActionChip(
                 label: const Text('Exact',
                     style: TextStyle(fontWeight: FontWeight.bold)),
@@ -715,6 +764,16 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
                 side: BorderSide(color: Colors.green.shade300),
                 onPressed: _setExactAmount,
               ),
+              const SizedBox(width: 8),
+              _buildDenominationChip(50),
+              const SizedBox(width: 8),
+              _buildDenominationChip(100),
+              const SizedBox(width: 8),
+              _buildDenominationChip(200),
+              const SizedBox(width: 8),
+              _buildDenominationChip(500),
+              const SizedBox(width: 8),
+              _buildDenominationChip(1000),
             ],
           ),
         ),

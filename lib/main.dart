@@ -17,6 +17,7 @@ import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/restock_provider.dart';
 import 'providers/shift_provider.dart';
+import 'providers/procurement_provider.dart';
 import 'screens/staff_login_screen.dart';
 import 'screens/admin_pin_screen.dart';
 import 'screens/admin_app.dart';
@@ -143,6 +144,7 @@ class GdcAdminApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PrinterProvider()),
         ChangeNotifierProvider(create: (_) => RestockProvider()),
         ChangeNotifierProvider(create: (_) => ShiftProvider()),
+        ChangeNotifierProvider(create: (_) => ProcurementProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) => MaterialApp(
@@ -191,12 +193,14 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
           context.read<OrderProvider>().initialize();
           context.read<ExpenseProvider>().initialize();
           context.read<RestockProvider>().initialize();
+          context.read<ProcurementProvider>().initialize();
         } else {
           debugPrint('AuthGate: Cancelling subscriptions (Logout)');
           context.read<InventoryProvider>().cancelSubscriptions();
           context.read<OrderProvider>().cancelSubscriptions();
           context.read<ExpenseProvider>().cancelSubscriptions();
           context.read<RestockProvider>().cancelSubscriptions();
+          context.read<ProcurementProvider>().cancelSubscriptions();
         }
       });
     }
