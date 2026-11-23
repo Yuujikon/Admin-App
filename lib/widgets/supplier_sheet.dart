@@ -129,8 +129,9 @@ class _SupplierSheetState extends State<SupplierSheet> {
                   },
                   onSelected: (c) => _category.text = c,
                   fieldViewBuilder: (ctx, ctrl, focus, onFieldSubmitted) {
-                    if (ctrl.text.isEmpty && _category.text.isNotEmpty)
+                    if (ctrl.text.isEmpty && _category.text.isNotEmpty) {
                       ctrl.text = _category.text;
+                    }
                     return TextField(
                       controller: ctrl,
                       focusNode: focus,

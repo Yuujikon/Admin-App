@@ -101,7 +101,7 @@ class _OrderQrScannerSheetState extends State<OrderQrScannerSheet> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
+                color: Colors.black.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
@@ -193,12 +193,15 @@ String _extractOrderIdKey(String rawCode) {
     try {
       final map = jsonDecode(clean);
       if (map is Map) {
-        if (map['orderId'] != null)
+        if (map['orderId'] != null) {
           return map['orderId'].toString().trim().replaceAll('#', '');
-        if (map['id'] != null)
+        }
+        if (map['id'] != null) {
           return map['id'].toString().trim().replaceAll('#', '');
-        if (map['order_id'] != null)
+        }
+        if (map['order_id'] != null) {
           return map['order_id'].toString().trim().replaceAll('#', '');
+        }
       }
     } catch (_) {}
   }

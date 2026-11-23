@@ -7,7 +7,6 @@ import '../providers/auth_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/order_provider.dart';
 import '../services/auth_service.dart';
-import '../shared/services/admin_messaging_service.dart';
 import '../utils/totp.dart';
 import '../widgets/otp_method_bottom_sheet.dart';
 
@@ -447,7 +446,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
     final user = auth.currentUser;
     final String email = user?.email ?? 'Unknown';
 
-    final copperColor = const Color(0xFFC07038);
+    const copperColor = Color(0xFFC07038);
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -482,14 +481,14 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       color: copperColor.withValues(alpha: 0.25),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.storefront_rounded,
                       size: 40,
                       color: copperColor,
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(
+                  const Text(
                     'GDC SARI-SARI STORE',
                     style: TextStyle(
                       fontSize: 11,
@@ -521,7 +520,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   const SizedBox(height: 4),
                   Text(
                     email,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: copperColor,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -561,7 +560,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       effectiveUseStaticPin
                           ? 'Use Google Authenticator'
                           : 'Use 6-Digit Offline PIN',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: copperColor,
@@ -570,7 +569,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
-                      side: BorderSide(color: copperColor, width: 1.2),
+                      side: const BorderSide(color: copperColor, width: 1.2),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -660,8 +659,8 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   const SizedBox(height: 24),
 
                   if (_isVerifying)
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
                       child: CircularProgressIndicator(color: copperColor),
                     )
                   else

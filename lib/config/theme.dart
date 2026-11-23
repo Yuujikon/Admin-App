@@ -255,9 +255,9 @@ class GdcTheme {
         backgroundColor: surfaceColor,
         indicatorColor: GdcColors.mintActiveBackground,
         selectedIconTheme:
-            IconThemeData(color: GdcColors.darkEmerald, size: 22),
+            const IconThemeData(color: GdcColors.darkEmerald, size: 22),
         unselectedIconTheme: IconThemeData(color: subTextColor, size: 20),
-        selectedLabelTextStyle: TextStyle(
+        selectedLabelTextStyle: const TextStyle(
           color: GdcColors.darkEmerald,
           fontWeight: FontWeight.bold,
           fontSize: 11,

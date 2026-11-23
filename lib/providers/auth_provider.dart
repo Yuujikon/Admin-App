@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/auth_service.dart';
-import '../services/notification_service.dart';
 import '../utils/email_validator.dart';
 import '../utils/format.dart';
 import '../utils/totp.dart';

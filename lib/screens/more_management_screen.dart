@@ -47,8 +47,6 @@ class MoreManagementScreen extends StatelessWidget {
     final bool isAdmin = auth.role == UserRole.admin;
     final bool isTrusted = auth.role == UserRole.trustedPartner;
 
-    final semantic = Theme.of(context).semantic;
-
     return Container(
       color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
@@ -493,14 +491,6 @@ class MoreManagementScreen extends StatelessWidget {
         UserRole.trustedPartner => 'Trusted Partner',
         UserRole.none => 'Guest',
       };
-
-  Color _getRoleColor(UserRole role, BuildContext context) {
-    return switch (role) {
-      UserRole.admin => GdcColors.violetAccent,
-      UserRole.trustedPartner => const Color(0xFFC07038),
-      UserRole.none => Theme.of(context).disabledColor,
-    };
-  }
 }
 
 // ── Account Security (Google Authenticator 2FA) ─────────────────────────────

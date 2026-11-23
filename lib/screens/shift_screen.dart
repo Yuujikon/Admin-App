@@ -135,7 +135,9 @@ class _NoActiveShiftView extends StatelessWidget {
                           for (final doc in snapshot.data!.docs) {
                             final data = doc.data() as Map<String, dynamic>;
                             if (data['isCustomer'] == true ||
-                                data['isDisabled'] == true) continue;
+                                data['isDisabled'] == true) {
+                              continue;
+                            }
                             final email = data['email'] as String? ?? '';
                             final name = data['name'] as String? ??
                                 (email.contains('@')
@@ -630,7 +632,7 @@ class _ActiveShiftView extends StatelessWidget {
                                   'Variance: ${formatPeso(variance.abs())} (${isMatch ? "Matched" : (isShort ? "Shortage" : "Overage")})',
                                 ],
                               );
-                              if (!confirm) return;
+                              if (!confirm || !context.mounted) return;
 
                               final closed = await context
                                   .read<ShiftProvider>()

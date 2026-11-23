@@ -19,8 +19,9 @@ class CashDrop {
 
   /// Factory constructor for parsing map data.
   factory CashDrop.fromMap(dynamic m) {
-    if (m is! Map)
+    if (m is! Map) {
       return CashDrop(id: '', amount: 0, reason: '', createdAt: DateTime.now());
+    }
     return CashDrop(
       id: m['id']?.toString() ?? '',
       amount: (m['amount'] as num? ?? 0.0).toDouble(),

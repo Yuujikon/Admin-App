@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -963,7 +962,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _confirmDiscardChanges();
-        if (shouldPop && mounted) {
+        if (shouldPop && context.mounted) {
           Navigator.of(context).pop();
         }
       },
@@ -2337,14 +2336,18 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       }
 
       setState(() {
-        if (result.name != null && result.name!.isNotEmpty)
+        if (result.name != null && result.name!.isNotEmpty) {
           _name.text = result.name!;
-        if (result.brand != null && result.brand!.isNotEmpty)
+        }
+        if (result.brand != null && result.brand!.isNotEmpty) {
           _brand.text = result.brand!;
-        if (result.category != null && result.category!.isNotEmpty)
+        }
+        if (result.category != null && result.category!.isNotEmpty) {
           _category = result.category!;
-        if (result.barcode != null && result.barcode!.isNotEmpty)
+        }
+        if (result.barcode != null && result.barcode!.isNotEmpty) {
           _barcode.text = result.barcode!;
+        }
       });
       _autoCalculateSellingPrice();
     }

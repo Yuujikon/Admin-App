@@ -9,7 +9,6 @@ import '../models/product.dart';
 import '../models/restock_inquiry.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/restock_provider.dart';
-import '../services/notification_service.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/supplier_sheet.dart';
@@ -965,7 +964,7 @@ class _LinkExistingProductsModalState
                           otherSupplierName = inventory.suppliers
                               .firstWhere((s) => s.id == p.supplierId,
                                   orElse: () =>
-                                      Supplier(id: '', name: 'Unknown'))
+                                      const Supplier(id: '', name: 'Unknown'))
                               .name;
                         }
 
@@ -2028,9 +2027,9 @@ void showEmailSetupGuideDialog(BuildContext context,
                           .primary
                           .withValues(alpha: 0.3)),
                 ),
-                child: Column(
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text('How to set default Email app on Android:',
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 12)),
@@ -2080,10 +2079,11 @@ void showEmailSetupGuideDialog(BuildContext context,
                     borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () async {
+                final restockProvider = context.read<RestockProvider>();
                 if (body != null && body.isNotEmpty) {
                   await Clipboard.setData(ClipboardData(text: body));
                 }
-                await context.read<RestockProvider>().sendInquiry(inquiry);
+                await restockProvider.sendInquiry(inquiry);
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -2105,11 +2105,12 @@ void showEmailSetupGuideDialog(BuildContext context,
                   borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
+              final restockProvider = context.read<RestockProvider>();
               if (body != null && body.isNotEmpty) {
                 await Clipboard.setData(ClipboardData(text: body));
               }
               if (inquiry != null) {
-                await context.read<RestockProvider>().sendInquiry(inquiry);
+                await restockProvider.sendInquiry(inquiry);
               }
               if (ctx.mounted) Navigator.pop(ctx);
               try {

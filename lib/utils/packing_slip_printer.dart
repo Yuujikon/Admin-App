@@ -369,7 +369,7 @@ class PackingSlipPrinter {
                           style: pw.TextStyle(
                               fontWeight: pw.FontWeight.bold, fontSize: 9)),
                       pw.Text(order.customerPhone!,
-                          style: pw.TextStyle(fontSize: 9)),
+                          style: const pw.TextStyle(fontSize: 9)),
                     ],
                   ),
                 ],
@@ -380,7 +380,7 @@ class PackingSlipPrinter {
                     pw.Text('DATE:',
                         style: pw.TextStyle(
                             fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                    pw.Text(dateStr, style: pw.TextStyle(fontSize: 9)),
+                    pw.Text(dateStr, style: const pw.TextStyle(fontSize: 9)),
                   ],
                 ),
                 pw.SizedBox(height: 6),
@@ -487,7 +487,7 @@ class PackingSlipPrinter {
                       children: [
                         pw.Text(
                           '- - - - - - - - - - - - - - - - - - - - - - - - - - -',
-                          style: pw.TextStyle(
+                          style: const pw.TextStyle(
                               color: PdfColors.grey600, fontSize: 8),
                         ),
                         pw.SizedBox(height: 2),
@@ -502,7 +502,7 @@ class PackingSlipPrinter {
                         pw.SizedBox(height: 2),
                         pw.Text(
                           '- - - - - - - - - - - - - - - - - - - - - - - - - - -',
-                          style: pw.TextStyle(
+                          style: const pw.TextStyle(
                               color: PdfColors.grey600, fontSize: 8),
                         ),
                       ],

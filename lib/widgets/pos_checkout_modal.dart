@@ -206,6 +206,7 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
         ],
       ],
     );
+    if (!mounted) return;
     if (!confirm) {
       setState(() => _isProcessing = false);
       return;
@@ -703,7 +704,7 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
             style: OutlinedButton.styleFrom(
               foregroundColor: theme.colorScheme.primary,
               side:
-                  BorderSide(color: theme.colorScheme.primary.withOpacity(0.5)),
+                  BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.5)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),

@@ -97,13 +97,6 @@ class PrinterProvider extends ChangeNotifier {
   String _cleanPeso(String text) =>
       text.replaceAll('₱', 'P').replaceAll('\u20b1', 'P');
 
-  // Helper to pad strings for manual left-right alignment (32 chars wide for 58mm)
-  String _formatRow(String left, String right) {
-    int space = 32 - (left.length + right.length);
-    if (space < 1) space = 1;
-    return left + (" " * space) + right;
-  }
-
   Future<bool> printReceipt({
     required List<CartItem> items,
     required double total,

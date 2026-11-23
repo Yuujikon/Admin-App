@@ -18,7 +18,7 @@ void main() {
 
     group('hasBulkPacking', () {
       test('returns true when itemsPerCase is greater than 1', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.hasBulkPacking, isTrue);
       });
 
@@ -51,18 +51,18 @@ void main() {
 
     group('convertBulkToUnits', () {
       test('converts 3 bulk boxes (piecesPerPack = 24) to exactly 72 base units', () {
-        final product = defaultProduct; // itemsPerCase = 24
+        const product = defaultProduct; // itemsPerCase = 24
         final result = product.convertBulkToUnits(3);
         expect(result, equals(72));
       });
 
       test('returns 0 base units when converting 0 bulk boxes', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.convertBulkToUnits(0), equals(0));
       });
 
       test('clamps negative bulk quantities to 0', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.convertBulkToUnits(-3), equals(0));
       });
 
@@ -87,13 +87,13 @@ void main() {
 
     group('calculateUnitCostFromPack', () {
       test('calculates exact unit cost from bulk pack cost (₱480.00 / 24 = ₱20.00)', () {
-        final product = defaultProduct; // itemsPerCase = 24
+        const product = defaultProduct; // itemsPerCase = 24
         final unitCost = product.calculateUnitCostFromPack(480.0);
         expect(unitCost, equals(20.00));
       });
 
       test('handles division resulting in decimal rounding (₱500.00 / 24 = ₱20.83)', () {
-        final product = defaultProduct; // itemsPerCase = 24
+        const product = defaultProduct; // itemsPerCase = 24
         // 500 / 24 = 20.833333...
         final unitCost = product.calculateUnitCostFromPack(500.0);
         expect(unitCost, equals(20.83));
@@ -107,7 +107,7 @@ void main() {
       });
 
       test('returns 0.0 if bulkCost is zero or negative', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.calculateUnitCostFromPack(0.0), equals(0.0));
         expect(product.calculateUnitCostFromPack(-480.0), equals(0.0));
       });

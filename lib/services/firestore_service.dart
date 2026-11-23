@@ -180,7 +180,9 @@ class FirestoreService {
         summary: 'Inventory record created for [${p.name}] (ID: ${docRef.id}).',
         afterData: p.toFirestore(),
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> updateProduct(Product p) async {
@@ -194,7 +196,9 @@ class FirestoreService {
         summary: 'Inventory record updated for [${p.name}] (ID: ${p.id}).',
         afterData: p.toFirestore(),
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> deleteProduct(String productId) async {
@@ -207,7 +211,9 @@ class FirestoreService {
         targetName: 'Product $productId',
         summary: 'Inventory record deleted for product (ID: $productId).',
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> updateStock(String productId, int newStock) async {
@@ -221,7 +227,9 @@ class FirestoreService {
         summary: 'Inventory stock manually adjusted to [$newStock] for product (ID: $productId).',
         afterData: {'stock': newStock},
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> decrementStockBatch(List<CartItem> items) async {
@@ -1213,7 +1221,9 @@ class FirestoreService {
         summary: 'Supplier record created for [${s.name}] (ID: ${docRef.id}).',
         afterData: s.toFirestore(),
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> updateSupplier(Supplier s) async {
@@ -1227,7 +1237,9 @@ class FirestoreService {
         summary: 'Supplier record updated for [${s.name}] (ID: ${s.id}).',
         afterData: s.toFirestore(),
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> deleteSupplier(String id) async {
@@ -1240,7 +1252,9 @@ class FirestoreService {
         targetName: 'Supplier $id',
         summary: 'Supplier record deleted for ID: [$id].',
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   // ── Loss & Waste ───────────────────────────────────────────────────────────
@@ -2219,7 +2233,9 @@ class FirestoreService {
         targetName: 'RFQ ${rfq.rfqNumber}',
         summary: 'Request for Quotation created for RFQ Number: [${rfq.rfqNumber}].',
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> updateRfq(Rfq rfq) async {
@@ -2232,7 +2248,9 @@ class FirestoreService {
         targetName: 'RFQ ${rfq.rfqNumber}',
         summary: 'Request for Quotation updated for RFQ Number: [${rfq.rfqNumber}].',
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> updateRfqStatus(String id, RfqStatus status) async {
@@ -2248,7 +2266,9 @@ class FirestoreService {
           targetName: 'RFQ $id',
           summary: 'RFQ status transitioned to [${status.name}].',
         );
-      } catch(e) {}
+      } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<String> convertRfqToPurchaseOrder(Rfq rfq, String poNumber) async {
@@ -2320,7 +2340,9 @@ class FirestoreService {
         targetName: 'PO ${po.poNumber}',
         summary: 'Purchase Order created for PO Number: [${po.poNumber}].',
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> updatePurchaseOrderStatus(
@@ -2337,7 +2359,9 @@ class FirestoreService {
           targetName: 'PO $id',
           summary: 'Purchase Order status transitioned to [${status.name}].',
         );
-      } catch(e) {}
+      } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   Future<void> shortClosePurchaseOrder(
@@ -2355,7 +2379,9 @@ class FirestoreService {
         targetName: 'PO $poId',
         summary: 'Purchase Order short-closed with [${updatedItems.length}] valid items remaining.',
       );
-    } catch(e) {}
+    } catch (e) {
+      debugPrint('AuditLogService.log failed: $e');
+    }
   }
 
   // ── Receiving Records & Inventory Batches Streams ──────────────────────────

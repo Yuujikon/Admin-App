@@ -25,7 +25,6 @@ class _CustomerRestrictionsScreenState
   final FirestoreService _fs = FirestoreService();
   String _searchQuery = '';
   String _selectedFilter = 'all'; // 'all', 'appeals', 'restricted', 'locked'
-  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +110,6 @@ class _CustomerRestrictionsScreenState
 
     final pendingAppeals = pendingAppealsMap.values.toSet().toList();
 
-    final int totalRestrictedCount = customers.where((c) => c.isRestricted).length;
     final int temporaryRestrictedCount =
         customers.where((c) => c.isRestricted && !c.isPermanentlyLocked).length;
     final int lockedCount = customers.where((c) => c.isPermanentlyLocked).length;
@@ -976,7 +974,7 @@ class _CustomerRestrictionsScreenState
                   resetOffenses: resetOffenses,
                 );
 
-                if (mounted) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Successfully removed ordering restriction for ${c.name}'),
@@ -1056,7 +1054,7 @@ class _CustomerRestrictionsScreenState
                 isManualAdminFlag: true,
               );
 
-              if (mounted) {
+              if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Recorded offense penalty for $email'),
@@ -1094,7 +1092,7 @@ class _CustomerRestrictionsScreenState
 
     if (confirm) {
       await _fs.rejectCustomerAppeal(c.id);
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Rejected complaint/appeal for ${c.name}'),
@@ -1123,7 +1121,7 @@ class _CustomerRestrictionsScreenState
 
     if (confirm) {
       await _fs.resetCustomerOffenses(c.id);
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Cleared offense history for ${c.name}'),

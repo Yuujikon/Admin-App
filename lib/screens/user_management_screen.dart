@@ -1,12 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
-import '../utils/email_validator.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/action_warning_dialog.dart';
 import '../services/audit_log_service.dart';
@@ -669,7 +667,7 @@ class UserManagementScreen extends StatelessWidget {
                   action: 'ROLE_UPDATE',
                   targetId: id,
                   targetName: email,
-                  summary: 'Approved and granted role ${selectedRole}',
+                  summary: 'Approved and granted role $selectedRole',
                 );
                 if (context.mounted) {
                   Navigator.pop(ctx);
@@ -823,7 +821,7 @@ class UserManagementScreen extends StatelessWidget {
                   action: 'ROLE_UPDATE',
                   targetId: id,
                   targetName: email,
-                  summary: 'Updated role to ${selected}',
+                  summary: 'Updated role to $selected',
                 );
                 if (context.mounted) {
                   Navigator.pop(ctx);
@@ -1054,15 +1052,6 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _showAddEmployeeDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (dialogCtx) => const _AddEmployeeDialog(),
-    );
-  }
-
   void _showHelp(BuildContext context) {
     showDialog(
       context: context,
@@ -1073,14 +1062,14 @@ class UserManagementScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
                 '• Admin (Purple Badge): Full access to POS, Inventory, Reports, System & Staff Settings.',
                 style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 6),
-            const Text(
+            SizedBox(height: 6),
+            Text(
                 '• Trusted Partner (Copper Badge): Full operational access to POS, Pre-Orders, Stock, Inventory Records, Reports & Suppliers.',
                 style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(
                 '• Admin Retirement: To disable your own admin account, ensure another active Admin exists first.',
                 style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -1091,243 +1080,3 @@ class UserManagementScreen extends StatelessWidget {
   }
 }
 
-class _AddEmployeeDialog extends StatefulWidget {
-  const _AddEmployeeDialog();
-
-  @override
-  State<_AddEmployeeDialog> createState() => _AddEmployeeDialogState();
-}
-
-class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
-  final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _pinCtrl = TextEditingController();
-  String _selectedRole = 'cashier';
-  bool _obscurePin = true;
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _emailCtrl.dispose();
-    _pinCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final name = _nameCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final pin = _pinCtrl.text.trim();
-
-    if (name.isEmpty) {
-      setState(() => _error = 'Please enter staff full name.');
-      return;
-    }
-
-    final emailErr = EmailValidator.validate(email);
-    if (emailErr != null) {
-      setState(() => _error = emailErr);
-      return;
-    }
-
-    if (pin.length != 6 || !RegExp(r'^\d{6}$').hasMatch(pin)) {
-      setState(() => _error = 'Security PIN must be exactly 6 digits.');
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    FirebaseApp? secondaryApp;
-    try {
-      secondaryApp = await Firebase.initializeApp(
-        name: 'EmployeeApp_${DateTime.now().millisecondsSinceEpoch}',
-        options: Firebase.app().options,
-      );
-
-      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
-      final userCred = await secondaryAuth.createUserWithEmailAndPassword(
-        email: email,
-        password: pin,
-      );
-
-      if (userCred.user != null) {
-        await userCred.user!.sendEmailVerification().catchError((e) {
-          debugPrint('Error sending verification email: $e');
-        });
-
-        final uid = userCred.user!.uid;
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'name': name,
-          'email': email,
-          'pin': pin,
-          'role': _selectedRole,
-          'status': 'approved',
-          'isDisabled': false,
-          'isCustomer': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        if (mounted) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  'Staff $name ($email) created! Verification email sent.'),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = switch (e.code) {
-            'email-already-in-use' => 'This email is already registered.',
-            'invalid-email' => 'Invalid email format.',
-            'weak-password' => 'Password is too weak.',
-            _ => e.message ?? 'Failed to create employee account.',
-          };
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = 'Error creating account: $e';
-        });
-      }
-    } finally {
-      await secondaryApp?.delete();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Row(
-        children: [
-          Icon(Icons.person_add_rounded),
-          SizedBox(width: 8),
-          Text('Add New Staff',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        ],
-      ),
-      content: Container(
-        width: 440,
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Enter staff profile details and security credentials for system access.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nameCtrl,
-                enabled: !_loading,
-                decoration: const InputDecoration(
-                  labelText: 'Staff Full Name',
-                  prefixIcon: Icon(Icons.person_outline, size: 20),
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _emailCtrl,
-                enabled: !_loading,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Staff Email',
-                  prefixIcon: Icon(Icons.email_outlined, size: 20),
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: ['admin', 'trustedPartner'].contains(_selectedRole)
-                    ? _selectedRole
-                    : 'trustedPartner',
-                decoration: const InputDecoration(
-                  labelText: 'Assigned Role',
-                  prefixIcon:
-                      Icon(Icons.admin_panel_settings_outlined, size: 20),
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'trustedPartner',
-                      child: Text('Trusted Partner (Copper Badge)')),
-                  DropdownMenuItem(
-                      value: 'admin', child: Text('Admin (Purple Badge)')),
-                ],
-                onChanged: _loading
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _selectedRole = v);
-                      },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _pinCtrl,
-                enabled: !_loading,
-                obscureText: _obscurePin,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                decoration: InputDecoration(
-                  labelText: 'Initial Security PIN / Password',
-                  prefixIcon: const Icon(Icons.pin_rounded, size: 20),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                        _obscurePin ? Icons.visibility_off : Icons.visibility,
-                        size: 20),
-                    onPressed: () => setState(() => _obscurePin = !_obscurePin),
-                  ),
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _error!,
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Text('CREATE STAFF'),
-        ),
-      ],
-    );
-  }
-}

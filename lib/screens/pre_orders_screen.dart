@@ -7,9 +7,7 @@ import '../models/order.dart';
 import '../models/refund_request.dart';
 import '../providers/order_provider.dart';
 import '../providers/inventory_provider.dart';
-import '../providers/printer_provider.dart';
 import '../providers/shift_provider.dart';
-import '../services/notification_service.dart';
 import '../widgets/status_badge.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
@@ -743,6 +741,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
   Future<void> _handleBulkAction(BuildContext context) async {
     final orderProvider = context.read<OrderProvider>();
+    final messenger = ScaffoldMessenger.of(context);
     final selectedIds = _selectedOrderIds.toList();
     if (selectedIds.isEmpty) return;
 
@@ -752,7 +751,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       if (_activeStage == PreOrderStage.ready) {
         final count = await orderProvider.bulkCompletePickup(selectedIds);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(
               content: Text('Successfully completed $count orders! 🛍️'),
               backgroundColor: Colors.green,
@@ -773,7 +772,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
 
         final count = await orderProvider.bulkAdvanceStatus(selectedIds);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(
               content: Text('Successfully processed $count orders! 🚀'),
               backgroundColor: Colors.green,
@@ -789,7 +788,7 @@ class _PreOrdersScreenState extends State<PreOrdersScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
               content: Text('Error updating orders: $e'),
               backgroundColor: Colors.red),
