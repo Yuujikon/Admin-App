@@ -20,6 +20,7 @@ import '../models/receiving_record.dart';
 import '../models/inventory_batch_record.dart';
 import '../shared/services/time_service.dart';
 import '../shared/services/admin_messaging_service.dart';
+import '../utils/inventory_math.dart';
 import 'audit_log_service.dart';
 
 /// Payload model representing a single line item delivery payload received during stock reconciliation.
@@ -241,7 +242,8 @@ class FirestoreService {
     await batch.commit();
   }
 
-  /// Deduct main stock and clear the reservedStock for a fulfilled order
+  /// Deduct main stock and clear the reservedStock for a fulfilled order.
+  /// For variants, only decrements `variants.<id>.reservedStock` (matching Customer-App).
   Future<void> fulfillOrderStockBatch(List<CartItem> items) async {
     final batch = _db.batch();
     for (final item in items) {
@@ -252,7 +254,6 @@ class FirestoreService {
           'variants.${item.variantId}.reservedStock':
               FieldValue.increment(-item.qty),
           'stock': FieldValue.increment(-item.qty),
-          'reservedStock': FieldValue.increment(-item.qty),
         });
       } else {
         batch.update(docRef, {
@@ -265,6 +266,7 @@ class FirestoreService {
   }
 
   /// Decrement reservedStock for all items when an order is cancelled.
+  /// For variants, only decrements `variants.<id>.reservedStock` (matching Customer-App).
   Future<void> clearReservedStockBatch(List<CartItem> items) async {
     final batch = _db.batch();
     for (final item in items) {
@@ -273,7 +275,6 @@ class FirestoreService {
         batch.update(docRef, {
           'variants.${item.variantId}.reservedStock':
               FieldValue.increment(-item.qty),
-          'reservedStock': FieldValue.increment(-item.qty),
         });
       } else {
         batch.update(docRef, {
@@ -282,6 +283,424 @@ class FirestoreService {
       }
     }
     await batch.commit();
+  }
+
+  /// Atomically fulfills a pre-order pickup (plus optional walk-in items) inside a single transaction:
+  /// - Guards against duplicate fulfillment (`status == collected/cancelled` or `reservationReleased == true`)
+  /// - Performs FEFO batch depletion & COGS calculation on fresh product snapshots
+  /// - Clamps `reservedStock` release so it never goes negative
+  /// - Updates order to `collected` with `reservationReleased: true`
+  /// - Writes `transactions/{tx.id}` with matching document ID
+  Future<StoreTransaction> fulfillOrderTransactional({
+    required PreOrder order,
+    required PreOrder updatedOrder,
+    required StoreTransaction tx,
+    List<CartItem> walkInItems = const [],
+  }) {
+    return _db.runTransaction<StoreTransaction>((transaction) async {
+      final orderRef = _orders.doc(order.id);
+      final orderSnap = await transaction.get(orderRef);
+      if (!orderSnap.exists) {
+        throw Exception('Order #${order.orderId} not found.');
+      }
+
+      final orderData = orderSnap.data() as Map<String, dynamic>? ?? {};
+      final currentStatus = orderData['status']?.toString() ?? '';
+      if (currentStatus == OrderStatus.collected.name ||
+          currentStatus == OrderStatus.cancelled.name ||
+          currentStatus == OrderStatus.refunded.name) {
+        throw Exception(
+            'Order #${order.orderId} is already $currentStatus and cannot be fulfilled again.');
+      }
+      final bool alreadyReleased = orderData['reservationReleased'] == true;
+
+      // 1. ALL READS FIRST: Read every unique product doc involved in order + walk-in items
+      final Set<String> productIds = {
+        for (final item in order.items)
+          if (item.productId.isNotEmpty) item.productId,
+        for (final item in walkInItems)
+          if (item.productId.isNotEmpty) item.productId,
+      };
+
+      final Map<String, DocumentSnapshot> productSnaps = {};
+      for (final pid in productIds) {
+        productSnaps[pid] = await transaction.get(_products.doc(pid));
+      }
+
+      // Parse live products and compute FEFO depletion plans once per product
+      final Map<String, Product> liveProducts = {};
+      for (final entry in productSnaps.entries) {
+        if (entry.value.exists) {
+          liveProducts[entry.key] = Product.fromFirestore(entry.value);
+        }
+      }
+
+      // Compute depleted items (with accurate COGS) and track mutated batch state per product
+      final Map<String, List<ProductBatch>> workingBatchesByProduct = {
+        for (final entry in liveProducts.entries)
+          entry.key: List<ProductBatch>.from(entry.value.batches),
+      };
+      final Map<String, int> inventoryBatchDeductions = {};
+      final Map<String, Map<String, dynamic>> productFieldUpdates = {};
+
+      void addStockDelta(String pid, String field, int delta) {
+        if (delta == 0) return;
+        productFieldUpdates.putIfAbsent(pid, () => {});
+        final prev = productFieldUpdates[pid]![field];
+        if (prev is int) {
+          productFieldUpdates[pid]![field] = prev + delta;
+        } else {
+          productFieldUpdates[pid]![field] = delta;
+        }
+      }
+
+      CartItem processLineItem(CartItem item, {required bool releaseReserved}) {
+        final liveProduct = liveProducts[item.productId];
+        if (liveProduct == null) return item;
+
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
+          addStockDelta(item.productId, 'variants.${item.variantId}.stock', -item.qty);
+          addStockDelta(item.productId, 'stock', -item.qty);
+          if (releaseReserved && !alreadyReleased) {
+            final matchedVariant = liveProduct.variants.where((v) => v.id == item.variantId);
+            final currentReserved =
+                matchedVariant.isNotEmpty ? matchedVariant.first.reservedStock : 0;
+            final safeRelease =
+                currentReserved >= item.qty ? item.qty : currentReserved;
+            if (safeRelease > 0) {
+              addStockDelta(
+                  item.productId, 'variants.${item.variantId}.reservedStock', -safeRelease);
+            }
+          }
+          final unitCost = item.costPrice > 0
+              ? item.costPrice
+              : (liveProduct.variants
+                      .where((v) => v.id == item.variantId)
+                      .map((v) => v.costPrice)
+                      .firstOrNull ??
+                  liveProduct.effectiveUnitCost);
+          return item.copyWith(
+            costPrice: unitCost,
+            totalCogs: unitCost * item.qty,
+            depletedBatches: [
+              BatchDepletionRecord(
+                batchId: 'variant-${item.variantId}',
+                quantity: item.qty,
+                unitCost: unitCost,
+              ),
+            ],
+          );
+        } else {
+          final currentProductView = liveProduct.copyWith(
+            batches: workingBatchesByProduct[item.productId] ?? const [],
+          );
+          final plan = planBatchDepletion(currentProductView, item.qty);
+          workingBatchesByProduct[item.productId] = plan.remainingBatches;
+
+          for (final bEntry in plan.batchQuantitiesDeducted.entries) {
+            inventoryBatchDeductions[bEntry.key] =
+                (inventoryBatchDeductions[bEntry.key] ?? 0) + bEntry.value;
+          }
+
+          addStockDelta(item.productId, 'stock', -item.qty);
+          if (releaseReserved && !alreadyReleased) {
+            final safeRelease = liveProduct.reservedStock >= item.qty
+                ? item.qty
+                : liveProduct.reservedStock;
+            if (safeRelease > 0) {
+              addStockDelta(item.productId, 'reservedStock', -safeRelease);
+            }
+          }
+
+          return item.copyWith(
+            barcode: item.barcode.isNotEmpty
+                ? item.barcode
+                : (liveProduct.barcode ?? ''),
+            costPrice: plan.weightedUnitCost,
+            totalCogs: plan.totalCogs,
+            depletedBatches: plan.depletedBatches,
+          );
+        }
+      }
+
+      final List<CartItem> processedOrderItems = [
+        for (final item in order.items)
+          processLineItem(item, releaseReserved: true),
+      ];
+      final List<CartItem> processedWalkInItems = [
+        for (final item in walkInItems)
+          processLineItem(item, releaseReserved: false),
+      ];
+
+      // Read any matching top-level inventory_batches docs BEFORE writing
+      final Map<String, DocumentSnapshot> invBatchSnaps = {};
+      for (final batchId in inventoryBatchDeductions.keys) {
+        invBatchSnaps[batchId] =
+            await transaction.get(_inventoryBatches.doc(batchId));
+      }
+
+      // 2. ALL WRITES AT THE END
+      for (final entry in productFieldUpdates.entries) {
+        final pid = entry.key;
+        final snap = productSnaps[pid];
+        if (snap == null || !snap.exists) continue;
+        final Map<String, dynamic> firestoreUpdate = {};
+        for (final fieldEntry in entry.value.entries) {
+          if (fieldEntry.value is int && fieldEntry.value != 0) {
+            firestoreUpdate[fieldEntry.key] =
+                FieldValue.increment(fieldEntry.value as int);
+          }
+        }
+        // Persist updated FEFO batches for non-variant products
+        final liveProduct = liveProducts[pid];
+        if (liveProduct != null && !liveProduct.hasVariants) {
+          final updatedBatches = workingBatchesByProduct[pid] ?? const [];
+          firestoreUpdate['batches'] = {
+            for (final b in updatedBatches) b.id: b.toMap(),
+          };
+        }
+        if (firestoreUpdate.isNotEmpty) {
+          transaction.update(snap.reference, firestoreUpdate);
+        }
+      }
+
+      // Update matching top-level inventory_batches records
+      for (final entry in inventoryBatchDeductions.entries) {
+        final snap = invBatchSnaps[entry.key];
+        if (snap != null && snap.exists) {
+          transaction.update(snap.reference, {
+            'quantityRemaining': FieldValue.increment(-entry.value),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      final finalOrderData = updatedOrder
+          .copyWith(reservationReleased: true)
+          .toFirestore();
+      transaction.update(orderRef, finalOrderData);
+
+      final enrichedTx = StoreTransaction(
+        id: tx.id,
+        orderId: tx.orderId,
+        items: [...processedOrderItems, ...processedWalkInItems],
+        total: tx.total,
+        cashTendered: tx.cashTendered,
+        changeGiven: tx.changeGiven,
+        createdAt: tx.createdAt,
+        customerId: tx.customerId,
+        customerEmail: tx.customerEmail,
+        paymentMethod: tx.paymentMethod,
+        type: tx.type,
+        isRefunded: tx.isRefunded,
+      );
+
+      final txDocRef =
+          tx.id.isNotEmpty ? _transactions.doc(tx.id) : _transactions.doc();
+      transaction.set(txDocRef, enrichedTx.toFirestore());
+
+      return enrichedTx;
+    });
+  }
+
+  /// Idempotently cancels an active order and releases `reservedStock` ONCE inside a transaction.
+  /// Returns `true` if this call performed the cancellation/release, or `false` if already
+  /// collected/refunded or already released by another device/customer.
+  Future<bool> cancelOrderAndReleaseReservation({
+    required String orderId,
+    required String processedBy,
+    String? reason,
+  }) {
+    return _db.runTransaction<bool>((transaction) async {
+      final orderRef = _orders.doc(orderId);
+      final orderSnap = await transaction.get(orderRef);
+      if (!orderSnap.exists) return false;
+
+      final orderData = orderSnap.data() as Map<String, dynamic>? ?? {};
+      final currentStatus = orderData['status']?.toString() ?? '';
+      if (currentStatus == OrderStatus.collected.name ||
+          currentStatus == OrderStatus.refunded.name) {
+        return false; // Never cancel or release reservation of a collected/refunded order
+      }
+
+      final bool alreadyReleased = orderData['reservationReleased'] == true;
+      if (currentStatus == OrderStatus.cancelled.name && alreadyReleased) {
+        return false;
+      }
+
+      final items = (orderData['items'] as List? ?? [])
+          .map((e) => CartItem.fromMap(e))
+          .toList();
+
+      // Aggregate quantities to release per product/variant
+      final Map<String, Map<String, int>> releaseByProductField = {};
+      if (!alreadyReleased) {
+        for (final item in items) {
+          if (item.productId.isEmpty || item.qty <= 0) continue;
+          final fieldKey = (item.variantId != null && item.variantId!.isNotEmpty)
+              ? 'variants.${item.variantId}.reservedStock'
+              : 'reservedStock';
+          releaseByProductField.putIfAbsent(item.productId, () => {});
+          releaseByProductField[item.productId]![fieldKey] =
+              (releaseByProductField[item.productId]![fieldKey] ?? 0) + item.qty;
+        }
+      }
+
+      // ALL READS BEFORE WRITES
+      final Map<String, DocumentSnapshot> productSnaps = {};
+      for (final pid in releaseByProductField.keys) {
+        productSnaps[pid] = await transaction.get(_products.doc(pid));
+      }
+
+      // ALL WRITES
+      for (final entry in releaseByProductField.entries) {
+        final productSnap = productSnaps[entry.key];
+        if (productSnap == null || !productSnap.exists) continue;
+        final pData = productSnap.data() as Map<String, dynamic>? ?? {};
+        final updates = <String, dynamic>{};
+
+        for (final fieldEntry in entry.value.entries) {
+          final fieldKey = fieldEntry.key;
+          final qtyToRelease = fieldEntry.value;
+          int currentReserved = 0;
+
+          if (fieldKey == 'reservedStock') {
+            currentReserved = (pData['reservedStock'] as num? ?? 0).toInt();
+          } else {
+            final variantId = fieldKey.split('.')[1];
+            final variants = pData['variants'];
+            if (variants is Map) {
+              final variant = variants[variantId];
+              if (variant is Map) {
+                currentReserved = (variant['reservedStock'] as num? ?? 0).toInt();
+              } else {
+                continue;
+              }
+            } else {
+              continue;
+            }
+          }
+
+          final safeRelease =
+              currentReserved >= qtyToRelease ? qtyToRelease : currentReserved;
+          if (safeRelease > 0) {
+            updates[fieldKey] = FieldValue.increment(-safeRelease);
+          }
+        }
+
+        if (updates.isNotEmpty) {
+          transaction.update(productSnap.reference, updates);
+        }
+      }
+
+      transaction.update(orderRef, {
+        'status': OrderStatus.cancelled.name,
+        'reservationReleased': true,
+        'processedBy': processedBy,
+        if (reason != null) 'rejectionReason': reason,
+        'statusTimeline.${OrderStatus.cancelled.name}':
+            FieldValue.serverTimestamp(),
+      });
+
+      return !alreadyReleased;
+    });
+  }
+
+  /// Idempotently records a ghosting offense for a customer when a pickup order expires uncollected.
+  /// Penalty ladder: 1st = 2h, 2nd = 24h, 3rd = 72h, 4th+ = permanent lock.
+  Future<void> recordGhostingOffense({
+    String? userId,
+    required String userEmail,
+    required String orderId,
+    required String sixCharOrderId,
+  }) async {
+    DocumentReference? userRef;
+    if (userId != null && userId.isNotEmpty) {
+      final snap = await _users.doc(userId).get();
+      if (snap.exists) userRef = snap.reference;
+    }
+    if (userRef == null && userEmail.isNotEmpty) {
+      final query =
+          await _users.where('email', isEqualTo: userEmail).limit(1).get();
+      if (query.docs.isNotEmpty) {
+        userRef = query.docs.first.reference;
+      }
+    }
+    if (userRef == null) {
+      debugPrint(
+          'No user record found for ghosting offense (order #$sixCharOrderId, email: $userEmail)');
+      return;
+    }
+
+    final targetRef = userRef;
+    Map<String, dynamic>? notificationPayload;
+
+    await _db.runTransaction((transaction) async {
+      final snap = await transaction.get(targetRef);
+      if (!snap.exists) return;
+      final userData = snap.data() as Map<String, dynamic>? ?? {};
+
+      final List ghostedOrders = userData['ghostedOrders'] as List? ?? [];
+      if (ghostedOrders.contains(orderId) ||
+          ghostedOrders.contains(sixCharOrderId)) {
+        return; // Already penalized for this order
+      }
+
+      final currentOffenses = (userData['offenseCount'] as num? ?? 0).toInt();
+      final newOffenseCount = currentOffenses + 1;
+      final now = TimeService.now;
+
+      DateTime? restrictionUntil;
+      bool isPermanentlyLocked = false;
+      String restrictionMsg;
+
+      if (newOffenseCount == 1) {
+        restrictionUntil = now.add(const Duration(hours: 2));
+        restrictionMsg = '2-hour order restriction';
+      } else if (newOffenseCount == 2) {
+        restrictionUntil = now.add(const Duration(hours: 24));
+        restrictionMsg = '24-hour order restriction';
+      } else if (newOffenseCount == 3) {
+        restrictionUntil = now.add(const Duration(hours: 72));
+        restrictionMsg = '72-hour (3-day) order restriction';
+      } else {
+        isPermanentlyLocked = true;
+        restrictionMsg = 'Permanent account lock';
+      }
+
+      transaction.update(targetRef, {
+        'offenseCount': newOffenseCount,
+        'restrictedUntil': restrictionUntil != null
+            ? Timestamp.fromDate(restrictionUntil)
+            : null,
+        'restrictionUntil': restrictionUntil != null
+            ? Timestamp.fromDate(restrictionUntil)
+            : null,
+        'isPermanentlyLocked': isPermanentlyLocked,
+        'lastOffenseAt': FieldValue.serverTimestamp(),
+        'ghostedOrders': FieldValue.arrayUnion([orderId, sixCharOrderId]),
+      });
+
+      final String title = isPermanentlyLocked
+          ? '⛔ Account Permanently Locked'
+          : '⚠️ Ghosted Order Penalty ($newOffenseCount/4 Offenses)';
+      final String body = isPermanentlyLocked
+          ? 'Your order #$sixCharOrderId expired without collection. Your account is permanently locked from placing orders ($newOffenseCount offenses). You may submit an appeal.'
+          : 'Your order #$sixCharOrderId expired without collection. Penalty: $restrictionMsg. You cannot place pre-orders during this period.';
+
+      notificationPayload = {
+        'title': title,
+        'body': body,
+        'timestamp': FieldValue.serverTimestamp(),
+        'type': 'offense',
+        'isRead': false,
+        'relatedId': orderId,
+      };
+    });
+
+    if (notificationPayload != null) {
+      await targetRef.collection('notifications').add(notificationPayload!);
+    }
   }
 
   // ── Catalog ────────────────────────────────────────────────────────────────
@@ -310,10 +729,12 @@ class FirestoreService {
   Future<void> linkBarcodeToCatalog(String catalogId, String barcode) =>
       _catalog.doc(catalogId).update({'barcode': barcode});
 
-  /// Offline-First Checkout Pipeline using WriteBatch (Zero runTransaction dependency)
+  /// Offline-First Checkout Pipeline using WriteBatch (Zero runTransaction dependency).
+  /// Applies precomputed [depletionPlans] (single source of truth) so batches are never double-deducted.
   Future<void> recordSaleOfflineFirst({
     required StoreTransaction tx,
-    required List<Product> cachedProducts,
+    Map<String, BatchDepletionPlan>? depletionPlans,
+    List<Product>? cachedProducts,
   }) async {
     final batch = _db.batch();
 
@@ -321,58 +742,50 @@ class FirestoreService {
     final txDocRef = _transactions.doc(tx.id);
     batch.set(txDocRef, tx.toFirestore());
 
-    // 2. Perform in-memory FIFO batch deduction and stock updates across products
+    // 2. Aggregate stock decrements per product/variant so duplicate line items apply cleanly
+    final Map<String, Map<String, int>> stockDecrements = {};
     for (final item in tx.items) {
-      final productIndex =
-          cachedProducts.indexWhere((p) => p.id == item.productId);
-      if (productIndex < 0) continue;
-
-      final product = cachedProducts[productIndex];
-      final productDocRef = _products.doc(product.id);
-
-      if (item.variantId != null) {
-        // Variant stock update
-        batch.update(productDocRef, {
-          'variants.${item.variantId}.stock': FieldValue.increment(-item.qty),
-          'stock': FieldValue.increment(-item.qty),
-        });
+      if (item.productId.isEmpty || item.qty <= 0) continue;
+      stockDecrements.putIfAbsent(item.productId, () => {});
+      if (item.variantId != null && item.variantId!.isNotEmpty) {
+        final vKey = 'variants.${item.variantId}.stock';
+        stockDecrements[item.productId]![vKey] =
+            (stockDecrements[item.productId]![vKey] ?? 0) + item.qty;
+        stockDecrements[item.productId]!['stock'] =
+            (stockDecrements[item.productId]!['stock'] ?? 0) + item.qty;
       } else {
-        // In-memory FIFO Batch Deduction
-        int remainingToDeduct = item.qty;
-        final List<ProductBatch> currentBatches = List.from(product.batches);
-
-        // Sort by created date ascending (FIFO)
-        currentBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-        final List<ProductBatch> updatedBatches = [];
-
-        for (final b in currentBatches) {
-          if (remainingToDeduct <= 0) {
-            updatedBatches.add(b);
-            continue;
-          }
-
-          if (b.quantity > remainingToDeduct) {
-            updatedBatches.add(ProductBatch(
-              id: b.id,
-              productId: b.productId,
-              quantity: b.quantity - remainingToDeduct,
-              unitCost: b.unitCost,
-              expiryDate: b.expiryDate,
-              createdAt: b.createdAt,
-              invoiceNumber: b.invoiceNumber,
-            ));
-            remainingToDeduct = 0;
-          } else {
-            remainingToDeduct -= b.quantity;
-          }
-        }
-
-        batch.update(productDocRef, {
-          'stock': FieldValue.increment(-item.qty),
-          'batches': {for (var b in updatedBatches) b.id: b.toMap()},
-        });
+        stockDecrements[item.productId]!['stock'] =
+            (stockDecrements[item.productId]!['stock'] ?? 0) + item.qty;
       }
+    }
+
+    for (final entry in stockDecrements.entries) {
+      final productId = entry.key;
+      final productDocRef = _products.doc(productId);
+      final Map<String, dynamic> updateData = {
+        for (final fieldEntry in entry.value.entries)
+          fieldEntry.key: FieldValue.increment(-fieldEntry.value),
+      };
+
+      // Use precomputed FEFO depletion plan if provided; otherwise compute once from cachedProducts
+      BatchDepletionPlan? plan = depletionPlans?[productId];
+      if (plan == null &&
+          cachedProducts != null &&
+          !entry.value.keys.any((k) => k.startsWith('variants.'))) {
+        final idx = cachedProducts.indexWhere((p) => p.id == productId);
+        if (idx >= 0) {
+          plan = planBatchDepletion(
+              cachedProducts[idx], entry.value['stock'] ?? 0);
+        }
+      }
+
+      if (plan != null) {
+        updateData['batches'] = {
+          for (final b in plan.remainingBatches) b.id: b.toMap(),
+        };
+      }
+
+      batch.update(productDocRef, updateData);
     }
 
     if (tx.customerId != null) {
@@ -390,8 +803,9 @@ class FirestoreService {
       module: 'POS',
       action: 'SALE_COMPLETE',
       targetId: tx.id,
-      targetName: 'Tx #${tx.id.substring(0, 5)}',
-      summary: 'Sale transaction completed. Total: [₱${tx.total.toStringAsFixed(2)}] for [${tx.items.length}] items.',
+      targetName: 'Tx #${safeShortId(tx.id)}',
+      summary:
+          'Sale transaction completed. Total: [₱${tx.total.toStringAsFixed(2)}] for [${tx.items.length}] items.',
       batch: batch,
     );
 
@@ -417,23 +831,22 @@ class FirestoreService {
       batch.update(_transactions.doc(tx.id), {'isRefunded': true});
 
       for (final item in tx.items) {
-        if (item.variantId != null) {
-          batch.update(_products.doc(item.productId), {
-            'variants.${item.variantId}.stock': FieldValue.increment(item.qty),
-          });
-        } else {
-          batch.update(_products.doc(item.productId), {
-            'stock': FieldValue.increment(item.qty),
-          });
-        }
+        final deltas = computeStockRestockDeltas(
+          variantId: item.variantId,
+          qty: item.qty,
+        );
+        batch.update(_products.doc(item.productId), {
+          for (final e in deltas.entries) e.key: FieldValue.increment(e.value),
+        });
       }
 
       await AuditLogService().logAction(
         module: 'POS',
         action: 'VOID_SALE',
         targetId: tx.id,
-        targetName: 'Tx #${tx.id.substring(0, 5)}',
-        summary: 'Sale transaction voided/refunded. Total amount refunded: [₱${tx.total.toStringAsFixed(2)}].',
+        targetName: 'Tx #${safeShortId(tx.id)}',
+        summary:
+            'Sale transaction voided/refunded. Total amount refunded: [₱${tx.total.toStringAsFixed(2)}].',
         batch: batch,
       );
 
@@ -553,45 +966,41 @@ class FirestoreService {
           transaction.update(orderRef, {'items': updatedOrderItems});
         }
 
-        // 3. Inventory stock adjustment math
+        // 3. Inventory stock adjustment math (variants update BOTH variant stock and top-level stock)
         if (productSnap.exists) {
           if (isCashRefund) {
-            // Cash refund: Restock +returnQty to sellable shelf
-            if (variantId != null && variantId.isNotEmpty) {
-              transaction.update(productRef, {
-                'variants.$variantId.stock': FieldValue.increment(returnQty),
-              });
-            } else {
-              transaction.update(productRef, {
-                'stock': FieldValue.increment(returnQty),
-              });
-            }
+            final deltas = computeStockRestockDeltas(
+              variantId: variantId,
+              qty: returnQty,
+            );
+            transaction.update(productRef, {
+              for (final e in deltas.entries)
+                e.key: FieldValue.increment(e.value),
+            });
           } else if (isDamagedSwap) {
-            // 1-to-1 Swap (Damaged write-off): Fresh unit issued, returned unit written off -> -returnQty
-            if (variantId != null && variantId.isNotEmpty) {
-              transaction.update(productRef, {
-                'variants.$variantId.stock': FieldValue.increment(-returnQty),
-              });
-            } else {
-              transaction.update(productRef, {
-                'stock': FieldValue.increment(-returnQty),
-              });
-            }
+            final deltas = computeStockRestockDeltas(
+              variantId: variantId,
+              qty: -returnQty,
+            );
+            transaction.update(productRef, {
+              for (final e in deltas.entries)
+                e.key: FieldValue.increment(e.value),
+            });
           }
           // Note: 1-to-1 Swap with sellable restock (!isCashRefund && !isDamagedSwap) has net 0 stock change.
         }
-        
+
         final logRef = _db.collection('audit_logs').doc();
         transaction.set(logRef, {
-           'timestamp': FieldValue.serverTimestamp(),
-           'actorId': 'system', // could pass processedBy if available, but hardcode for now
-           'actorEmail': 'system', 
-           'actorRole': 'system',
-           'module': 'POS',
-           'action': 'RETURN_ITEM',
-           'targetId': transactionId,
-           'targetName': 'Tx #${transactionId.substring(0, 5)}',
-           'summary': 'Processed return for ${returnQty}x of $productId',
+          'timestamp': FieldValue.serverTimestamp(),
+          'actorId': 'system',
+          'actorEmail': 'system',
+          'actorRole': 'system',
+          'module': 'POS',
+          'action': 'RETURN_ITEM',
+          'targetId': transactionId,
+          'targetName': 'Tx #${safeShortId(transactionId)}',
+          'summary': 'Processed return for ${returnQty}x of $productId',
         });
       });
     } catch (e) {
@@ -698,27 +1107,32 @@ class FirestoreService {
         if (pid.isNotEmpty && rQty > 0) {
           final productRef = _products.doc(pid);
           if (condition == 'restock') {
-            if (vid != null && vid.isNotEmpty) {
-              transaction.update(productRef, {
-                'variants.$vid.stock': FieldValue.increment(rQty),
-              });
-            } else {
-              transaction.update(productRef, {
-                'stock': FieldValue.increment(rQty),
-              });
-            }
+            final deltas = computeStockRestockDeltas(
+              variantId: vid,
+              qty: rQty,
+            );
+            transaction.update(productRef, {
+              for (final e in deltas.entries)
+                e.key: FieldValue.increment(e.value),
+            });
           } else {
-            // Damaged/Expired/Write-off: Log inventory loss record
+            // Damaged/Expired/Write-off: Log inventory loss record at costPrice
             final lossRef = _db.collection('loss_records').doc();
             final double price = (refItem['price'] as num? ?? 0.0).toDouble();
+            final double itemCost =
+                (refItem['costPrice'] as num? ?? 0.0).toDouble();
+            final double lossUnitCost = computeRefundLossUnitCost(
+              itemCostPrice: itemCost,
+              retailPrice: price,
+            );
             transaction.set(lossRef, {
               'productId': pid,
               if (vid != null) 'variantId': vid,
               'productName': refItem['name'] ?? '',
               'qty': rQty,
-              'unitPrice': price,
-              'unitLossCost': price,
-              'totalLoss': price * rQty,
+              'unitPrice': lossUnitCost,
+              'unitLossCost': lossUnitCost,
+              'totalLoss': lossUnitCost * rQty,
               'type': condition == 'expired' ? 'expired' : 'damaged',
               'notes':
                   'Refund Write-off ($condition) for Receipt #$transactionId',
@@ -740,18 +1154,19 @@ class FirestoreService {
         'totalAmount': totalRefundAmount,
         'processedBy': processedBy,
       });
-      
+
       final logRef = _db.collection('audit_logs').doc();
       transaction.set(logRef, {
-         'timestamp': FieldValue.serverTimestamp(),
-         'actorId': processedBy,
-         'actorEmail': processedBy, 
-         'actorRole': 'admin',
-         'module': 'POS',
-         'action': 'VOID_SALE',
-         'targetId': transactionId,
-         'targetName': 'Tx #${transactionId.substring(0, 5)}',
-         'summary': 'Processed multi-item refund of ₱${totalRefundAmount.toStringAsFixed(2)}',
+        'timestamp': FieldValue.serverTimestamp(),
+        'actorId': processedBy,
+        'actorEmail': processedBy,
+        'actorRole': 'admin',
+        'module': 'POS',
+        'action': 'VOID_SALE',
+        'targetId': transactionId,
+        'targetName': 'Tx #${safeShortId(transactionId)}',
+        'summary':
+            'Processed multi-item refund of ₱${totalRefundAmount.toStringAsFixed(2)}',
       });
       
     });
@@ -889,20 +1304,20 @@ class FirestoreService {
   }
 
   Future<void> updateOrderStatus(String orderId, OrderStatus status,
-          {String? reason}) async {
-      await _orders.doc(orderId).update({
-        'status': status.name,
-        if (reason != null) 'rejectionReason': reason,
-      });
-      try {
-        await AuditLogService().logAction(
-          module: 'Pre-Orders',
-          action: 'STATUS_CHANGE',
-          targetId: orderId,
-          targetName: 'Order #${orderId.substring(0, 5)}',
-          summary: 'Order status transitioned to [${status.name}]' + (reason != null ? ' Reason: [$reason].' : '.'),
-        );
-      } catch(e) {}
+      {String? reason}) async {
+    await _orders.doc(orderId).update({
+      'status': status.name,
+      if (reason != null) 'rejectionReason': reason,
+    });
+    try {
+      await AuditLogService().logAction(
+        module: 'Pre-Orders',
+        action: 'STATUS_CHANGE',
+        targetId: orderId,
+        targetName: 'Order #${safeShortId(orderId)}',
+        summary: 'Order status transitioned to [${status.name}]${reason != null ? ' Reason: [$reason].' : '.'}',
+      );
+    } catch (_) {}
   }
 
   Future<void> bulkUpdateOrders(List<PreOrder> orders) async {
@@ -929,8 +1344,12 @@ class FirestoreService {
         return list;
       });
 
-  Future<void> addTransaction(StoreTransaction tx) =>
-      _transactions.add(tx.toFirestore());
+  Future<void> addTransaction(StoreTransaction tx) {
+    if (tx.id.isNotEmpty) {
+      return _transactions.doc(tx.id).set(tx.toFirestore());
+    }
+    return _transactions.add(tx.toFirestore());
+  }
 
   // ── Expenses ───────────────────────────────────────────────────────────────
 
@@ -1380,6 +1799,39 @@ class FirestoreService {
   Future<void> processApprovedRefund(
       RefundRequest request, String adminEmail) async {
     try {
+      // Look up matching transaction(s) by doc ID or orderId so we mark isRefunded: true
+      final List<DocumentReference> matchingTxRefs = [];
+      if (request.transactionId.isNotEmpty) {
+        final directTx =
+            await _transactions.doc(request.transactionId).get();
+        if (directTx.exists) {
+          matchingTxRefs.add(directTx.reference);
+        } else {
+          final byOrder = await _transactions
+              .where('orderId', isEqualTo: request.transactionId)
+              .get();
+          for (final doc in byOrder.docs) {
+            matchingTxRefs.add(doc.reference);
+          }
+        }
+      }
+
+      // Fetch product costs for accurate cost-based loss write-offs when non-restockable
+      final Map<String, double> productUnitCosts = {};
+      if (request.condition != RefundCondition.restockable) {
+        for (final item in request.items) {
+          if (item.productId.isEmpty ||
+              productUnitCosts.containsKey(item.productId)) {
+            continue;
+          }
+          final pSnap = await _products.doc(item.productId).get();
+          if (pSnap.exists) {
+            final p = Product.fromFirestore(pSnap);
+            productUnitCosts[item.productId] = p.effectiveUnitCost;
+          }
+        }
+      }
+
       final batch = _db.batch();
 
       batch.update(_refundRequests.doc(request.id), {
@@ -1389,25 +1841,36 @@ class FirestoreService {
         if (request.adminNotes != null) 'adminNotes': request.adminNotes,
       });
 
+      // Mark linked transaction(s) as refunded
+      for (final txRef in matchingTxRefs) {
+        batch.update(txRef, {'isRefunded': true});
+      }
+
       for (final item in request.items) {
         if (request.condition == RefundCondition.restockable) {
-          if (item.variantId != null) {
-            batch.update(_products.doc(item.productId), {
-              'variants.${item.variantId}.stock':
-                  FieldValue.increment(item.qty),
-            });
-          } else {
-            batch.update(_products.doc(item.productId), {
-              'stock': FieldValue.increment(item.qty),
-            });
-          }
+          final deltas = computeStockRestockDeltas(
+            variantId: item.variantId,
+            qty: item.qty,
+          );
+          batch.update(_products.doc(item.productId), {
+            for (final e in deltas.entries)
+              e.key: FieldValue.increment(e.value),
+          });
         } else {
+          final lossUnitCost = computeRefundLossUnitCost(
+            itemCostPrice: item.costPrice,
+            productCostPrice: productUnitCosts[item.productId],
+            retailPrice: item.price,
+          );
           final lossDoc = _lossRecords.doc();
           batch.set(lossDoc, {
             'productId': item.productId,
+            if (item.variantId != null) 'variantId': item.variantId,
             'productName': item.name,
             'qty': item.qty,
-            'unitPrice': item.price,
+            'unitPrice': lossUnitCost,
+            'unitLossCost': lossUnitCost,
+            'totalLoss': lossUnitCost * item.qty,
             'type': request.condition == RefundCondition.expired
                 ? 'expired'
                 : 'damaged',
@@ -1418,6 +1881,20 @@ class FirestoreService {
           });
         }
       }
+
+      // Log audit record in refund_records collection
+      final refundRecordRef = _db.collection('refund_records').doc();
+      batch.set(refundRecordRef, {
+        'refundRequestId': request.id,
+        'transactionId': request.transactionId,
+        'orderId': request.transactionId,
+        'customerEmail': request.customerEmail,
+        'refundedAt': FieldValue.serverTimestamp(),
+        'items': request.items.map((i) => i.toMap()).toList(),
+        'totalAmount': request.total,
+        'condition': request.condition?.name ?? 'restockable',
+        'processedBy': adminEmail,
+      });
 
       await batch.commit();
     } catch (e) {
@@ -1466,31 +1943,24 @@ class FirestoreService {
       if (item.qtyReceived <= 0) continue;
 
       final prodRef = _products.doc(item.product.id);
-      final int updatedStock = item.product.stock + item.qtyReceived;
       final double updatedCostPrice =
           item.unitCost > 0 ? item.unitCost : item.product.costPrice;
-      final updatedBatches = [...item.product.batches, item.newBatch];
 
-      DateTime? earliestExp;
-      for (var b in updatedBatches) {
-        if (b.quantity > 0 && b.expiryDate != null) {
-          if (earliestExp == null || b.expiryDate!.isBefore(earliestExp)) {
-            earliestExp = b.expiryDate;
-          }
-        }
-      }
-
+      // Atomic stock increment + dot-notation batch insert (never overwrites concurrent sales/batches)
       final Map<String, dynamic> prodUpdateData = {
-        'stock': updatedStock,
+        'stock': FieldValue.increment(item.qtyReceived),
         'costPrice': updatedCostPrice,
-        'batches': {for (var b in updatedBatches) b.id: b.toMap()},
+        'batches.${item.newBatch.id}': item.newBatch.toMap(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      if (earliestExp != null) {
-        prodUpdateData['expiryDate'] = Timestamp.fromDate(earliestExp);
+      if (item.newBatch.expiryDate != null &&
+          (item.product.expiryDate == null ||
+              item.newBatch.expiryDate!.isBefore(item.product.expiryDate!))) {
+        prodUpdateData['expiryDate'] =
+            Timestamp.fromDate(item.newBatch.expiryDate!);
       }
 
-      // 1. Update Product document (stock, cost, batches, nearest expiry)
+      // 1. Update Product document atomically
       batch.update(prodRef, prodUpdateData);
 
       // 2. Create Delivery Log document
@@ -1553,28 +2023,20 @@ class FirestoreService {
     final batch = _db.batch();
 
     final prodRef = _products.doc(product.id);
-    final int updatedStock = product.stock + newBatch.quantity;
     final double updatedCostPrice =
         newBatch.unitCost > 0 ? newBatch.unitCost : product.costPrice;
-    final updatedBatches = [...product.batches, newBatch];
 
-    DateTime? earliestExp;
-    for (var b in updatedBatches) {
-      if (b.quantity > 0 && b.expiryDate != null) {
-        if (earliestExp == null || b.expiryDate!.isBefore(earliestExp)) {
-          earliestExp = b.expiryDate;
-        }
-      }
-    }
-
+    // Atomic stock increment + dot-notation batch insert (never overwrites concurrent sales/batches)
     final Map<String, dynamic> updateData = {
-      'stock': updatedStock,
+      'stock': FieldValue.increment(newBatch.quantity),
       'costPrice': updatedCostPrice,
-      'batches': {for (var b in updatedBatches) b.id: b.toMap()},
+      'batches.${newBatch.id}': newBatch.toMap(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    if (earliestExp != null) {
-      updateData['expiryDate'] = Timestamp.fromDate(earliestExp);
+    if (newBatch.expiryDate != null &&
+        (product.expiryDate == null ||
+            newBatch.expiryDate!.isBefore(product.expiryDate!))) {
+      updateData['expiryDate'] = Timestamp.fromDate(newBatch.expiryDate!);
     }
     if (product.packCost != null) {
       updateData['packCost'] = product.packCost;
@@ -1993,21 +2455,9 @@ class FirestoreService {
             invoiceNumber: deliveryReceiptNo,
           );
 
-          final updatedBatches = [...prod.batches, newProductBatch];
-          final int updatedStock = prod.stock + qtyReceivingNow;
-
-          DateTime? earliestExp;
-          for (var b in updatedBatches) {
-            if (b.quantity > 0 && b.expiryDate != null) {
-              if (earliestExp == null || b.expiryDate!.isBefore(earliestExp)) {
-                earliestExp = b.expiryDate;
-              }
-            }
-          }
-
           final Map<String, dynamic> prodUpdateData = {
-            'stock': updatedStock,
-            'batches': {for (var b in updatedBatches) b.id: b.toMap()},
+            'stock': FieldValue.increment(qtyReceivingNow),
+            'batches.$newBatchId': newProductBatch.toMap(),
             'updatedAt': FieldValue.serverTimestamp(),
           };
 
@@ -2015,8 +2465,9 @@ class FirestoreService {
             prodUpdateData['costPrice'] = effectiveUnitCost;
           }
 
-          if (earliestExp != null) {
-            prodUpdateData['expiryDate'] = Timestamp.fromDate(earliestExp);
+          if (expiry != null &&
+              (prod.expiryDate == null || expiry.isBefore(prod.expiryDate!))) {
+            prodUpdateData['expiryDate'] = Timestamp.fromDate(expiry);
           }
 
           batch.update(prodRef, prodUpdateData);

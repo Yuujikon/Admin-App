@@ -8,6 +8,7 @@ import '../models/refund_request.dart';
 import '../providers/order_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/printer_provider.dart';
+import '../providers/shift_provider.dart';
 import '../services/notification_service.dart';
 import '../widgets/status_badge.dart';
 import '../config/theme.dart';
@@ -2028,8 +2029,18 @@ class _CardActionButtonState extends State<_CardActionButton> {
                 } else if (order.status == OrderStatus.ready) {
                   // Step 3: Complete pickup checkout
                   if (order.isPrePaid) {
-                    await orderProvider.completePrePaidPickup(
+                    final shiftProvider = context.read<ShiftProvider>();
+                    final tx = await orderProvider.completePrePaidPickup(
                         orderId: order.id);
+                    if (shiftProvider.hasActiveShift) {
+                      final totalItemsSold =
+                          tx.items.fold<int>(0, (sum, i) => sum + i.qty);
+                      await shiftProvider.updateShiftSales(
+                        cashAmount: 0.0,
+                        gcashAmount: tx.total,
+                        itemsSold: totalItemsSold,
+                      );
+                    }
                     if (mounted) {
                       messenger.showSnackBar(
                         SnackBar(

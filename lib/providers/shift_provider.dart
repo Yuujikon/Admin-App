@@ -29,13 +29,12 @@ class ShiftProvider extends BaseProvider {
   /// Full historical list of all shift sessions (active & closed).
   List<ShiftSession> get allShifts => _allShifts;
 
-  /// Initializes shift listeners.
-  ShiftProvider() {
-    _initShiftListener();
-  }
+  /// Creates ShiftProvider without starting Firestore streams before auth.
+  ShiftProvider();
 
-  /// Sets up real-time Firestore listeners for all shift sessions.
-  void _initShiftListener() {
+  /// Initializes or re-initializes real-time Firestore listeners for shift sessions after login.
+  void initialize() {
+    cancelSubscriptions();
     registerSubscription(_shifts.snapshots().listen((snap) {
       final list =
           snap.docs.map((doc) => ShiftSession.fromFirestore(doc)).toList();
@@ -77,7 +76,7 @@ class ShiftProvider extends BaseProvider {
     notifyListeners();
   }
 
-  /// Records a mid-shift cash drop / withdrawal from register drawer.
+  /// Records a mid-shift cash drop / withdrawal from register drawer atomically.
   Future<void> recordCashDrop({
     required double amount,
     required String reason,
@@ -91,18 +90,16 @@ class ShiftProvider extends BaseProvider {
       createdAt: DateTime.now(),
     );
 
-    final updatedDrops = [..._currentShift!.cashDrops, drop];
-    final updated = _currentShift!.copyWith(cashDrops: updatedDrops);
-
     await _shifts.doc(_currentShift!.id).update({
-      'cashDrops': updatedDrops.map((d) => d.toMap()).toList(),
+      'cashDrops': FieldValue.arrayUnion([drop.toMap()]),
     });
 
-    _currentShift = updated;
+    final updatedDrops = [..._currentShift!.cashDrops, drop];
+    _currentShift = _currentShift!.copyWith(cashDrops: updatedDrops);
     notifyListeners();
   }
 
-  /// Updates cumulative shift sales, items sold, cash received, and change given when a sale is completed.
+  /// Atomically increments cumulative shift sales, items sold, cash received, and change given.
   Future<void> updateShiftSales({
     required double cashAmount,
     required double gcashAmount,
@@ -112,29 +109,22 @@ class ShiftProvider extends BaseProvider {
   }) async {
     if (_currentShift == null) return;
 
-    final updatedCashSales = _currentShift!.cashSales + cashAmount;
-    final updatedGcashSales = _currentShift!.gcashSales + gcashAmount;
-    final updatedItemsSold = _currentShift!.itemsSoldCount + itemsSold;
-    final updatedCashReceived = _currentShift!.totalCashReceived + cashReceived;
-    final updatedChangeGiven = _currentShift!.totalChangeGiven + changeGiven;
-    final updatedTxCount = _currentShift!.transactionCount + 1;
-
     await _shifts.doc(_currentShift!.id).update({
-      'cashSales': updatedCashSales,
-      'gcashSales': updatedGcashSales,
-      'itemsSoldCount': updatedItemsSold,
-      'totalCashReceived': updatedCashReceived,
-      'totalChangeGiven': updatedChangeGiven,
-      'transactionCount': updatedTxCount,
+      'cashSales': FieldValue.increment(cashAmount),
+      'gcashSales': FieldValue.increment(gcashAmount),
+      'itemsSoldCount': FieldValue.increment(itemsSold),
+      'totalCashReceived': FieldValue.increment(cashReceived),
+      'totalChangeGiven': FieldValue.increment(changeGiven),
+      'transactionCount': FieldValue.increment(1),
     });
 
     _currentShift = _currentShift!.copyWith(
-      cashSales: updatedCashSales,
-      gcashSales: updatedGcashSales,
-      itemsSoldCount: updatedItemsSold,
-      totalCashReceived: updatedCashReceived,
-      totalChangeGiven: updatedChangeGiven,
-      transactionCount: updatedTxCount,
+      cashSales: _currentShift!.cashSales + cashAmount,
+      gcashSales: _currentShift!.gcashSales + gcashAmount,
+      itemsSoldCount: _currentShift!.itemsSoldCount + itemsSold,
+      totalCashReceived: _currentShift!.totalCashReceived + cashReceived,
+      totalChangeGiven: _currentShift!.totalChangeGiven + changeGiven,
+      transactionCount: _currentShift!.transactionCount + 1,
     );
     notifyListeners();
   }

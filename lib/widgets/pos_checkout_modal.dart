@@ -8,6 +8,7 @@ import '../models/transaction.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/printer_provider.dart';
+import '../providers/shift_provider.dart';
 import '../utils/format.dart';
 import 'premium_components.dart';
 import 'action_warning_dialog.dart';
@@ -71,11 +72,16 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
 
   double get _grandTotal => _digitalOrderTotal + _walkInTotal;
 
+  /// Cash amount due at the register right now (only walk-in additions if pre-order is already paid).
+  double get _amountDueNow =>
+      widget.order.isPrePaid ? _walkInTotal : _grandTotal;
+
   double get _cashTendered =>
       double.tryParse(_cashController.text.replaceAll(',', '')) ?? 0.0;
 
-  double get _changeDue =>
-      (_cashTendered - _grandTotal) > 0 ? (_cashTendered - _grandTotal) : 0.0;
+  double get _changeDue => (_cashTendered - _amountDueNow) > 0
+      ? (_cashTendered - _amountDueNow)
+      : 0.0;
 
   bool get _isCashValid {
     if (widget.order.isPrePaid) {
@@ -96,7 +102,7 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
 
   void _setExactAmount() {
     setState(() {
-      _cashController.text = _grandTotal.toStringAsFixed(2);
+      _cashController.text = _amountDueNow.toStringAsFixed(2);
       _cashController.selection = TextSelection.fromPosition(
         TextPosition(offset: _cashController.text.length),
       );
@@ -187,7 +193,9 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
           : Icons.point_of_sale_rounded,
       details: [
         'Order Total: ₱${_grandTotal.toStringAsFixed(2)}',
-        if (!widget.order.isPrePaid) ...[
+        if (!widget.order.isPrePaid || _walkInItems.isNotEmpty) ...[
+          if (widget.order.isPrePaid)
+            'Walk-in Cash Due: ₱${_walkInTotal.toStringAsFixed(2)}',
           'Cash Tendered: ₱${_cashTendered.toStringAsFixed(2)}',
           'Change Due: ₱${_changeDue.toStringAsFixed(2)}',
         ],
@@ -206,12 +214,15 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
     try {
       final orderProvider = context.read<OrderProvider>();
       final printerProvider = context.read<PrinterProvider>();
+      final shiftProvider = context.read<ShiftProvider>();
 
       final StoreTransaction tx;
       if (widget.order.isPrePaid) {
         tx = await orderProvider.completePrePaidPickup(
           orderId: widget.order.id,
           walkInItems: _walkInItems,
+          walkInCashTendered: _walkInItems.isNotEmpty ? _cashTendered : 0.0,
+          walkInChangeGiven: _walkInItems.isNotEmpty ? _changeDue : 0.0,
         );
       } else {
         tx = await orderProvider.completePickupWithCash(
@@ -219,6 +230,25 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
           cashTendered: _cashTendered,
           changeGiven: _changeDue,
           walkInItems: _walkInItems,
+        );
+      }
+
+      // Record pickup sale metrics into active cashier shift
+      if (shiftProvider.hasActiveShift) {
+        final totalItemsSold =
+            tx.items.fold<int>(0, (sum, i) => sum + i.qty);
+        await shiftProvider.updateShiftSales(
+          cashAmount: widget.order.isPrePaid ? _walkInTotal : tx.total,
+          gcashAmount: widget.order.isPrePaid ? _digitalOrderTotal : 0.0,
+          itemsSold: totalItemsSold,
+          cashReceived:
+              (!widget.order.isPrePaid || _walkInItems.isNotEmpty)
+                  ? _cashTendered
+                  : 0.0,
+          changeGiven:
+              (!widget.order.isPrePaid || _walkInItems.isNotEmpty)
+                  ? _changeDue
+                  : 0.0,
         );
       }
 

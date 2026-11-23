@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'order.dart';
 
 /// Status enum for customer refund request processing.
-enum RefundStatus { pending, approved, rejected }
+enum RefundStatus { pending, approved, rejected, cancelled }
 
 /// Physical condition assessment for returned goods.
 enum RefundCondition { restockable, expired, damaged }
@@ -14,6 +14,9 @@ class RefundRequest {
 
   /// Associated original transaction ID.
   final String transactionId;
+
+  /// Customer Firebase Auth UID (when provided by customer app).
+  final String? customerId;
 
   /// Customer email address.
   final String customerEmail;
@@ -55,6 +58,7 @@ class RefundRequest {
   const RefundRequest({
     required this.id,
     required this.transactionId,
+    this.customerId,
     required this.customerEmail,
     required this.customerName,
     required this.items,
@@ -92,7 +96,8 @@ class RefundRequest {
 
     return RefundRequest(
       id: doc.id,
-      transactionId: d['transactionId'] ?? '',
+      transactionId: d['transactionId'] ?? d['orderId'] ?? '',
+      customerId: d['customerId']?.toString(),
       customerEmail: d['customerEmail'] ?? '',
       customerName: d['customerName'] ?? '',
       items:
@@ -112,6 +117,7 @@ class RefundRequest {
   /// Converts model to Map for Firestore write operations.
   Map<String, dynamic> toFirestore() => {
         'transactionId': transactionId,
+        if (customerId != null) 'customerId': customerId,
         'customerEmail': customerEmail,
         'customerName': customerName,
         'items': items.map((i) => i.toMap()).toList(),

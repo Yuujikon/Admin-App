@@ -67,10 +67,18 @@ class _PosScreenState extends State<PosScreen> {
   PricingBreakdown get _breakdown {
     final products = context.read<InventoryProvider>().products;
 
-    // Apply wholesale prices to items before calculating
+    // Apply wholesale prices to non-variant items and preserve variant prices
     final itemsWithWholesale = _cart.map((item) {
       try {
         final p = products.firstWhere((p) => p.id == item.productId);
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
+          final v = p.variants.firstWhere(
+            (v) => v.id == item.variantId,
+            orElse: () => ProductVariant(
+                id: item.variantId!, name: item.variantName ?? '', price: item.price, stock: 0),
+          );
+          return item.copyWith(price: v.price);
+        }
         final bool isWholesale = p.wholesalePrice != null &&
             item.qty >= (p.wholesaleThreshold ?? 999);
         return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
@@ -381,9 +389,20 @@ class _PosScreenState extends State<PosScreen> {
       final products = inventory.products;
       final breakdown = _breakdown;
 
-      // Items for the transaction (with wholesale prices)
+      // Items for the transaction (preserve variant prices; apply wholesale to non-variants)
       final items = _cart.map((item) {
         final p = products.firstWhere((p) => p.id == item.productId);
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
+          final v = p.variants.firstWhere(
+            (v) => v.id == item.variantId,
+            orElse: () => ProductVariant(
+                id: item.variantId!,
+                name: item.variantName ?? '',
+                price: item.price,
+                stock: 0),
+          );
+          return item.copyWith(price: v.price);
+        }
         final bool isWholesale = p.wholesalePrice != null &&
             item.qty >= (p.wholesaleThreshold ?? 999);
         return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
@@ -393,13 +412,16 @@ class _PosScreenState extends State<PosScreen> {
       final cash = _cashNum;
       final change = _change;
       final itemsCount = items.fold<int>(0, (sum, i) => sum + i.qty);
+      final selectedCustomerId = _selectedCustomer?.id;
+      final selectedCustomerEmail = _selectedCustomer?.email;
+      final selectedCustomerName = _selectedCustomer?.name;
 
       final tx = await inventory.completeSale(
         items,
         cash,
         totalOverride: total,
-        customerId: _selectedCustomer?.id,
-        customerEmail: _selectedCustomer?.email,
+        customerId: selectedCustomerId,
+        customerEmail: selectedCustomerEmail,
       );
 
       // Automatically record sale metrics into active register shift session
@@ -449,7 +471,7 @@ class _PosScreenState extends State<PosScreen> {
           cash: cash,
           change: change,
           orderId: tx.id,
-          customerName: _selectedCustomer?.name,
+          customerName: selectedCustomerName,
           orderType: "In-store",
           breakdown: breakdown,
         ).catchError((e) {
@@ -2045,8 +2067,8 @@ class _OfflineStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('store_settings')
-          .doc('master')
+          .collection('settings')
+          .doc('store_settings')
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
         final bool isFromCache =

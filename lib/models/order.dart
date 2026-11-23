@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 /// Fulfillment status states for pre-orders.
 enum OrderStatus {
+  awaitingPayment,
   pending,
   staging,
   ready,
@@ -176,6 +177,7 @@ class CartItem {
 class PreOrder {
   final String id;
   final String orderId;
+  final String? customerId;
   final String customerName;
   final String customerEmail;
   final List<CartItem> items;
@@ -186,6 +188,8 @@ class PreOrder {
   final String notes;
   final String location;
   final String pickupTime;
+  final DateTime? pickupStart;
+  final DateTime? pickupEnd;
   final DateTime createdAt;
   final DateTime? expiresAt;
   final String? rejectionReason;
@@ -194,11 +198,15 @@ class PreOrder {
   final String? processedBy;
   final String paymentMethod;
   final String paymentStatus;
+  final String? paymentReference;
   final bool isPaid;
+  final bool reservationReleased;
+  final int extensionCount;
 
   const PreOrder({
     required this.id,
     required this.orderId,
+    this.customerId,
     required this.customerName,
     required this.customerEmail,
     required this.items,
@@ -209,6 +217,8 @@ class PreOrder {
     this.notes = '',
     this.location = '',
     this.pickupTime = '',
+    this.pickupStart,
+    this.pickupEnd,
     required this.createdAt,
     this.expiresAt,
     this.rejectionReason,
@@ -217,28 +227,34 @@ class PreOrder {
     this.processedBy,
     this.paymentMethod = 'cash',
     this.paymentStatus = 'unpaid',
+    this.paymentReference,
     this.isPaid = false,
+    this.reservationReleased = false,
+    this.extensionCount = 0,
   });
 
-  /// True if the order was already paid online/cashless prior to store pickup.
+  static bool _isCashMethod(String method) {
+    final m = method.trim().toLowerCase();
+    return m.isEmpty ||
+        m == 'cash' ||
+        m == 'pay_at_store' ||
+        m == 'cash_on_pickup' ||
+        m == 'cod';
+  }
+
+  /// True ONLY when the order uses a non-cash method AND has confirmed payment.
   bool get isPrePaid {
-    if (isPaid) return true;
-    final status = paymentStatus.toLowerCase();
-    if (status == 'paid' || status == 'completed') return true;
-    final method = paymentMethod.toLowerCase();
-    if (method.isNotEmpty &&
-        method != 'cash' &&
-        method != 'pay_at_store' &&
-        method != 'cash_on_pickup' &&
-        method != 'cod') {
-      return true;
-    }
-    return false;
+    if (_isCashMethod(paymentMethod)) return false;
+    final pStatus = paymentStatus.trim().toLowerCase();
+    return isPaid || pStatus == 'paid' || pStatus == 'completed';
   }
 
   static OrderStatus _parseStatus(dynamic rawStatus) {
     final str = rawStatus?.toString() ?? 'pending';
     switch (str) {
+      case 'awaitingPayment':
+      case 'awaiting_payment':
+        return OrderStatus.awaitingPayment;
       case 'staging':
       case 'processing':
         return OrderStatus.staging;
@@ -253,6 +269,7 @@ class PreOrder {
       case 'refunded':
         return OrderStatus.refunded;
       case 'refundRequested':
+      case 'refund_requested':
         return OrderStatus.refundRequested;
       case 'refundRejected':
         return OrderStatus.refundRejected;
@@ -273,9 +290,19 @@ class PreOrder {
         }
       });
 
+      final String pStatus = d['paymentStatus']?.toString() ??
+          d['payment_status']?.toString() ??
+          'unpaid';
+      final String? pRef = d['paymentReference']?.toString();
+      final bool paidFlag = d['isPaid'] == true ||
+          d['is_paid'] == true ||
+          pStatus.toLowerCase() == 'paid' ||
+          pStatus.toLowerCase() == 'completed';
+
       return PreOrder(
         id: doc.id,
         orderId: d['orderId']?.toString() ?? 'GDC-????',
+        customerId: d['customerId']?.toString(),
         customerName: d['customerName']?.toString() ?? 'Unknown Customer',
         customerEmail: d['customerEmail']?.toString() ?? '',
         items: (d['items'] as List? ?? [])
@@ -286,15 +313,18 @@ class PreOrder {
         total: (d['total'] as num? ?? 0).toDouble(),
         status: _parseStatus(d['status']),
         notes: (d['notes'] ??
-                d['note'] ??
-                d['customerNote'] ??
-                d['customerNotes'] ??
-                d['orderNote'] ??
-                d['remarks'])
-            ?.toString() ??
+                    d['note'] ??
+                    d['pickupNotes'] ??
+                    d['customerNote'] ??
+                    d['customerNotes'] ??
+                    d['orderNote'] ??
+                    d['remarks'])
+                ?.toString() ??
             '',
         location: d['location']?.toString() ?? '',
         pickupTime: d['pickupTime']?.toString() ?? '',
+        pickupStart: (d['pickupStart'] as Timestamp?)?.toDate(),
+        pickupEnd: (d['pickupEnd'] as Timestamp?)?.toDate(),
         createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
         expiresAt: (d['expiresAt'] as Timestamp?)?.toDate(),
         rejectionReason: d['rejectionReason']?.toString(),
@@ -304,13 +334,11 @@ class PreOrder {
         paymentMethod: d['paymentMethod']?.toString() ??
             d['payment_method']?.toString() ??
             'cash',
-        paymentStatus: d['paymentStatus']?.toString() ??
-            d['payment_status']?.toString() ??
-            'unpaid',
-        isPaid: d['isPaid'] == true ||
-            d['is_paid'] == true ||
-            (d['paymentStatus']?.toString().toLowerCase() == 'paid') ||
-            (d['payment_status']?.toString().toLowerCase() == 'paid'),
+        paymentStatus: pStatus,
+        paymentReference: pRef,
+        isPaid: paidFlag,
+        reservationReleased: d['reservationReleased'] == true,
+        extensionCount: (d['extensionCount'] as num? ?? 0).toInt(),
       );
     } catch (e) {
       debugPrint('Error parsing PreOrder ${doc.id}: $e');
@@ -328,6 +356,7 @@ class PreOrder {
 
   Map<String, dynamic> toFirestore() => {
         'orderId': orderId,
+        if (customerId != null) 'customerId': customerId,
         'customerName': customerName,
         'customerEmail': customerEmail,
         'items': items.map((i) => i.toMap()).toList(),
@@ -338,6 +367,8 @@ class PreOrder {
         'notes': notes,
         'location': location,
         'pickupTime': pickupTime,
+        if (pickupStart != null) 'pickupStart': Timestamp.fromDate(pickupStart!),
+        if (pickupEnd != null) 'pickupEnd': Timestamp.fromDate(pickupEnd!),
         'createdAt': Timestamp.fromDate(createdAt),
         'expiresAt': expiresAt != null ? Timestamp.fromDate(expiresAt!) : null,
         'customerPhone': customerPhone,
@@ -346,18 +377,27 @@ class PreOrder {
         'processedBy': processedBy,
         'paymentMethod': paymentMethod,
         'paymentStatus': paymentStatus,
+        if (paymentReference != null) 'paymentReference': paymentReference,
         'isPaid': isPaid,
+        'reservationReleased': reservationReleased,
+        'extensionCount': extensionCount,
         if (rejectionReason != null) 'rejectionReason': rejectionReason,
       };
 
-  PreOrder copyWith(
-      {OrderStatus? status,
-      Map<String, DateTime>? timeline,
-      String? processedBy,
-      String? rejectionReason,
-      String? paymentMethod,
-      String? paymentStatus,
-      bool? isPaid}) {
+  PreOrder copyWith({
+    OrderStatus? status,
+    Map<String, DateTime>? timeline,
+    String? processedBy,
+    String? rejectionReason,
+    String? paymentMethod,
+    String? paymentStatus,
+    String? paymentReference,
+    bool? isPaid,
+    bool? reservationReleased,
+    DateTime? pickupStart,
+    DateTime? pickupEnd,
+    int? extensionCount,
+  }) {
     final newTimeline = timeline ?? Map.from(statusTimeline);
     if (status != null && status != this.status) {
       newTimeline[status.name] = DateTime.now();
@@ -366,6 +406,7 @@ class PreOrder {
     return PreOrder(
       id: id,
       orderId: orderId,
+      customerId: customerId,
       customerName: customerName,
       customerEmail: customerEmail,
       items: items,
@@ -376,6 +417,8 @@ class PreOrder {
       notes: notes,
       location: location,
       pickupTime: pickupTime,
+      pickupStart: pickupStart ?? this.pickupStart,
+      pickupEnd: pickupEnd ?? this.pickupEnd,
       createdAt: createdAt,
       expiresAt: expiresAt,
       rejectionReason: rejectionReason ?? this.rejectionReason,
@@ -384,7 +427,10 @@ class PreOrder {
       processedBy: processedBy ?? this.processedBy,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentReference: paymentReference ?? this.paymentReference,
       isPaid: isPaid ?? this.isPaid,
+      reservationReleased: reservationReleased ?? this.reservationReleased,
+      extensionCount: extensionCount ?? this.extensionCount,
     );
   }
 }
