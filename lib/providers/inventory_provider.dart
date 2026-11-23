@@ -16,6 +16,7 @@ import '../models/restock_inquiry.dart';
 import '../models/delivery_log.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
+import '../utils/inventory_math.dart';
 
 import 'base_provider.dart';
 
@@ -721,26 +722,36 @@ class InventoryProvider extends BaseProvider {
       TransactionType type = TransactionType.inStore}) async {
     if (_isProcessingSale) throw Exception('Transaction in progress');
 
-    // 1. Final stock check against current local state (synced via snapshots)
-    for (var item in cart) {
+    // 1. Final availableStock check (respecting active pre-order reservations)
+    // Aggregate quantities per (productId, variantId) in case cart contains duplicates
+    final Map<String, int> requestedQtyByKey = {};
+    for (final item in cart) {
+      final key = '${item.productId}::${item.variantId ?? ''}';
+      requestedQtyByKey[key] = (requestedQtyByKey[key] ?? 0) + item.qty;
+    }
+
+    for (final item in cart) {
       try {
         final p = _products.firstWhere((p) => p.id == item.productId);
-        if (item.variantId != null) {
+        final key = '${item.productId}::${item.variantId ?? ''}';
+        final totalNeeded = requestedQtyByKey[key] ?? item.qty;
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
           final v = p.variants.firstWhere((v) => v.id == item.variantId);
-          if (v.stock < item.qty) {
+          if (v.availableStock < totalNeeded) {
             throw Exception(
-                '${p.name} (${v.name}) is now out of stock or has insufficient quantity (${v.stock} remaining).');
+                '${p.name} (${v.name}) has insufficient available stock (${v.availableStock} available, ${v.reservedStock} reserved).');
           }
         } else {
-          if (p.stock < item.qty) {
+          if (p.availableStock < totalNeeded) {
             throw Exception(
-                '${p.name} is now out of stock or has insufficient quantity (${p.stock} remaining).');
+                '${p.name} has insufficient available stock (${p.availableStock} available, ${p.reservedStock} reserved).');
           }
         }
       } catch (e) {
-        if (e is StateError)
+        if (e is StateError) {
           throw Exception(
               'Product ${item.name} no longer exists in inventory.');
+        }
         rethrow;
       }
     }
@@ -754,13 +765,13 @@ class InventoryProvider extends BaseProvider {
       final double change =
           paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
 
-      // 1. Apply local optimistic stock deduction & build accurate line items with totalCogs & depletedBatches
-      final List<CartItem> processedItems =
+      // 2. Compute FEFO batch depletion ONCE and apply optimistic local update
+      final deductionResult =
           _applyLocalOptimisticStockDeductionAndBuildLineItems(cart);
 
       final tx = StoreTransaction(
         id: const Uuid().v4(),
-        items: processedItems,
+        items: deductionResult.processedItems,
         total: total,
         cashTendered: paymentMethod == PaymentMethod.cash ? cash : 0.0,
         changeGiven: change,
@@ -771,28 +782,36 @@ class InventoryProvider extends BaseProvider {
         type: type,
       );
 
-      // 2. Commit WriteBatch to local cache (works 100% offline & auto-syncs)
-      await _fs.recordSaleOfflineFirst(tx: tx, cachedProducts: _products);
+      // 3. Commit WriteBatch with precomputed depletion plans (no second batch deduction!)
+      await _fs.recordSaleOfflineFirst(
+        tx: tx,
+        depletionPlans: deductionResult.depletionPlans,
+      );
 
       // Trigger heads-up payment pop-up alert (catch errors so notification issues never block sale)
       try {
         await NotificationService.showPaymentReceivedAlert(
-            tx.id.length >= 8 ? tx.id.substring(0, 8) : tx.id,
+            safeShortId(tx.id, 8),
             total,
             customerEmail ?? 'Walk-in Customer');
       } catch (e) {
         debugPrint('Notification alert error: $e');
       }
 
-      // Check for low stock after decrement
-      for (var item in cart) {
+      // Check for low stock using post-sale stock (already decremented optimistically once)
+      final Set<String> notifiedProducts = {};
+      for (final item in cart) {
+        if (notifiedProducts.contains(item.productId)) continue;
         try {
           final p = _products.firstWhere((p) => p.id == item.productId);
-          final int remainingStock = item.variantId != null
-              ? p.variants.firstWhere((v) => v.id == item.variantId).stock -
-                  item.qty
-              : p.stock - item.qty;
-          if (remainingStock <= 5) {
+          final int remainingStock = (item.variantId != null &&
+                  item.variantId!.isNotEmpty)
+              ? p.variants.firstWhere((v) => v.id == item.variantId).stock
+              : p.stock;
+          final int threshold =
+              p.lowStockThreshold > 0 ? p.lowStockThreshold : 5;
+          if (remainingStock <= threshold) {
+            notifiedProducts.add(p.id);
             _notifySupplierLowStock(p);
           }
         } catch (_) {}
@@ -805,16 +824,19 @@ class InventoryProvider extends BaseProvider {
     }
   }
 
-  List<CartItem> _applyLocalOptimisticStockDeductionAndBuildLineItems(
-      List<CartItem> cart) {
+  ({
+    List<CartItem> processedItems,
+    Map<String, BatchDepletionPlan> depletionPlans,
+  }) _applyLocalOptimisticStockDeductionAndBuildLineItems(List<CartItem> cart) {
     final List<CartItem> processedItems = [];
+    final Map<String, BatchDepletionPlan> depletionPlans = {};
 
     for (final item in cart) {
       final index = _products.indexWhere((p) => p.id == item.productId);
       if (index >= 0) {
         final p = _products[index];
 
-        if (item.variantId != null) {
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
           final updatedVariants = p.variants.map((v) {
             if (v.id == item.variantId) {
               return v.copyWith(stock: (v.stock - item.qty).clamp(0, 999999));
@@ -839,78 +861,23 @@ class InventoryProvider extends BaseProvider {
             ],
           ));
         } else {
-          int remainingToDeduct = item.qty;
-          final List<ProductBatch> currentBatches = List.from(p.batches);
-
-          currentBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-          final List<ProductBatch> updatedBatches = [];
-          final List<BatchDepletionRecord> depletedBatches = [];
-          double lineItemTotalCogs = 0.0;
-
-          for (final b in currentBatches) {
-            if (remainingToDeduct <= 0) {
-              updatedBatches.add(b);
-              continue;
-            }
-
-            if (b.quantity > remainingToDeduct) {
-              final int deductedQty = remainingToDeduct;
-              lineItemTotalCogs += (deductedQty * b.unitCost);
-              depletedBatches.add(BatchDepletionRecord(
-                batchId: b.id,
-                quantity: deductedQty,
-                unitCost: b.unitCost,
-              ));
-
-              updatedBatches.add(ProductBatch(
-                id: b.id,
-                productId: b.productId,
-                quantity: b.quantity - deductedQty,
-                unitCost: b.unitCost,
-                expiryDate: b.expiryDate,
-                createdAt: b.createdAt,
-                invoiceNumber: b.invoiceNumber,
-              ));
-              remainingToDeduct = 0;
-            } else {
-              final int deductedQty = b.quantity;
-              lineItemTotalCogs += (deductedQty * b.unitCost);
-              depletedBatches.add(BatchDepletionRecord(
-                batchId: b.id,
-                quantity: deductedQty,
-                unitCost: b.unitCost,
-              ));
-              remainingToDeduct -= deductedQty;
-            }
-          }
-
-          if (remainingToDeduct > 0) {
-            final double fallbackCost = p.costPrice;
-            lineItemTotalCogs += (remainingToDeduct * fallbackCost);
-            depletedBatches.add(BatchDepletionRecord(
-              batchId: 'fallback-unbatched',
-              quantity: remainingToDeduct,
-              unitCost: fallbackCost,
-            ));
-          }
+          // Single-source FEFO batch depletion (earliest expiry first, FIFO tie-break)
+          final plan = planBatchDepletion(p, item.qty);
+          depletionPlans[p.id] = plan;
 
           _products[index] = p.copyWith(
             stock: (p.stock - item.qty).clamp(0, 999999),
-            batches: updatedBatches,
+            batches: plan.remainingBatches,
           );
-
-          final double weightedCostPrice =
-              item.qty > 0 ? (lineItemTotalCogs / item.qty) : item.costPrice;
 
           final String fallbackBarcode =
               item.barcode.isNotEmpty ? item.barcode : (p.barcode ?? '');
 
           processedItems.add(item.copyWith(
             barcode: fallbackBarcode,
-            costPrice: weightedCostPrice,
-            totalCogs: lineItemTotalCogs,
-            depletedBatches: depletedBatches,
+            costPrice: plan.weightedUnitCost,
+            totalCogs: plan.totalCogs,
+            depletedBatches: plan.depletedBatches,
           ));
         }
       } else {
@@ -919,7 +886,7 @@ class InventoryProvider extends BaseProvider {
     }
     _cachedSortedProducts = null;
     notifyListeners();
-    return processedItems;
+    return (processedItems: processedItems, depletionPlans: depletionPlans);
   }
 
   void _notifySupplierLowStock(Product p) {

@@ -137,8 +137,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final isWide = constraints.maxWidth >= 640;
-
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

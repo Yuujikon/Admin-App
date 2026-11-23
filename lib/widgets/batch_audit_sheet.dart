@@ -341,7 +341,7 @@ class _BatchAuditSheetState extends State<BatchAuditSheet> {
                     'Reason: ${lossType.name}',
                   ],
                 );
-                if (!confirm) return;
+                if (!confirm || !context.mounted) return;
 
                 final inventory = context.read<InventoryProvider>();
                 await inventory.logLoss(LossRecord(

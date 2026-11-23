@@ -1271,7 +1271,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 p.supplierId!.isNotEmpty) {
                               final supplier = inventory.suppliers.firstWhere(
                                 (s) => s.id == p.supplierId,
-                                orElse: () => Supplier(id: '', name: ''),
+                                orElse: () => const Supplier(id: '', name: ''),
                               );
                               if (supplier.id.isNotEmpty) {
                                 Navigator.push(
@@ -1778,7 +1778,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
           final settings = inventory.settings;
-          final isClosed = settings.isClosed;
           final isEffectivelyClosed = settings.effectivelyClosed;
           final closureReason = settings.closureReason;
 
@@ -1990,8 +1989,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   context: context,
                                   initialTime: customStart,
                                 );
-                                if (t != null)
+                                if (t != null) {
                                   setDialogState(() => customStart = t);
+                                }
                               },
                               child: InputDecorator(
                                 decoration: InputDecoration(
@@ -2014,8 +2014,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   context: context,
                                   initialTime: customEnd,
                                 );
-                                if (t != null)
+                                if (t != null) {
                                   setDialogState(() => customEnd = t);
+                                }
                               },
                               child: InputDecorator(
                                 decoration: InputDecoration(
@@ -2479,8 +2480,8 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
       return FlSpot(e.key.toDouble(), safeY);
     }).toList();
 
-    final greenColor = const Color(0xFF10B981);
-    final blueColor = const Color(0xFF3B82F6);
+    const greenColor = Color(0xFF10B981);
+    const blueColor = Color(0xFF3B82F6);
 
     final int numDays = metrics.length;
     final double titleInterval = numDays <= 7

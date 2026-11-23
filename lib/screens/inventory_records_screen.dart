@@ -9,14 +9,12 @@ import '../models/shift_session.dart';
 import '../models/restock_inquiry.dart';
 import '../models/transaction.dart';
 import '../models/refund_request.dart';
-import '../models/order.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/shift_provider.dart';
 import '../providers/restock_provider.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/premium_components.dart';
-import '../services/firestore_service.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
 import '../widgets/admin_filter_bar.dart';
@@ -214,7 +212,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           final q = _searchQuery.toLowerCase();
           if (!log.productName.toLowerCase().contains(q) &&
               !(log.notes?.toLowerCase().contains(q) ?? false) &&
-              !log.receivedBy.toLowerCase().contains(q)) continue;
+              !log.receivedBy.toLowerCase().contains(q)) {
+            continue;
+          }
         }
         filteredAudits.add(_AuditRecordWrapper(
           title: 'Shelf Audit Overage',
@@ -235,7 +235,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         if (_searchQuery.isNotEmpty) {
           final q = _searchQuery.toLowerCase();
           if (!loss.productName.toLowerCase().contains(q) &&
-              !loss.notes.toLowerCase().contains(q)) continue;
+              !loss.notes.toLowerCase().contains(q)) {
+            continue;
+          }
         }
         filteredAudits.add(_AuditRecordWrapper(
           title: 'Shelf Audit Shortage',

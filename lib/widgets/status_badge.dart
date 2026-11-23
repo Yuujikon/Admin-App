@@ -14,6 +14,11 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final semantic = Theme.of(context).semantic;
     final (label, bg, fg) = switch (status) {
+      OrderStatus.awaitingPayment => (
+          'Awaiting Payment',
+          semantic.warning.withValues(alpha: 0.1),
+          semantic.warning
+        ),
       OrderStatus.pending => (
           'Pending',
           semantic.warning.withValues(alpha: 0.1),

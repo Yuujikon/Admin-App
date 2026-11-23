@@ -63,7 +63,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Audit Log Details'),
+        title: const Text('Audit Log Details'),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,7 +82,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   const Text('Before:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
                   Container(
                     padding: const EdgeInsets.all(8),
-                    color: Colors.red.withOpacity(0.1),
+                    color: Colors.red.withValues(alpha: 0.1),
                     child: Text(log.beforeData.toString()),
                   ),
                   const SizedBox(height: 8),
@@ -91,7 +91,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   const Text('After:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
                   Container(
                     padding: const EdgeInsets.all(8),
-                    color: Colors.green.withOpacity(0.1),
+                    color: Colors.green.withValues(alpha: 0.1),
                     child: Text(log.afterData.toString()),
                   ),
                 ],
@@ -212,7 +212,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: moduleColor.withOpacity(0.2),
+                          backgroundColor: moduleColor.withValues(alpha: 0.2),
                           child: Icon(Icons.history, color: moduleColor),
                         ),
                         title: Text(log.summary, maxLines: 2, overflow: TextOverflow.ellipsis),

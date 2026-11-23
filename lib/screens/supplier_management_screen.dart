@@ -4,17 +4,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../models/supplier.dart';
 import '../models/product.dart';
-import '../models/restock_inquiry.dart';
 import '../models/rfq.dart';
-import '../models/purchase_order.dart';
 import '../providers/inventory_provider.dart';
-import '../providers/restock_provider.dart';
 import '../providers/procurement_provider.dart';
 import '../utils/format.dart';
 import '../widgets/pending_deliveries_list.dart';
-import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/responsive_layout.dart';
-import '../widgets/restock_inquiry_sheet.dart';
 import '../widgets/supplier_sheet.dart';
 import '../widgets/rfq_builder_sheet.dart';
 import '../widgets/rfq_detail_dialog.dart';
@@ -512,10 +507,9 @@ class _RfqCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '${item.productName}: ${item.requestedQty} pcs' +
-                          (item.quotedUnitPrice != null
+                      '${item.productName}: ${item.requestedQty} pcs${item.quotedUnitPrice != null
                               ? ' (${formatPeso(item.quotedUnitPrice!)})'
-                              : ''),
+                              : ''}',
                       style: const TextStyle(
                           fontSize: 11, fontWeight: FontWeight.w600),
                     ),

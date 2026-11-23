@@ -43,9 +43,15 @@ service cloud.firestore {
 
     function isCustomerReservationUpdate() {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let oldReserved = resource.data.get('reservedStock', 0);
+      let newReserved = request.resource.data.get('reservedStock', 0);
+      let currentStock = resource.data.get('stock', 0);
       return isSignedIn() &&
-        affected.hasOnly(['stock', 'reservedStock', 'variants', 'notifyUserIds', 'updatedAt']) &&
-        request.resource.data.get('stock', 0) >= 0 &&
+        affected.hasOnly(['reservedStock', 'variants', 'notifyUserIds', 'updatedAt']) &&
+        newReserved is int &&
+        newReserved >= 0 &&
+        (newReserved <= oldReserved || newReserved <= currentStock) &&
+        request.resource.data.get('stock', 0) == currentStock &&
         request.resource.data.get('price', 0) == resource.data.get('price', 0) &&
         request.resource.data.get('name', '') == resource.data.get('name', '') &&
         request.resource.data.get('costPrice', 0) == resource.data.get('costPrice', 0);
@@ -57,14 +63,73 @@ service cloud.firestore {
       let userExists = exists(userPath);
       let userDoc = userExists ? get(userPath).data : {};
       let isLocked = userDoc.get('isPermanentlyLocked', false) == true;
-      let restrictedUntil = userDoc.get('restrictedUntil', null);
+      let restrictedUntil = userDoc.get('restrictedUntil', userDoc.get('restrictionUntil', null));
       return isLocked || (restrictedUntil != null && request.time < restrictedUntil);
     }
 
     // Ensure non-staff users cannot modify their own offense counts or active lock fields
     function isNotTamperingOffenses() {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
-      return !affected.hasAny(['offenseCount', 'restrictedUntil', 'isPermanentlyLocked', 'offenseHistory', 'ghostedOrders']);
+      return !affected.hasAny([
+        'offenseCount',
+        'restrictedUntil',
+        'restrictionUntil',
+        'isPermanentlyLocked',
+        'lastOffenseAt',
+        'offenseHistory',
+        'ghostedOrders'
+      ]);
+    }
+
+    function isValidCustomerOrderUpdate() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let oldStatus = resource.data.get('status', '');
+      let newStatus = request.resource.data.get('status', '');
+      let isOwner = isSignedIn() && resource.data.get('customerId', '') == request.auth.uid;
+
+      // 1. Confirm payment on awaitingPayment reservation
+      let isConfirmPayment = oldStatus == 'awaitingPayment' &&
+        newStatus == 'pending' &&
+        affected.hasOnly(['status', 'paymentStatus', 'isPaid', 'paymentReference', 'expiresAt']) &&
+        request.resource.data.get('paymentStatus', '') == 'paid' &&
+        request.resource.data.get('isPaid', false) == true &&
+        request.resource.data.get('paymentReference', '') is string &&
+        request.resource.data.get('paymentReference', '').size() > 0;
+
+      // 2. Cancel active order (idempotent reservationReleased false -> true)
+      let isCancelActive = oldStatus in ['awaitingPayment', 'pending', 'staging', 'ready'] &&
+        newStatus == 'cancelled' &&
+        affected.hasOnly(['status', 'reservationReleased']) &&
+        (!affected.hasAny(['reservationReleased']) || (
+          resource.data.get('reservationReleased', false) == false &&
+          request.resource.data.get('reservationReleased', false) == true
+        ));
+
+      // 3. Request refund on a collected order (supports standardized refundRequested + legacy refund_requested)
+      let isRequestRefund = oldStatus == 'collected' &&
+        newStatus in ['refundRequested', 'refund_requested'] &&
+        affected.hasOnly(['status']);
+
+      // 4. Cancel a pending refund request (reverts order back to collected)
+      let isCancelRefund = oldStatus in ['refundRequested', 'refund_requested'] &&
+        newStatus == 'collected' &&
+        affected.hasOnly(['status']);
+
+      // 5. One-time pickup time extension on an active order
+      let isExtendPickup = oldStatus in ['pending', 'staging', 'ready'] &&
+        resource.data.get('isExtended', false) == false &&
+        request.resource.data.get('isExtended', false) == true &&
+        affected.hasOnly(['expiresAt', 'pickupEnd', 'isExtended', 'extensionCount']) &&
+        request.resource.data.expiresAt is timestamp &&
+        request.resource.data.get('extensionCount', 0) <= 1;
+
+      return isOwner && (
+        isConfirmPayment ||
+        isCancelActive ||
+        isRequestRefund ||
+        isCancelRefund ||
+        isExtendPickup
+      );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -212,14 +277,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && (
         isStaff() || (
           request.resource.data.get('customerId', '') == request.auth.uid &&
+          request.resource.data.get('status', '') in ['awaitingPayment', 'pending'] &&
+          request.resource.data.get('reservationReleased', false) == false &&
           !isCustomerRestricted()
         )
       );
 
-      allow update: if isStaff() || (
-        isSignedIn() && resource.data.get('customerId', '') == request.auth.uid &&
-        request.resource.data.get('status', '') in ['cancelled', 'refund_requested']
-      );
+      allow update: if isStaff() || isValidCustomerOrderUpdate();
       allow delete: if isAdmin();
     }
 
@@ -233,10 +297,18 @@ service cloud.firestore {
           )
         )
       );
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isStaff() || (
+          request.resource.data.get('customerId', '') == request.auth.uid &&
+          request.resource.data.get('status', '') == 'pending'
+        )
+      );
       allow update: if isStaff() || (
-        isSignedIn() && resource.data.get('customerId', '') == request.auth.uid &&
-        request.resource.data.get('status', '') == 'cancelled'
+        isSignedIn() &&
+        resource.data.get('customerId', '') == request.auth.uid &&
+        resource.data.get('status', '') == 'pending' &&
+        request.resource.data.get('status', '') == 'cancelled' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
       );
       allow delete: if isAdmin();
     }

@@ -41,7 +41,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
 
   CartItem? _matchedItem;
   String? _errorMessage;
-  bool _hasScanned = false;
   bool _isProcessing = false;
 
   // Inspection Gate State
@@ -114,7 +113,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
       }
 
       setState(() {
-        _hasScanned = false;
         _errorMessage =
             'Mismatch: Barcode/Number "$cleanInput" was not found on this receipt.';
       });
@@ -124,7 +122,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     final matched = items[matchingIndex];
     if (matched.returnedQty >= matched.qty) {
       setState(() {
-        _hasScanned = false;
         _errorMessage =
             'All units of "${matched.name}" on this receipt have already been returned.';
       });
@@ -132,7 +129,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     }
 
     setState(() {
-      _hasScanned = true;
       _matchedItem = matched;
       _returnQty = 1;
       _selectedCondition = null;
@@ -148,7 +144,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
 
     if (availableItems.isEmpty) {
       setState(() {
-        _hasScanned = false;
         _errorMessage =
             'All items on this receipt have already been returned.';
       });
@@ -157,7 +152,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
 
     if (availableItems.length == 1) {
       setState(() {
-        _hasScanned = true;
         _matchedItem = availableItems.first;
         _returnQty = 1;
         _selectedCondition = null;
@@ -200,7 +194,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     ).then((selected) {
       if (selected != null) {
         setState(() {
-          _hasScanned = true;
           _matchedItem = selected;
           _returnQty = 1;
           _selectedCondition = null;
@@ -465,7 +458,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                       TextButton(
                         onPressed: () => setState(() {
                           _matchedItem = null;
-                          _hasScanned = false;
                         }),
                         child: const Text('Rescan'),
                       ),

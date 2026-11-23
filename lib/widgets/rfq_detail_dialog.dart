@@ -156,7 +156,7 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
     setState(() => _saving = true);
 
@@ -177,7 +177,7 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
 
       final procurement = context.read<ProcurementProvider>();
       await procurement.updateRfq(updatedRfq);
-      final poId = await procurement.convertRfqToPurchaseOrder(updatedRfq, poNumber);
+      await procurement.convertRfqToPurchaseOrder(updatedRfq, poNumber);
 
       if (mounted) {
         Navigator.of(context).pop();

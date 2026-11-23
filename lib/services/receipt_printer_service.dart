@@ -99,8 +99,9 @@ class ReceiptPrinterService {
 
     for (final item in items) {
       String name = item.name;
-      if (name.length > widthChars)
+      if (name.length > widthChars) {
         name = '${name.substring(0, widthChars - 3)}...';
+      }
       bytes.addAll(generator.text(name));
 
       final qtyPricePart = "${item.qty} x ${cleanPeso(formatPeso(item.price))}";

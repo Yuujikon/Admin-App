@@ -83,8 +83,6 @@ class _CategoryBundleManagementScreenState
     List<Product> products,
     List<ProductBundle> bundles,
   ) {
-    final isWide = MediaQuery.of(context).size.width >= 600;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton.extended(
@@ -1166,7 +1164,7 @@ class _LinkProductsDialogState extends State<_LinkProductsDialog> {
                     }
                   }
 
-                  if (mounted) {
+                  if (context.mounted) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -1353,7 +1351,7 @@ class __CreateParentGroupDialogState extends State<_CreateParentGroupDialog> {
                     }
                   }
 
-                  if (mounted) {
+                  if (context.mounted) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(

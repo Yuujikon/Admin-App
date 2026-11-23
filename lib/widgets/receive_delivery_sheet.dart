@@ -309,7 +309,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _confirmDiscardChanges();
-        if (shouldPop && mounted) {
+        if (shouldPop && context.mounted) {
           Navigator.of(context).pop();
         }
       },
@@ -1777,8 +1777,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                       Builder(builder: (context) {
                         final siblings = inventory
                             .getProductsByParentId(_selectedProduct!.parentId!);
-                        if (siblings.length <= 1)
+                        if (siblings.length <= 1) {
                           return const SizedBox.shrink();
+                        }
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -2092,8 +2093,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     ),
                                     validator: (v) {
                                       final q = int.tryParse(v ?? '');
-                                      if (q == null || q <= 0)
+                                      if (q == null || q <= 0) {
                                         return 'Enter delivered qty';
+                                      }
                                       return null;
                                     },
                                   ),
@@ -2122,8 +2124,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     ),
                                     validator: (v) {
                                       final c = double.tryParse(v ?? '');
-                                      if (c == null || c <= 0)
+                                      if (c == null || c <= 0) {
                                         return 'Enter unit cost';
+                                      }
                                       return null;
                                     },
                                   ),
@@ -2287,8 +2290,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                               ),
                               validator: (v) {
                                 final q = int.tryParse(v ?? '');
-                                if (q == null || q <= 0)
+                                if (q == null || q <= 0) {
                                   return 'Enter delivered qty';
+                                }
                                 return null;
                               },
                             ),
@@ -2312,8 +2316,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                               ),
                               validator: (v) {
                                 final c = double.tryParse(v ?? '');
-                                if (c == null || c <= 0)
+                                if (c == null || c <= 0) {
                                   return 'Enter unit cost';
+                                }
                                 return null;
                               },
                             ),
@@ -2714,7 +2719,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
           '⚠️ Warning: Unit cost exceeds selling price! Selling price is below cost by ${formatPeso(calculatedPieceCost - _selectedProduct!.price)}/unit.',
       ],
     );
-    if (!confirm) return;
+    if (!confirm || !mounted) return;
 
     setState(() => _saving = true);
 

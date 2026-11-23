@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,7 +11,6 @@ import '../widgets/qty_control.dart';
 import '../widgets/scanner_dialog.dart';
 import '../utils/barcode_routing.dart';
 import '../utils/format.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../models/customer.dart';
 import '../providers/printer_provider.dart';
 import '../providers/order_provider.dart';
@@ -67,10 +65,18 @@ class _PosScreenState extends State<PosScreen> {
   PricingBreakdown get _breakdown {
     final products = context.read<InventoryProvider>().products;
 
-    // Apply wholesale prices to items before calculating
+    // Apply wholesale prices to non-variant items and preserve variant prices
     final itemsWithWholesale = _cart.map((item) {
       try {
         final p = products.firstWhere((p) => p.id == item.productId);
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
+          final v = p.variants.firstWhere(
+            (v) => v.id == item.variantId,
+            orElse: () => ProductVariant(
+                id: item.variantId!, name: item.variantName ?? '', price: item.price, stock: 0),
+          );
+          return item.copyWith(price: v.price);
+        }
         final bool isWholesale = p.wholesalePrice != null &&
             item.qty >= (p.wholesaleThreshold ?? 999);
         return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
@@ -283,7 +289,9 @@ class _PosScreenState extends State<PosScreen> {
     if (_cart.isEmpty ||
         _cashNum < _total ||
         _saving ||
-        inventory.isProcessingSale) return;
+        inventory.isProcessingSale) {
+      return;
+    }
 
     // Pre-flight check: Ensure no items in cart exceed available stock
     final products = inventory.products;
@@ -341,7 +349,7 @@ class _PosScreenState extends State<PosScreen> {
           p.wholesalePrice != null &&
           item.qty >= (p.wholesaleThreshold ?? 999);
       final double effectiveSellingPrice =
-          isWholesale ? p!.wholesalePrice! : item.price;
+          isWholesale ? p.wholesalePrice! : item.price;
 
       if (effectiveSellingPrice > 0 &&
           cost > 0 &&
@@ -372,7 +380,7 @@ class _PosScreenState extends State<PosScreen> {
         icon: Icons.trending_down_rounded,
         details: itemsBelowCostDetails,
       );
-      if (!confirm) return;
+      if (!confirm || !mounted) return;
     }
 
     setState(() => _saving = true);
@@ -381,9 +389,20 @@ class _PosScreenState extends State<PosScreen> {
       final products = inventory.products;
       final breakdown = _breakdown;
 
-      // Items for the transaction (with wholesale prices)
+      // Items for the transaction (preserve variant prices; apply wholesale to non-variants)
       final items = _cart.map((item) {
         final p = products.firstWhere((p) => p.id == item.productId);
+        if (item.variantId != null && item.variantId!.isNotEmpty) {
+          final v = p.variants.firstWhere(
+            (v) => v.id == item.variantId,
+            orElse: () => ProductVariant(
+                id: item.variantId!,
+                name: item.variantName ?? '',
+                price: item.price,
+                stock: 0),
+          );
+          return item.copyWith(price: v.price);
+        }
         final bool isWholesale = p.wholesalePrice != null &&
             item.qty >= (p.wholesaleThreshold ?? 999);
         return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
@@ -392,18 +411,21 @@ class _PosScreenState extends State<PosScreen> {
       final total = breakdown.total;
       final cash = _cashNum;
       final change = _change;
-      final itemsCount = items.fold<int>(0, (sum, i) => sum + i.qty);
+      final itemsCount = items.fold<int>(0, (acc, i) => acc + i.qty);
+      final selectedCustomerId = _selectedCustomer?.id;
+      final selectedCustomerEmail = _selectedCustomer?.email;
+      final selectedCustomerName = _selectedCustomer?.name;
+      final shiftProvider = context.read<ShiftProvider>();
 
       final tx = await inventory.completeSale(
         items,
         cash,
         totalOverride: total,
-        customerId: _selectedCustomer?.id,
-        customerEmail: _selectedCustomer?.email,
+        customerId: selectedCustomerId,
+        customerEmail: selectedCustomerEmail,
       );
 
       // Automatically record sale metrics into active register shift session
-      final shiftProvider = context.read<ShiftProvider>();
       if (shiftProvider.hasActiveShift) {
         await shiftProvider.updateShiftSales(
           cashAmount: total,
@@ -449,7 +471,7 @@ class _PosScreenState extends State<PosScreen> {
           cash: cash,
           change: change,
           orderId: tx.id,
-          customerName: _selectedCustomer?.name,
+          customerName: selectedCustomerName,
           orderType: "In-store",
           breakdown: breakdown,
         ).catchError((e) {
@@ -560,7 +582,7 @@ class _PosScreenState extends State<PosScreen> {
                   _PosViewSwitcher(
                     showCart: _showCart,
                     totalCartItems:
-                        _cart.fold<int>(0, (sum, item) => sum + item.qty),
+                        _cart.fold<int>(0, (acc, item) => acc + item.qty),
                     onViewChanged: (showCart) =>
                         setState(() => _showCart = showCart),
                   ),
@@ -629,7 +651,7 @@ class _PosScreenState extends State<PosScreen> {
                             child: SafeArea(
                               child: _FloatingCartButton(
                                 totalQty: _cart.fold<int>(
-                                    0, (sum, item) => sum + item.qty),
+                                    0, (acc, item) => acc + item.qty),
                                 totalPrice: _total,
                                 onPressed: () =>
                                     setState(() => _showCart = true),
@@ -713,7 +735,7 @@ class _ProductGridState extends State<_ProductGrid> {
                     final p = pluProducts[i];
                     final cartQty = widget.cart
                         .where((c) => c.productId == p.id)
-                        .fold<int>(0, (sum, c) => sum + c.qty);
+                        .fold<int>(0, (acc, c) => acc + c.qty);
                     return _PosProductTile(
                         p: p,
                         cartQty: cartQty,
@@ -791,7 +813,7 @@ class _ProductGridState extends State<_ProductGrid> {
                   final p = filteredProducts[i - matchingBundles.length];
                   final cartQty = widget.cart
                       .where((c) => c.productId == p.id)
-                      .fold<int>(0, (sum, c) => sum + c.qty);
+                      .fold<int>(0, (acc, c) => acc + c.qty);
                   return _PosProductTile(
                       p: p,
                       cartQty: cartQty,
@@ -1043,14 +1065,13 @@ class _CartPanel extends StatelessWidget {
     required this.onSelectCustomer,
     required this.saving,
     required this.cashFocus,
-    this.scrollController,
     this.onBackToProducts,
-  });
+  }) : scrollController = null;
 
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final int totalUnits = cart.fold<int>(0, (sum, item) => sum + item.qty);
+    final int totalUnits = cart.fold<int>(0, (acc, item) => acc + item.qty);
     final double? nextBill = _getNextBill(breakdown.total);
 
     return Container(
@@ -1755,7 +1776,7 @@ class _SuccessView extends StatelessWidget {
     final theme = Theme.of(context);
     final tx = transaction;
     final int totalUnits =
-        tx != null ? tx.items.fold(0, (sum, i) => sum + i.qty) : 0;
+        tx != null ? tx.items.fold(0, (acc, i) => acc + i.qty) : 0;
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -1981,6 +2002,7 @@ class _SuccessView extends StatelessWidget {
                       OutlinedButton.icon(
                         onPressed: () {
                           final printer = context.read<PrinterProvider>();
+                          final messenger = ScaffoldMessenger.of(context);
                           printer
                               .printReceipt(
                             items: tx.items,
@@ -1992,7 +2014,7 @@ class _SuccessView extends StatelessWidget {
                             orderType: "In-store",
                           )
                               .catchError((e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            messenger.showSnackBar(
                               SnackBar(
                                   content: Text('Printer error: $e'),
                                   backgroundColor: Colors.red),
@@ -2045,8 +2067,8 @@ class _OfflineStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('store_settings')
-          .doc('master')
+          .collection('settings')
+          .doc('store_settings')
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
         final bool isFromCache =

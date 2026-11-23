@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/format.dart';
@@ -51,9 +50,10 @@ class ProductVariant {
   }
 
   factory ProductVariant.fromMap(dynamic m) {
-    if (m is! Map)
+    if (m is! Map) {
       return const ProductVariant(
           id: '', name: 'Invalid Variant', price: 0, stock: 0);
+    }
     final data = Map<String, dynamic>.from(m);
     return ProductVariant(
       id: data['id']?.toString() ?? '',

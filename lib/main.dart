@@ -194,6 +194,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
           context.read<ExpenseProvider>().initialize();
           context.read<RestockProvider>().initialize();
           context.read<ProcurementProvider>().initialize();
+          context.read<ShiftProvider>().initialize();
         } else {
           debugPrint('AuthGate: Cancelling subscriptions (Logout)');
           context.read<InventoryProvider>().cancelSubscriptions();
@@ -201,6 +202,7 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
           context.read<ExpenseProvider>().cancelSubscriptions();
           context.read<RestockProvider>().cancelSubscriptions();
           context.read<ProcurementProvider>().cancelSubscriptions();
+          context.read<ShiftProvider>().cancelSubscriptions();
         }
       });
     }
