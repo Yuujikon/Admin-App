@@ -14,16 +14,40 @@ enum OrderStatus {
 }
 
 /// Audit record of a specific batch segment depleted during checkout.
+/// Supports both legacy `depletedBatches` fields (`quantity`, `unitCost`) and
+/// canonical FIFO `batchAllocations` fields (`qtyDeducted`, `datePurchased`,
+/// `dateArrived`, `costPrice`, `supplierName`, `poNumber`).
 class BatchDepletionRecord {
   final String batchId;
   final int quantity;
   final double unitCost;
+  final DateTime? datePurchased;
+  final DateTime? dateArrived;
+  final String? supplierName;
+  final String? poNumber;
 
   const BatchDepletionRecord({
     required this.batchId,
     required this.quantity,
     required this.unitCost,
+    this.datePurchased,
+    this.dateArrived,
+    this.supplierName,
+    this.poNumber,
   });
+
+  /// Canonical alias matching `batchAllocations` schema.
+  int get qtyDeducted => quantity;
+
+  /// Canonical alias matching `batchAllocations` schema.
+  double get costPrice => unitCost;
+
+  static DateTime? _parseNullableDate(dynamic val) {
+    if (val is Timestamp) return val.toDate();
+    if (val is DateTime) return val;
+    if (val != null) return DateTime.tryParse(val.toString());
+    return null;
+  }
 
   factory BatchDepletionRecord.fromMap(dynamic m) {
     if (m is! Map) {
@@ -32,17 +56,50 @@ class BatchDepletionRecord {
     }
     return BatchDepletionRecord(
       batchId: m['batchId']?.toString() ?? '',
-      quantity: (m['quantity'] as num? ?? 0).toInt(),
-      unitCost: (m['unitCost'] as num? ?? 0.0).toDouble(),
+      quantity:
+          (m['qtyDeducted'] as num? ?? m['quantity'] as num? ?? 0).toInt(),
+      unitCost:
+          (m['costPrice'] as num? ?? m['unitCost'] as num? ?? 0.0).toDouble(),
+      datePurchased: _parseNullableDate(m['datePurchased']),
+      dateArrived: _parseNullableDate(m['dateArrived']),
+      supplierName: m['supplierName']?.toString(),
+      poNumber: m['poNumber']?.toString(),
     );
   }
 
+  /// Legacy map format for `depletedBatches`.
   Map<String, dynamic> toMap() => {
         'batchId': batchId,
         'quantity': quantity,
+        'qtyDeducted': quantity,
         'unitCost': unitCost,
+        'costPrice': unitCost,
+        if (datePurchased != null)
+          'datePurchased': Timestamp.fromDate(datePurchased!),
+        if (dateArrived != null)
+          'dateArrived': Timestamp.fromDate(dateArrived!),
+        if (supplierName != null) 'supplierName': supplierName,
+        if (poNumber != null) 'poNumber': poNumber,
+      };
+
+  /// Canonical `batchAllocations` map stamped onto `orders` and `transactions`.
+  Map<String, dynamic> toAllocationMap() => {
+        'batchId': batchId,
+        'qtyDeducted': quantity,
+        'datePurchased': datePurchased != null
+            ? Timestamp.fromDate(datePurchased!)
+            : Timestamp.now(),
+        'dateArrived': dateArrived != null
+            ? Timestamp.fromDate(dateArrived!)
+            : Timestamp.now(),
+        'costPrice': unitCost,
+        if (supplierName != null) 'supplierName': supplierName,
+        if (poNumber != null) 'poNumber': poNumber,
       };
 }
+
+/// Type alias so FIFO code can refer to `BatchAllocation` directly.
+typedef BatchAllocation = BatchDepletionRecord;
 
 /// Cart line item model representing a product in a POS transaction or Pre-Order.
 class CartItem {
@@ -52,6 +109,11 @@ class CartItem {
   final String? variantName;
   final String barcode;
   final double price;
+
+  /// Immutable selling unit price locked at the moment of checkout or reservation.
+  /// Prevents future product markup / FIFO price changes from retroactively altering orders.
+  final double unitPriceAtSale;
+
   final double costPrice;
   final int qty;
   final int returnedQty;
@@ -60,6 +122,9 @@ class CartItem {
   final double totalCogs;
   final List<BatchDepletionRecord> depletedBatches;
 
+  /// Canonical FIFO lineage list stamped on every sale/order line item.
+  List<BatchAllocation> get batchAllocations => depletedBatches;
+
   const CartItem({
     required this.productId,
     this.variantId,
@@ -67,14 +132,17 @@ class CartItem {
     this.variantName,
     this.barcode = '',
     required this.price,
+    double? unitPriceAtSale,
     this.costPrice = 0,
     required this.qty,
     this.returnedQty = 0,
     this.isPerishable = false,
     this.notes,
     this.totalCogs = 0.0,
-    this.depletedBatches = const [],
-  });
+    List<BatchDepletionRecord>? depletedBatches,
+    List<BatchAllocation>? batchAllocations,
+  })  : unitPriceAtSale = unitPriceAtSale ?? price,
+        depletedBatches = batchAllocations ?? depletedBatches ?? const [];
 
   factory CartItem.fromMap(dynamic m) {
     if (m is! Map) {
@@ -85,16 +153,21 @@ class CartItem {
     final int safeQty = rawQty < 1 ? 1 : rawQty;
     final double rawTotalCogs = (m['totalCogs'] as num? ?? 0.0).toDouble();
     final double rawCostPrice = (m['costPrice'] as num? ?? 0.0).toDouble();
+    final double parsedPrice =
+        (m['unitPriceAtSale'] as num? ?? m['price'] as num? ?? 0).toDouble();
+    final double lockedUnitPrice =
+        (m['unitPriceAtSale'] as num? ?? parsedPrice).toDouble();
 
     final double effectiveCostPrice =
         rawTotalCogs > 0 ? (rawTotalCogs / safeQty) : rawCostPrice;
 
-    final List<BatchDepletionRecord> batchesList =
-        (m['depletedBatches'] is List)
-            ? (m['depletedBatches'] as List)
-                .map((e) => BatchDepletionRecord.fromMap(e))
-                .toList()
-            : const [];
+    final rawAllocations = m['batchAllocations'] is List
+        ? m['batchAllocations'] as List
+        : (m['depletedBatches'] is List ? m['depletedBatches'] as List : null);
+
+    final List<BatchDepletionRecord> batchesList = rawAllocations != null
+        ? rawAllocations.map((e) => BatchDepletionRecord.fromMap(e)).toList()
+        : const [];
 
     return CartItem(
       productId: m['productId']?.toString() ??
@@ -108,7 +181,8 @@ class CartItem {
           'Unknown Item',
       variantName: m['variantName']?.toString(),
       barcode: m['barcode']?.toString() ?? '',
-      price: (m['price'] as num? ?? 0).toDouble(),
+      price: parsedPrice,
+      unitPriceAtSale: lockedUnitPrice,
       costPrice: effectiveCostPrice,
       qty: safeQty,
       returnedQty: (m['returnedQty'] as num? ?? 0).toInt(),
@@ -127,6 +201,7 @@ class CartItem {
         if (variantName != null) 'variantName': variantName,
         'barcode': barcode,
         'price': price,
+        'unitPriceAtSale': unitPriceAtSale,
         'costPrice': costPrice,
         'qty': qty < 1 ? 1 : qty,
         'returnedQty': returnedQty,
@@ -134,6 +209,8 @@ class CartItem {
         if (notes != null) 'notes': notes,
         'totalCogs': totalCogs > 0 ? totalCogs : (costPrice * qty),
         'depletedBatches': depletedBatches.map((b) => b.toMap()).toList(),
+        'batchAllocations':
+            depletedBatches.map((b) => b.toAllocationMap()).toList(),
       };
 
   /// Whether current selling price of this line item is below its cost price.
@@ -149,11 +226,13 @@ class CartItem {
     int? qty,
     int? returnedQty,
     double? price,
+    double? unitPriceAtSale,
     double? costPrice,
     String? barcode,
     String? notes,
     double? totalCogs,
     List<BatchDepletionRecord>? depletedBatches,
+    List<BatchAllocation>? batchAllocations,
   }) =>
       CartItem(
         productId: productId,
@@ -162,13 +241,15 @@ class CartItem {
         variantName: variantName,
         barcode: barcode ?? this.barcode,
         price: price ?? this.price,
+        unitPriceAtSale: unitPriceAtSale ?? price ?? this.unitPriceAtSale,
         costPrice: costPrice ?? this.costPrice,
         qty: qty != null ? (qty < 1 ? 1 : qty) : this.qty,
         returnedQty: returnedQty ?? this.returnedQty,
         isPerishable: isPerishable,
         notes: notes ?? this.notes,
         totalCogs: totalCogs ?? this.totalCogs,
-        depletedBatches: depletedBatches ?? this.depletedBatches,
+        depletedBatches:
+            batchAllocations ?? depletedBatches ?? this.depletedBatches,
       );
 }
 
@@ -286,12 +367,12 @@ class PreOrder {
         total: (d['total'] as num? ?? 0).toDouble(),
         status: _parseStatus(d['status']),
         notes: (d['notes'] ??
-                d['note'] ??
-                d['customerNote'] ??
-                d['customerNotes'] ??
-                d['orderNote'] ??
-                d['remarks'])
-            ?.toString() ??
+                    d['note'] ??
+                    d['customerNote'] ??
+                    d['customerNotes'] ??
+                    d['orderNote'] ??
+                    d['remarks'])
+                ?.toString() ??
             '',
         location: d['location']?.toString() ?? '',
         pickupTime: d['pickupTime']?.toString() ?? '',
@@ -351,7 +432,8 @@ class PreOrder {
       };
 
   PreOrder copyWith(
-      {OrderStatus? status,
+      {List<CartItem>? items,
+      OrderStatus? status,
       Map<String, DateTime>? timeline,
       String? processedBy,
       String? rejectionReason,
@@ -368,7 +450,7 @@ class PreOrder {
       orderId: orderId,
       customerName: customerName,
       customerEmail: customerEmail,
-      items: items,
+      items: items ?? this.items,
       subtotal: subtotal,
       tax: tax,
       total: total,

@@ -202,6 +202,7 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
       setState(() => _isProcessing = false);
       return;
     }
+    if (!mounted) return;
 
     try {
       final orderProvider = context.read<OrderProvider>();
@@ -672,8 +673,8 @@ class _PosCheckoutModalState extends State<PosCheckoutModal> {
             label: const Text('Add Walk-In Item'),
             style: OutlinedButton.styleFrom(
               foregroundColor: theme.colorScheme.primary,
-              side:
-                  BorderSide(color: theme.colorScheme.primary.withOpacity(0.5)),
+              side: BorderSide(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -991,14 +992,15 @@ class _WalkInItemPickerSheetState extends State<_WalkInItemPickerSheet> {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (ctx, idx) {
                 final p = products[idx];
+                final int available = p.totalAvailableStock;
                 return ListTile(
                   title: Text(p.name,
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(
-                      'Stock: ${p.stock} | P${p.price.toStringAsFixed(2)}'),
+                      'Stock: $available | P${p.price.toStringAsFixed(2)}'),
                   trailing: ElevatedButton(
                     onPressed:
-                        p.stock > 0 ? () => Navigator.pop(context, p) : null,
+                        available > 0 ? () => Navigator.pop(context, p) : null,
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),

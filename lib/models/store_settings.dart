@@ -140,6 +140,17 @@ class StoreSettings {
   final List<String> masterCategories;
   final String? announcement;
 
+  // Dynamic Velocity-Based Pricing Settings
+  /// When true, applies the pure 15.0%–25.0% global velocity benchmark across all categories.
+  /// When false (default), uses category-specific bounds for defined categories and 15%–25% for Others.
+  final bool useGlobalVelocityBenchmarkOnly;
+
+  /// Philippine sari-sari store selling price rounding step (e.g. 0.25, 0.50, or 1.00).
+  final double priceRoundingStep;
+
+  /// Rolling window in days (7 or 30) used to compute normalized salesVelocityScore.
+  final int velocityWindowDays;
+
   final DateTime? updatedAt;
 
   /// Creates a [StoreSettings] instance.
@@ -168,6 +179,9 @@ class StoreSettings {
       'Others'
     ],
     this.announcement,
+    this.useGlobalVelocityBenchmarkOnly = false,
+    this.priceRoundingStep = 0.25,
+    this.velocityWindowDays = 30,
     this.updatedAt,
   });
 
@@ -181,6 +195,15 @@ class StoreSettings {
                 Map<String, dynamic>.from(item as Map)))
             .toList()
         : const <ScheduleOverride>[];
+
+    final rawRoundingStep =
+        (d['priceRoundingStep'] as num?)?.toDouble() ?? 0.25;
+    final double safeRoundingStep =
+        (rawRoundingStep > 0 && rawRoundingStep.isFinite)
+            ? rawRoundingStep
+            : 0.25;
+    final rawWindowDays = (d['velocityWindowDays'] as num?)?.toInt() ?? 30;
+    final int safeWindowDays = rawWindowDays == 7 ? 7 : 30;
 
     return StoreSettings(
       isClosed: d['isClosed'] ?? false,
@@ -209,6 +232,10 @@ class StoreSettings {
             'Others'
           ]),
       announcement: d['announcement'],
+      useGlobalVelocityBenchmarkOnly:
+          d['useGlobalVelocityBenchmarkOnly'] == true,
+      priceRoundingStep: safeRoundingStep,
+      velocityWindowDays: safeWindowDays,
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -233,6 +260,9 @@ class StoreSettings {
       'globalLowStockThreshold': globalLowStockThreshold,
       'masterCategories': masterCategories,
       'announcement': announcement,
+      'useGlobalVelocityBenchmarkOnly': useGlobalVelocityBenchmarkOnly,
+      'priceRoundingStep': priceRoundingStep,
+      'velocityWindowDays': velocityWindowDays,
       'updatedAt': updatedAt != null
           ? Timestamp.fromDate(updatedAt!)
           : FieldValue.serverTimestamp(),
@@ -256,6 +286,9 @@ class StoreSettings {
     int? globalLowStockThreshold,
     List<String>? masterCategories,
     String? announcement,
+    bool? useGlobalVelocityBenchmarkOnly,
+    double? priceRoundingStep,
+    int? velocityWindowDays,
     DateTime? updatedAt,
   }) {
     return StoreSettings(
@@ -277,6 +310,10 @@ class StoreSettings {
           globalLowStockThreshold ?? this.globalLowStockThreshold,
       masterCategories: masterCategories ?? this.masterCategories,
       announcement: announcement ?? this.announcement,
+      useGlobalVelocityBenchmarkOnly:
+          useGlobalVelocityBenchmarkOnly ?? this.useGlobalVelocityBenchmarkOnly,
+      priceRoundingStep: priceRoundingStep ?? this.priceRoundingStep,
+      velocityWindowDays: velocityWindowDays ?? this.velocityWindowDays,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

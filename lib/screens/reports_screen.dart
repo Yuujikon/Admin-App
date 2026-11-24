@@ -96,7 +96,8 @@ class _ReportsScreenState extends State<ReportsScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final startStr = DateFormat('MMM d, yyyy').format(selectedRange.start);
+            final startStr =
+                DateFormat('MMM d, yyyy').format(selectedRange.start);
             final endStr = DateFormat('MMM d, yyyy').format(selectedRange.end);
 
             void setRange(DateTime s, DateTime e) {
@@ -119,8 +120,18 @@ class _ReportsScreenState extends State<ReportsScreen>
             }
 
             final months = [
-              'January', 'February', 'March', 'April', 'May', 'June',
-              'July', 'August', 'September', 'October', 'November', 'December'
+              'January',
+              'February',
+              'March',
+              'April',
+              'May',
+              'June',
+              'July',
+              'August',
+              'September',
+              'October',
+              'November',
+              'December'
             ];
 
             return AlertDialog(
@@ -148,12 +159,19 @@ class _ReportsScreenState extends State<ReportsScreen>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.3),
                           ),
                         ),
                         child: Row(
@@ -188,39 +206,55 @@ class _ReportsScreenState extends State<ReportsScreen>
                         runSpacing: 8,
                         children: [
                           ActionChip(
-                            label: const Text('Today', style: TextStyle(fontSize: 12)),
+                            label: const Text('Today',
+                                style: TextStyle(fontSize: 12)),
                             onPressed: () => setRange(todayStart, todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('Yesterday', style: TextStyle(fontSize: 12)),
+                            label: const Text('Yesterday',
+                                style: TextStyle(fontSize: 12)),
                             onPressed: () {
-                              final y = todayStart.subtract(const Duration(days: 1));
+                              final y =
+                                  todayStart.subtract(const Duration(days: 1));
                               setRange(y, y);
                             },
                           ),
                           ActionChip(
-                            label: const Text('Last 7 Days', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 6)), todayEnd),
+                            label: const Text('Last 7 Days',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(
+                                todayStart.subtract(const Duration(days: 6)),
+                                todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('This Month', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(DateTime(now.year, now.month, 1), todayEnd),
+                            label: const Text('This Month',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(
+                                DateTime(now.year, now.month, 1), todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('Last Month', style: TextStyle(fontSize: 12)),
+                            label: const Text('Last Month',
+                                style: TextStyle(fontSize: 12)),
                             onPressed: () {
-                              final prevMonth = DateTime(now.year, now.month - 1, 1);
-                              final lastDayPrevMonth = DateTime(now.year, now.month, 0);
+                              final prevMonth =
+                                  DateTime(now.year, now.month - 1, 1);
+                              final lastDayPrevMonth =
+                                  DateTime(now.year, now.month, 0);
                               setRange(prevMonth, lastDayPrevMonth);
                             },
                           ),
                           ActionChip(
-                            label: const Text('Last 90 Days', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 89)), todayEnd),
+                            label: const Text('Last 90 Days',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(
+                                todayStart.subtract(const Duration(days: 89)),
+                                todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('This Year', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(DateTime(now.year, 1, 1), todayEnd),
+                            label: const Text('This Year',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () =>
+                                setRange(DateTime(now.year, 1, 1), todayEnd),
                           ),
                         ],
                       ),
@@ -240,16 +274,19 @@ class _ReportsScreenState extends State<ReportsScreen>
                           Expanded(
                             flex: 3,
                             child: DropdownButtonFormField<int>(
-                              value: selectedRange.start.month,
+                              initialValue: selectedRange.start.month,
                               decoration: InputDecoration(
                                 labelText: 'Month',
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               items: List.generate(12, (index) {
                                 return DropdownMenuItem<int>(
                                   value: index + 1,
-                                  child: Text(months[index], style: const TextStyle(fontSize: 13)),
+                                  child: Text(months[index],
+                                      style: const TextStyle(fontSize: 13)),
                                 );
                               }),
                               onChanged: (monthVal) {
@@ -266,16 +303,22 @@ class _ReportsScreenState extends State<ReportsScreen>
                           Expanded(
                             flex: 2,
                             child: DropdownButtonFormField<int>(
-                              value: years.contains(selectedRange.start.year) ? selectedRange.start.year : now.year,
+                              initialValue:
+                                  years.contains(selectedRange.start.year)
+                                      ? selectedRange.start.year
+                                      : now.year,
                               decoration: InputDecoration(
                                 labelText: 'Year',
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               items: years.map((y) {
                                 return DropdownMenuItem<int>(
                                   value: y,
-                                  child: Text('$y', style: const TextStyle(fontSize: 13)),
+                                  child: Text('$y',
+                                      style: const TextStyle(fontSize: 13)),
                                 );
                               }).toList(),
                               onChanged: (yearVal) {
@@ -295,11 +338,13 @@ class _ReportsScreenState extends State<ReportsScreen>
                         icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                         label: const Text(
                           'Open Calendar Picker...',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: () async {
                           final picked = await showDateRangePicker(
@@ -328,7 +373,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                   icon: const Icon(Icons.check_rounded, size: 18),
                   label: const Text('Apply Range'),
                   style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   ),
@@ -382,19 +428,25 @@ class _ReportsScreenState extends State<ReportsScreen>
       return !lDate.isBefore(range.start) && !lDate.isAfter(range.end);
     }).toList();
 
-    // Calculate total valid non-refunded transaction count and total net units sold
+    // Calculate total valid non-refunded transaction count, returns, and net units sold
     final int totalTxCount = filteredTx.where((t) => !t.isRefunded).length;
+    final int refundedTxCount = filteredTx.where((t) => t.isRefunded).length;
     int totalUnitsSold = 0;
+    int partialReturnedUnits = 0;
     for (final tx in filteredTx) {
       if (tx.isRefunded) continue;
       for (final item in tx.items) {
         final int netQty = (item.qty - item.returnedQty).clamp(0, 999999);
         totalUnitsSold += netQty;
+        if (item.returnedQty > 0) {
+          partialReturnedUnits += item.returnedQty;
+        }
       }
     }
 
     // 1. Core Metrics Aggregation using netTotal and netCogs
-    final double grossRevenue = filteredTx.fold(0.0, (sum, t) => sum + t.netTotal);
+    final double grossRevenue =
+        filteredTx.fold(0.0, (sum, t) => sum + t.netTotal);
     final double trueCogs = filteredTx.fold(0.0, (sum, t) => sum + t.netCogs);
     final double grossProfit = grossRevenue - trueCogs;
 
@@ -432,9 +484,8 @@ class _ReportsScreenState extends State<ReportsScreen>
         }
 
         final rev = item.price * netQty;
-        final double unitCogs = item.totalCogs > 0
-            ? (item.totalCogs / item.qty)
-            : item.costPrice;
+        final double unitCogs =
+            item.totalCogs > 0 ? (item.totalCogs / item.qty) : item.costPrice;
         final cogs = unitCogs * netQty;
 
         if (!categoryPerformance.containsKey(cat)) {
@@ -457,7 +508,7 @@ class _ReportsScreenState extends State<ReportsScreen>
         productId: p.id,
         name: p.name,
         category: p.category,
-        currentStock: p.stock,
+        currentStock: p.totalStock,
         qtySold: 0,
         totalRevenue: 0.0,
       );
@@ -479,8 +530,8 @@ class _ReportsScreenState extends State<ReportsScreen>
         if (matchingProduct == null) {
           final normItemName = item.name.trim().toLowerCase();
           try {
-            matchingProduct = inventory.products.firstWhere(
-                (p) => p.name.trim().toLowerCase() == normItemName);
+            matchingProduct = inventory.products
+                .firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
           } catch (_) {}
         }
 
@@ -490,7 +541,7 @@ class _ReportsScreenState extends State<ReportsScreen>
               productId: matchingProduct.id,
               name: matchingProduct.name,
               category: matchingProduct.category,
-              currentStock: matchingProduct.stock,
+              currentStock: matchingProduct.totalStock,
             );
           }
           itemMovements[matchingProduct.id]!.qtySold += netQty;
@@ -674,20 +725,23 @@ class _ReportsScreenState extends State<ReportsScreen>
                               children: [
                                 Icon(Icons.calendar_month_rounded,
                                     size: 16,
-                                    color: Theme.of(context).colorScheme.primary),
+                                    color:
+                                        Theme.of(context).colorScheme.primary),
                                 const SizedBox(width: 6),
                                 Text(
                                   '${DateFormat('MMM d, yyyy').format(_customRange!.start)} - ${DateFormat('MMM d, yyyy').format(_customRange!.end)}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.primary,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
                                   ),
                                 ),
                                 const SizedBox(width: 6),
                                 Icon(Icons.edit_rounded,
                                     size: 14,
-                                    color: Theme.of(context).colorScheme.primary),
+                                    color:
+                                        Theme.of(context).colorScheme.primary),
                               ],
                             ),
                           ),
@@ -716,6 +770,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                   netProfit: netProfit,
                   totalUnitsSold: totalUnitsSold,
                   totalTxCount: totalTxCount,
+                  refundedTxCount: refundedTxCount,
+                  partialReturnedUnits: partialReturnedUnits,
                   sortedCategories: sortedCategories,
                 ),
 
@@ -736,6 +792,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                   filteredLoss: filteredLoss,
                   allLossRecords: inventory.lossRecords,
                   totalLossInPeriod: totalLoss,
+                  grossRevenue: grossRevenue,
                 ),
 
                 // TAB 4: FAST & SLOW MOVING
@@ -767,13 +824,138 @@ class _ReportsScreenState extends State<ReportsScreen>
     required double netProfit,
     required int totalUnitsSold,
     required int totalTxCount,
+    required int refundedTxCount,
+    required int partialReturnedUnits,
     required List<_CategoryPerformance> sortedCategories,
   }) {
     final semantic = Theme.of(context).semantic;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    // Build live owner status briefing strictly from verified period figures
+    final List<_OwnerInsightItem> financialInsights = [];
+    final String statusLabel;
+    final Color statusColor;
+    final IconData statusIcon;
+
+    if (totalTxCount == 0 && totalExpenses == 0 && totalLoss == 0) {
+      statusLabel = 'NO ACTIVITY';
+      statusColor = colorScheme.onSurfaceVariant;
+      statusIcon = Icons.info_outline_rounded;
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.event_note_rounded,
+          color: colorScheme.onSurfaceVariant,
+          text:
+              'No sales, expenses, or inventory losses have been recorded for $periodLabel yet.',
+        ),
+      );
+    } else if (netProfit >= 0 && grossRevenue > 0) {
+      statusLabel = 'PROFITABLE';
+      statusColor = semantic.success;
+      statusIcon = Icons.trending_up_rounded;
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.check_circle_outline_rounded,
+          color: semantic.success,
+          text:
+              'Your store is profitable for $periodLabel, earning ${formatPeso(netProfit)} net profit (${profitMargin.toStringAsFixed(1)}% margin) from $totalTxCount completed sale${totalTxCount == 1 ? '' : 's'}.',
+        ),
+      );
+    } else if (netProfit < 0) {
+      statusLabel = 'NET LOSS';
+      statusColor = colorScheme.error;
+      statusIcon = Icons.trending_down_rounded;
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.warning_amber_rounded,
+          color: colorScheme.error,
+          text:
+              'Your store is currently down ${formatPeso(netProfit.abs())} for $periodLabel because expenses (${formatPeso(totalExpenses)}) and stock losses (${formatPeso(totalLoss)}) exceed gross trading profit (${formatPeso(grossProfit)}).',
+        ),
+      );
+    } else {
+      statusLabel = 'BREAK-EVEN';
+      statusColor = semantic.info;
+      statusIcon = Icons.balance_rounded;
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.balance_rounded,
+          color: semantic.info,
+          text:
+              'Your store is currently at break-even (${formatPeso(0)}) for $periodLabel.',
+        ),
+      );
+    }
+
+    if (totalTxCount > 0) {
+      final double avgSale = grossRevenue / totalTxCount;
+      final double avgUnits = totalUnitsSold / totalTxCount;
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.shopping_basket_outlined,
+          color: colorScheme.primary,
+          text:
+              'Customers averaged ${formatPeso(avgSale)} and ${avgUnits.toStringAsFixed(1)} item(s) per transaction.',
+        ),
+      );
+    }
+
+    if (sortedCategories.isNotEmpty) {
+      final topCat = sortedCategories.first;
+      final double topShare =
+          grossRevenue > 0 ? (topCat.grossSales / grossRevenue) * 100 : 0.0;
+      final double topMargin = topCat.grossSales > 0
+          ? (topCat.netProfit / topCat.grossSales) * 100
+          : 0.0;
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.category_outlined,
+          color: Colors.teal.shade700,
+          text:
+              'Top category: ${topCat.category} generated ${formatPeso(topCat.grossSales)} (${topShare.toStringAsFixed(0)}% of sales, ${topMargin.toStringAsFixed(1)}% trading margin).',
+        ),
+      );
+    }
+
+    if (totalExpenses > 0 || totalLoss > 0) {
+      final double combinedDrag = totalExpenses + totalLoss;
+      final String biggestCost = totalExpenses >= totalLoss
+          ? 'operating expenses (${formatPeso(totalExpenses)})'
+          : 'inventory loss/waste (${formatPeso(totalLoss)})';
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.account_balance_wallet_outlined,
+          color: Colors.orange.shade800,
+          text:
+              'Expenses and stock losses reduced gross trading profit by ${formatPeso(combinedDrag)}, led by $biggestCost.',
+        ),
+      );
+    }
+
+    if (refundedTxCount > 0 || partialReturnedUnits > 0) {
+      financialInsights.add(
+        _OwnerInsightItem(
+          icon: Icons.assignment_return_outlined,
+          color: semantic.info,
+          text:
+              'Automatically excluded from revenue & COGS: $refundedTxCount refunded sale${refundedTxCount == 1 ? '' : 's'} and $partialReturnedUnits partially returned unit${partialReturnedUnits == 1 ? '' : 's'}.',
+        ),
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        // ── OWNER STORE STATUS BRIEFING ─────────────────────────────────
+        _buildOwnerInsightCard(
+          context,
+          title: 'Owner Store Status Briefing',
+          badgeLabel: statusLabel,
+          accentColor: statusColor,
+          headerIcon: statusIcon,
+          items: financialInsights,
+        ),
+        const SizedBox(height: 16),
         // ── SUMMARY METRIC CARDS ─────────────────────────────────────────
         Container(
           padding: const EdgeInsets.all(24),
@@ -827,15 +1009,20 @@ class _ReportsScreenState extends State<ReportsScreen>
                 children: [
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.4),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(
                         children: [
                           Icon(Icons.shopping_bag_outlined,
-                              size: 18, color: Theme.of(context).colorScheme.primary),
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(
@@ -846,14 +1033,18 @@ class _ReportsScreenState extends State<ReportsScreen>
                                   style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.primary),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary),
                                 ),
                                 Text(
                                   '$totalUnitsSold items',
                                   style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w900,
-                                      color: Theme.of(context).colorScheme.primary),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary),
                                 ),
                               ],
                             ),
@@ -865,7 +1056,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                   const SizedBox(width: 10),
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
                         color: Colors.teal.shade50,
                         borderRadius: BorderRadius.circular(14),
@@ -903,30 +1095,52 @@ class _ReportsScreenState extends State<ReportsScreen>
                 ],
               ),
               const SizedBox(height: 20),
-              _reportRow('Gross Revenue', formatPeso(grossRevenue),
-                  Theme.of(context).colorScheme.onSurface),
+              _reportRow(
+                'Gross Revenue',
+                formatPeso(grossRevenue),
+                Theme.of(context).colorScheme.onSurface,
+                subtitle: 'Net sales after refunds & returns',
+              ),
               const SizedBox(height: 10),
-              _reportRow('True COGS (Batch Cost)', '- ${formatPeso(trueCogs)}',
-                  Colors.grey.shade700),
+              _reportRow(
+                'True COGS (Batch Cost)',
+                '- ${formatPeso(trueCogs)}',
+                Colors.grey.shade700,
+                subtitle: 'Actual FIFO supplier cost of items sold',
+              ),
               const SizedBox(height: 10),
-              _reportRow('Gross Trading Profit', formatPeso(grossProfit),
-                  semantic.success),
+              _reportRow(
+                'Gross Trading Profit',
+                formatPeso(grossProfit),
+                semantic.success,
+                subtitle: 'Sales minus supplier batch cost',
+              ),
               const SizedBox(height: 10),
-              _reportRow('Operating Expenses', '- ${formatPeso(totalExpenses)}',
-                  Theme.of(context).colorScheme.error),
+              _reportRow(
+                'Operating Expenses',
+                '- ${formatPeso(totalExpenses)}',
+                Theme.of(context).colorScheme.error,
+                subtitle: 'Store bills, logistics & daily overhead',
+              ),
               const SizedBox(height: 10),
-              _reportRow('Inventory Loss / Waste', '- ${formatPeso(totalLoss)}',
-                  Colors.orange.shade900),
+              _reportRow(
+                'Inventory Loss / Waste',
+                '- ${formatPeso(totalLoss)}',
+                Colors.orange.shade900,
+                subtitle: 'Expired, damaged, lost & unfit returns',
+              ),
               const Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
                   child: Divider(height: 1)),
               _reportRow(
-                  'Net Profit',
-                  formatPeso(netProfit),
-                  netProfit >= 0
-                      ? Colors.green.shade800
-                      : Theme.of(context).colorScheme.error,
-                  isBold: true),
+                'Net Profit',
+                formatPeso(netProfit),
+                netProfit >= 0
+                    ? Colors.green.shade800
+                    : Theme.of(context).colorScheme.error,
+                isBold: true,
+                subtitle: 'Take-home profit after all costs',
+              ),
             ],
           ),
         ),
@@ -1015,6 +1229,8 @@ class _ReportsScreenState extends State<ReportsScreen>
             margin: profitMargin,
             totalUnitsSold: totalUnitsSold,
             totalTxCount: totalTxCount,
+            refundedTxCount: refundedTxCount,
+            partialReturnedUnits: partialReturnedUnits,
             categories: sortedCategories,
           ),
           icon: const Icon(Icons.picture_as_pdf_rounded),
@@ -1037,9 +1253,10 @@ class _ReportsScreenState extends State<ReportsScreen>
     required int totalTxCount,
     required List<String> categories,
   }) {
-    List<_ProductMovementData> soldItems =
-        allMovements.where((m) => m.qtySold > 0).toList()
-          ..sort((a, b) => b.qtySold.compareTo(a.qtySold));
+    List<_ProductMovementData> soldItems = allMovements
+        .where((m) => m.qtySold > 0)
+        .toList()
+      ..sort((a, b) => b.qtySold.compareTo(a.qtySold));
 
     if (_itemsSoldSelectedCategory != 'All') {
       soldItems = soldItems
@@ -1066,10 +1283,8 @@ class _ReportsScreenState extends State<ReportsScreen>
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Theme.of(context)
-                  .colorScheme
-                  .outline
-                  .withValues(alpha: 0.5),
+              color:
+                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
             ),
           ),
           child: Column(
@@ -1120,6 +1335,72 @@ class _ReportsScreenState extends State<ReportsScreen>
           ),
         ),
         const SizedBox(height: 16),
+        if (soldItems.isNotEmpty) ...[
+          Builder(builder: (context) {
+            final colorScheme = Theme.of(context).colorScheme;
+            final semantic = Theme.of(context).semantic;
+            final topItem = soldItems.first;
+            final lowStockSold =
+                soldItems.where((m) => m.currentStock <= 5).toList();
+            final double totalFilteredRev =
+                soldItems.fold(0.0, (sum, m) => sum + m.totalRevenue);
+            final double top3Rev =
+                soldItems.take(3).fold(0.0, (sum, m) => sum + m.totalRevenue);
+            final int othersCount =
+                soldItems.where((m) => m.category == 'Others').length;
+
+            final List<_OwnerInsightItem> soldInsights = [
+              _OwnerInsightItem(
+                icon: Icons.emoji_events_outlined,
+                color: colorScheme.primary,
+                text:
+                    'Top seller: ${topItem.name} sold ${topItem.qtySold} unit${topItem.qtySold == 1 ? '' : 's'} (${formatPeso(topItem.totalRevenue)}), with ${topItem.currentStock} left in stock.',
+              ),
+              if (lowStockSold.isNotEmpty)
+                _OwnerInsightItem(
+                  icon: Icons.warning_amber_rounded,
+                  color: colorScheme.error,
+                  text:
+                      'Restock watch: ${lowStockSold.length} selling item${lowStockSold.length == 1 ? '' : 's'} have 5 or fewer units remaining (${lowStockSold.take(2).map((e) => '${e.name} (${e.currentStock})').join(', ')}${lowStockSold.length > 2 ? ', …' : ''}).',
+                )
+              else
+                _OwnerInsightItem(
+                  icon: Icons.inventory_2_outlined,
+                  color: semantic.success,
+                  text:
+                      'All selling items shown currently have more than 5 units remaining in stock.',
+                ),
+              if (soldItems.length >= 3 && totalFilteredRev > 0)
+                _OwnerInsightItem(
+                  icon: Icons.pie_chart_outline_rounded,
+                  color: Colors.teal.shade700,
+                  text:
+                      'Your top 3 items generated ${((top3Rev / totalFilteredRev) * 100).toStringAsFixed(0)}% of shown sales revenue (${formatPeso(top3Rev)} of ${formatPeso(totalFilteredRev)}).',
+                ),
+              if (othersCount > 0)
+                _OwnerInsightItem(
+                  icon: Icons.info_outline_rounded,
+                  color: semantic.info,
+                  text:
+                      '$othersCount sold item${othersCount == 1 ? '' : 's'} are grouped under "Others" (uncategorized or removed from active catalog).',
+                ),
+            ];
+
+            return _buildOwnerInsightCard(
+              context,
+              title: 'Sales Activity Insights',
+              badgeLabel: lowStockSold.isNotEmpty
+                  ? '${lowStockSold.length} LOW STOCK'
+                  : 'STOCK OK',
+              accentColor: lowStockSold.isNotEmpty
+                  ? colorScheme.error
+                  : semantic.success,
+              headerIcon: Icons.insights_rounded,
+              items: soldInsights,
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
         // Search & Category Filter
         Row(
           children: [
@@ -1272,14 +1553,20 @@ class _ReportsScreenState extends State<ReportsScreen>
     required List<LossRecord> filteredLoss,
     required List<LossRecord> allLossRecords,
     required double totalLossInPeriod,
+    required double grossRevenue,
   }) {
     final totalAllTimeLoss =
         allLossRecords.fold(0.0, (s, r) => s + r.totalLoss);
 
     // Group loss by type for distribution summary
     final Map<LossType, double> lossByType = {};
+    final Map<String, double> lossByProduct = {};
+    int totalUnitsLost = 0;
     for (final l in filteredLoss) {
       lossByType[l.type] = (lossByType[l.type] ?? 0) + l.totalLoss;
+      lossByProduct[l.productName] =
+          (lossByProduct[l.productName] ?? 0) + l.totalLoss;
+      totalUnitsLost += l.qty;
     }
 
     return ListView(
@@ -1377,6 +1664,93 @@ class _ReportsScreenState extends State<ReportsScreen>
             ],
           ),
         ),
+
+        const SizedBox(height: 16),
+
+        // ── OWNER LOSS & SHRINKAGE BRIEFING ─────────────────────────────
+        Builder(builder: (context) {
+          final colorScheme = Theme.of(context).colorScheme;
+          final semantic = Theme.of(context).semantic;
+
+          if (filteredLoss.isEmpty) {
+            return _buildOwnerInsightCard(
+              context,
+              title: 'Loss & Shrinkage Summary',
+              badgeLabel: 'ZERO LOSS',
+              accentColor: semantic.success,
+              headerIcon: Icons.verified_outlined,
+              items: [
+                _OwnerInsightItem(
+                  icon: Icons.check_circle_outline_rounded,
+                  color: semantic.success,
+                  text:
+                      'No inventory spoilage, damage, or write-offs have been logged for $periodLabel.',
+                ),
+                if (allLossRecords.isNotEmpty)
+                  _OwnerInsightItem(
+                    icon: Icons.history_rounded,
+                    color: colorScheme.onSurfaceVariant,
+                    text:
+                        'Historical total across all time remains ${formatPeso(totalAllTimeLoss)} (${allLossRecords.length} entries).',
+                  ),
+              ],
+            );
+          }
+
+          final sortedTypes = lossByType.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
+          final topTypeEntry = sortedTypes.first;
+          final double topTypeShare = totalLossInPeriod > 0
+              ? (topTypeEntry.value / totalLossInPeriod) * 100
+              : 0.0;
+
+          final String typeAdvice = switch (topTypeEntry.key) {
+            LossType.expired =>
+              'Primary driver: EXPIRED (${topTypeShare.toStringAsFixed(0)}%, ${formatPeso(topTypeEntry.value)}). Review perishable order volumes and move older FIFO batches first.',
+            LossType.damaged =>
+              'Primary driver: DAMAGED (${topTypeShare.toStringAsFixed(0)}%, ${formatPeso(topTypeEntry.value)}). Check storage, handling, and supplier delivery condition.',
+            LossType.lost =>
+              'Primary driver: LOST (${topTypeShare.toStringAsFixed(0)}%, ${formatPeso(topTypeEntry.value)}). Run a Stock Reconciliation count and review Audit Logs for discrepancies.',
+            LossType.personalUse =>
+              'Primary driver: PERSONAL USE (${topTypeShare.toStringAsFixed(0)}%, ${formatPeso(topTypeEntry.value)}). Tracked separately so household consumption is not confused with poor sales.',
+            LossType.refundReturn =>
+              'Primary driver: REFUND RETURN (${topTypeShare.toStringAsFixed(0)}%, ${formatPeso(topTypeEntry.value)}). Inspect affected SKUs for supplier quality defects.',
+          };
+
+          final sortedProducts = lossByProduct.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
+          final topProductEntry = sortedProducts.first;
+
+          final List<_OwnerInsightItem> lossInsights = [
+            _OwnerInsightItem(
+              icon: Icons.report_problem_outlined,
+              color: colorScheme.error,
+              text: typeAdvice,
+            ),
+            _OwnerInsightItem(
+              icon: Icons.inventory_outlined,
+              color: Colors.orange.shade800,
+              text:
+                  'Most impacted product: ${topProductEntry.key} (${formatPeso(topProductEntry.value)}), out of $totalUnitsLost total unit${totalUnitsLost == 1 ? '' : 's'} written off.',
+            ),
+            if (grossRevenue > 0)
+              _OwnerInsightItem(
+                icon: Icons.percent_rounded,
+                color: semantic.warning,
+                text:
+                    'Inventory loss equals ${((totalLossInPeriod / grossRevenue) * 100).toStringAsFixed(1)}% of gross revenue (${formatPeso(grossRevenue)}) in $periodLabel.',
+              ),
+          ];
+
+          return _buildOwnerInsightCard(
+            context,
+            title: 'Loss & Shrinkage Summary',
+            badgeLabel: '$totalUnitsLost UNITS LOST',
+            accentColor: colorScheme.error,
+            headerIcon: Icons.health_and_safety_outlined,
+            items: lossInsights,
+          );
+        }),
 
         const SizedBox(height: 24),
 
@@ -1561,17 +1935,32 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
   Widget _reportRow(String label, String value, Color color,
-      {bool isBold = false}) {
+      {bool isBold = false, String? subtitle}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-                fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-                fontSize: isBold ? 15 : 13),
-            overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                    fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+                    fontSize: isBold ? 15 : 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
           ),
         ),
         const SizedBox(width: 8),
@@ -1599,9 +1988,27 @@ class _ReportsScreenState extends State<ReportsScreen>
     required double margin,
     required int totalUnitsSold,
     required int totalTxCount,
+    required int refundedTxCount,
+    required int partialReturnedUnits,
     required List<_CategoryPerformance> categories,
   }) async {
     final pdf = pw.Document();
+    final String statusSummary;
+    if (totalTxCount == 0 && expenses == 0 && loss == 0) {
+      statusSummary =
+          'No sales, expenses, or inventory losses were recorded in this period.';
+    } else if (net >= 0 && sales > 0) {
+      statusSummary =
+          'Store is PROFITABLE with ${formatPeso(net)} net profit (${margin.toStringAsFixed(2)}% margin) across $totalTxCount completed sales.';
+    } else if (net < 0) {
+      statusSummary =
+          'Store recorded a NET LOSS of ${formatPeso(net.abs())} as expenses (${formatPeso(expenses)}) and losses (${formatPeso(loss)}) exceeded gross trading profit (${formatPeso(grossProfit)}).';
+    } else {
+      statusSummary = 'Store is at break-even for this period.';
+    }
+
+    final double avgSale = totalTxCount > 0 ? (sales / totalTxCount) : 0.0;
+    final topCategory = categories.isNotEmpty ? categories.first : null;
 
     pdf.addPage(
       pw.Page(
@@ -1618,6 +2025,40 @@ class _ReportsScreenState extends State<ReportsScreen>
               pw.SizedBox(height: 6),
               pw.Text('Period: $periodLabel',
                   style: const pw.TextStyle(fontSize: 14)),
+              pw.SizedBox(height: 12),
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  borderRadius: pw.BorderRadius.circular(6),
+                  border: pw.Border.all(color: PdfColors.grey400),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Owner Executive Summary',
+                        style: pw.TextStyle(
+                            fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                    pw.SizedBox(height: 4),
+                    pw.Text(statusSummary,
+                        style: const pw.TextStyle(fontSize: 10)),
+                    if (totalTxCount > 0)
+                      pw.Text(
+                          'Average Sale Value: ${formatPeso(avgSale)} (${(totalUnitsSold / totalTxCount).toStringAsFixed(1)} items/sale)',
+                          style: const pw.TextStyle(fontSize: 10)),
+                    if (topCategory != null)
+                      pw.Text(
+                          'Top Category: ${topCategory.category} (${formatPeso(topCategory.grossSales)}, ${topCategory.quantitySold} sold)',
+                          style: const pw.TextStyle(fontSize: 10)),
+                    if (refundedTxCount > 0 || partialReturnedUnits > 0)
+                      pw.Text(
+                          'Excluded Adjustments: $refundedTxCount refunded sale(s), $partialReturnedUnits partially returned unit(s).',
+                          style: const pw.TextStyle(
+                              fontSize: 9, color: PdfColors.grey700)),
+                  ],
+                ),
+              ),
               pw.Divider(height: 24),
               pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -1852,7 +2293,74 @@ class _ReportsScreenState extends State<ReportsScreen>
           ),
         ),
 
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
+
+        // ── OWNER STOCK & MOVEMENT ACTION PLAN ──────────────────────────
+        Builder(builder: (context) {
+          final colorScheme = Theme.of(context).colorScheme;
+          final semantic = Theme.of(context).semantic;
+
+          final urgentRestock =
+              fastMovingList.where((m) => m.currentStock <= 5).toList();
+          final outOfStockFast =
+              urgentRestock.where((m) => m.currentStock <= 0).toList();
+          final unsoldWithStock = allMovements
+              .where((m) => m.qtySold == 0 && m.currentStock > 0)
+              .toList();
+          final int overlapCount =
+              allMovements.where((m) => m.qtySold > 0 && m.qtySold <= 2).length;
+
+          final List<_OwnerInsightItem> movementInsights = [
+            if (urgentRestock.isNotEmpty)
+              _OwnerInsightItem(
+                icon: Icons.priority_high_rounded,
+                color: colorScheme.error,
+                text:
+                    'Restock priority: ${urgentRestock.length} fast-moving item${urgentRestock.length == 1 ? '' : 's'} have 5 or fewer units left${outOfStockFast.isNotEmpty ? ' (${outOfStockFast.length} out of stock)' : ''}: ${urgentRestock.take(3).map((e) => '${e.name} (${e.currentStock})').join(', ')}${urgentRestock.length > 3 ? ', …' : ''}.',
+              )
+            else if (fastMovingList.isNotEmpty)
+              _OwnerInsightItem(
+                icon: Icons.check_circle_outline_rounded,
+                color: semantic.success,
+                text:
+                    'All ${fastMovingList.length} active selling products currently have more than 5 units in stock.',
+              )
+            else
+              _OwnerInsightItem(
+                icon: Icons.info_outline_rounded,
+                color: colorScheme.onSurfaceVariant,
+                text: 'No product sales recorded in $periodLabel yet.',
+              ),
+            if (unsoldWithStock.isNotEmpty)
+              _OwnerInsightItem(
+                icon: Icons.hourglass_bottom_rounded,
+                color: infoColor,
+                text:
+                    '${unsoldWithStock.length} stocked product${unsoldWithStock.length == 1 ? '' : 's'} had zero sales in $periodLabel — hold off reordering or consider promos/bundles.',
+              ),
+            _OwnerInsightItem(
+              icon: Icons.help_outline_rounded,
+              color: colorScheme.onSurfaceVariant,
+              text: overlapCount > 0
+                  ? 'Rule note: Fast = sold > 0 units, Slow = sold ≤ 2 units. $overlapCount item${overlapCount == 1 ? '' : 's'} selling 1–2 units appear in both views (use "All" for one combined list).'
+                  : 'Rule note: Fast = sold > 0 units, Slow = sold ≤ 2 units. Items with stock ≤ 5 are highlighted in red.',
+            ),
+          ];
+
+          return _buildOwnerInsightCard(
+            context,
+            title: 'Stock & Movement Action Plan',
+            badgeLabel: urgentRestock.isNotEmpty
+                ? '${urgentRestock.length} TO RESTOCK'
+                : 'HEALTHY',
+            accentColor:
+                urgentRestock.isNotEmpty ? colorScheme.error : semantic.success,
+            headerIcon: Icons.lightbulb_outline_rounded,
+            items: movementInsights,
+          );
+        }),
+
+        const SizedBox(height: 16),
 
         // ── SEGMENTED FILTER BUTTONS ─────────────────────────────────────
         SizedBox(
@@ -1865,19 +2373,22 @@ class _ReportsScreenState extends State<ReportsScreen>
               ButtonSegment(
                 value: _MovementFilterMode.fastMoving,
                 label: Text('Fast (${fastMovingList.length})',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold)),
                 icon: Icon(Icons.bolt, size: 16, color: warningColor),
               ),
               ButtonSegment(
                 value: _MovementFilterMode.slowMoving,
                 label: Text('Slow (${slowMovingList.length})',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold)),
                 icon: Icon(Icons.hourglass_bottom, size: 16, color: infoColor),
               ),
               ButtonSegment(
                 value: _MovementFilterMode.allProducts,
                 label: Text('All (${allMovements.length})',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold)),
                 icon: const Icon(Icons.inventory_2_rounded, size: 16),
               ),
             ],
@@ -1917,14 +2428,14 @@ class _ReportsScreenState extends State<ReportsScreen>
                     ),
                   ),
                 ),
-                onChanged: (val) =>
-                    setState(() => _movementSearchQuery = val),
+                onChanged: (val) => setState(() => _movementSearchQuery = val),
               ),
             ),
             const SizedBox(width: 10),
             DropdownButtonHideUnderline(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(16),
@@ -2061,7 +2572,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -2201,7 +2713,8 @@ class _ReportsScreenState extends State<ReportsScreen>
             children: [
               pw.Header(
                   level: 0,
-                  child: pw.Text('GDC Sari-Sari Store - Product Movement Report',
+                  child: pw.Text(
+                      'GDC Sari-Sari Store - Product Movement Report',
                       style: pw.TextStyle(
                           fontSize: 20, fontWeight: pw.FontWeight.bold))),
               pw.SizedBox(height: 4),
@@ -2227,13 +2740,16 @@ class _ReportsScreenState extends State<ReportsScreen>
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text('${m.name} (${m.category})'),
-                        pw.Text('${m.qtySold} sold - ${formatPeso(m.totalRevenue)}',
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        pw.Text(
+                            '${m.qtySold} sold - ${formatPeso(m.totalRevenue)}',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                       ],
                     ),
                   )),
               pw.SizedBox(height: 20),
-              pw.Text('Slow Moving / Low Activity Products (${slowMoving.length})',
+              pw.Text(
+                  'Slow Moving / Low Activity Products (${slowMoving.length})',
                   style: pw.TextStyle(
                       fontSize: 14, fontWeight: pw.FontWeight.bold)),
               pw.SizedBox(height: 6),
@@ -2244,7 +2760,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                       children: [
                         pw.Text('${m.name} (${m.category})'),
                         pw.Text('${m.qtySold} sold - Stock: ${m.currentStock}',
-                            style: const pw.TextStyle(color: PdfColors.grey700)),
+                            style:
+                                const pw.TextStyle(color: PdfColors.grey700)),
                       ],
                     ),
                   )),
@@ -2266,6 +2783,100 @@ class _ReportsScreenState extends State<ReportsScreen>
         filename:
             'GDC_Product_Movement_${periodLabel.replaceAll(' ', '_')}.pdf');
   }
+
+  Widget _buildOwnerInsightCard(
+    BuildContext context, {
+    required String title,
+    required String badgeLabel,
+    required Color accentColor,
+    required IconData headerIcon,
+    required List<_OwnerInsightItem> items,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(headerIcon, size: 18, color: accentColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badgeLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: accentColor,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(item.icon, size: 15, color: item.color),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.text,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OwnerInsightItem {
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  const _OwnerInsightItem({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
 }
 
 enum _MovementFilterMode {

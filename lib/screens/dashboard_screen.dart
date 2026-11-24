@@ -106,7 +106,8 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final periodTx = params.transactions.where((t) {
     if (t.isRefunded) return false;
     final txDate = t.createdAt.toLocal();
-    return txDate.isAfter(startDate.subtract(const Duration(milliseconds: 1))) &&
+    return txDate
+            .isAfter(startDate.subtract(const Duration(milliseconds: 1))) &&
         txDate.isBefore(endDate.add(const Duration(milliseconds: 1)));
   }).toList();
   periodTx.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -153,7 +154,8 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
   final priorTx = params.transactions.where((t) {
     if (t.isRefunded) return false;
     final pDate = t.createdAt.toLocal();
-    return pDate.isAfter(priorStart.subtract(const Duration(milliseconds: 1))) &&
+    return pDate
+            .isAfter(priorStart.subtract(const Duration(milliseconds: 1))) &&
         pDate.isBefore(priorEnd.add(const Duration(milliseconds: 1)));
   });
 
@@ -200,13 +202,15 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
       Product? matchingProduct;
       if (item.productId.isNotEmpty) {
         try {
-          matchingProduct = params.products.firstWhere((p) => p.id == item.productId);
+          matchingProduct =
+              params.products.firstWhere((p) => p.id == item.productId);
         } catch (_) {}
       }
       if (matchingProduct == null) {
         final normItemName = item.name.trim().toLowerCase();
         try {
-          matchingProduct = params.products.firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
+          matchingProduct = params.products
+              .firstWhere((p) => p.name.trim().toLowerCase() == normItemName);
         } catch (_) {}
       }
 
@@ -222,18 +226,15 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
     }
   }
 
-  final fastMoving = movementCounts.entries
-      .where((e) => e.value > 0)
-      .toList()
+  final fastMoving = movementCounts.entries.where((e) => e.value > 0).toList()
     ..sort((a, b) => b.value.compareTo(a.value));
 
   final slowMoving = params.products
       .where((p) => p.status == ProductStatus.published)
       .where((p) {
-        final sold = productIdMovementCounts[p.id] ?? (movementCounts[p.name] ?? 0);
-        return sold <= 2;
-      })
-      .toList();
+    final sold = productIdMovementCounts[p.id] ?? (movementCounts[p.name] ?? 0);
+    return sold <= 2;
+  }).toList();
   slowMoving.sort((a, b) {
     final sA = productIdMovementCounts[a.id] ?? (movementCounts[a.name] ?? 0);
     final sB = productIdMovementCounts[b.id] ?? (movementCounts[b.name] ?? 0);
@@ -316,8 +317,7 @@ List<_DailyMetric> _computeChartMetricsForPeriod(
 
     final safeGross =
         (gross.isNaN || gross.isInfinite || gross < 0) ? 0.0 : gross;
-    final safeProfit =
-        (profit.isNaN || profit.isInfinite) ? 0.0 : profit;
+    final safeProfit = (profit.isNaN || profit.isInfinite) ? 0.0 : profit;
 
     list.add(_DailyMetric(
       date: currentDay,
@@ -358,7 +358,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  (DateTime start, DateTime end, String label, String daysLabel) _calculatePeriodRange() {
+  (DateTime start, DateTime end, String label, String daysLabel)
+      _calculatePeriodRange() {
     final now = TimeService.now;
     final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
     final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
@@ -437,7 +438,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Future<DateTimeRange?> _showCustomDateRangePicker(BuildContext context) async {
+  Future<DateTimeRange?> _showCustomDateRangePicker(
+      BuildContext context) async {
     final now = TimeService.now;
     final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0, 0);
     final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
@@ -453,7 +455,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final startStr = DateFormat('MMM d, yyyy').format(selectedRange.start);
+            final startStr =
+                DateFormat('MMM d, yyyy').format(selectedRange.start);
             final endStr = DateFormat('MMM d, yyyy').format(selectedRange.end);
 
             void setRange(DateTime s, DateTime e) {
@@ -476,8 +479,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
             }
 
             final months = [
-              'January', 'February', 'March', 'April', 'May', 'June',
-              'July', 'August', 'September', 'October', 'November', 'December'
+              'January',
+              'February',
+              'March',
+              'April',
+              'May',
+              'June',
+              'July',
+              'August',
+              'September',
+              'October',
+              'November',
+              'December'
             ];
 
             return AlertDialog(
@@ -505,12 +518,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.3),
                           ),
                         ),
                         child: Row(
@@ -545,39 +565,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         runSpacing: 8,
                         children: [
                           ActionChip(
-                            label: const Text('Today', style: TextStyle(fontSize: 12)),
+                            label: const Text('Today',
+                                style: TextStyle(fontSize: 12)),
                             onPressed: () => setRange(todayStart, todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('Yesterday', style: TextStyle(fontSize: 12)),
+                            label: const Text('Yesterday',
+                                style: TextStyle(fontSize: 12)),
                             onPressed: () {
-                              final y = todayStart.subtract(const Duration(days: 1));
+                              final y =
+                                  todayStart.subtract(const Duration(days: 1));
                               setRange(y, y);
                             },
                           ),
                           ActionChip(
-                            label: const Text('Last 7 Days', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 6)), todayEnd),
+                            label: const Text('Last 7 Days',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(
+                                todayStart.subtract(const Duration(days: 6)),
+                                todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('This Month', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(DateTime(now.year, now.month, 1), todayEnd),
+                            label: const Text('This Month',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(
+                                DateTime(now.year, now.month, 1), todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('Last Month', style: TextStyle(fontSize: 12)),
+                            label: const Text('Last Month',
+                                style: TextStyle(fontSize: 12)),
                             onPressed: () {
-                              final prevMonth = DateTime(now.year, now.month - 1, 1);
-                              final lastDayPrevMonth = DateTime(now.year, now.month, 0);
+                              final prevMonth =
+                                  DateTime(now.year, now.month - 1, 1);
+                              final lastDayPrevMonth =
+                                  DateTime(now.year, now.month, 0);
                               setRange(prevMonth, lastDayPrevMonth);
                             },
                           ),
                           ActionChip(
-                            label: const Text('Last 90 Days', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(todayStart.subtract(const Duration(days: 89)), todayEnd),
+                            label: const Text('Last 90 Days',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () => setRange(
+                                todayStart.subtract(const Duration(days: 89)),
+                                todayEnd),
                           ),
                           ActionChip(
-                            label: const Text('This Year', style: TextStyle(fontSize: 12)),
-                            onPressed: () => setRange(DateTime(now.year, 1, 1), todayEnd),
+                            label: const Text('This Year',
+                                style: TextStyle(fontSize: 12)),
+                            onPressed: () =>
+                                setRange(DateTime(now.year, 1, 1), todayEnd),
                           ),
                         ],
                       ),
@@ -597,16 +633,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Expanded(
                             flex: 3,
                             child: DropdownButtonFormField<int>(
-                              value: selectedRange.start.month,
+                              initialValue: selectedRange.start.month,
                               decoration: InputDecoration(
                                 labelText: 'Month',
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               items: List.generate(12, (index) {
                                 return DropdownMenuItem<int>(
                                   value: index + 1,
-                                  child: Text(months[index], style: const TextStyle(fontSize: 13)),
+                                  child: Text(months[index],
+                                      style: const TextStyle(fontSize: 13)),
                                 );
                               }),
                               onChanged: (monthVal) {
@@ -623,16 +662,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Expanded(
                             flex: 2,
                             child: DropdownButtonFormField<int>(
-                              value: years.contains(selectedRange.start.year) ? selectedRange.start.year : now.year,
+                              initialValue:
+                                  years.contains(selectedRange.start.year)
+                                      ? selectedRange.start.year
+                                      : now.year,
                               decoration: InputDecoration(
                                 labelText: 'Year',
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               items: years.map((y) {
                                 return DropdownMenuItem<int>(
                                   value: y,
-                                  child: Text('$y', style: const TextStyle(fontSize: 13)),
+                                  child: Text('$y',
+                                      style: const TextStyle(fontSize: 13)),
                                 );
                               }).toList(),
                               onChanged: (yearVal) {
@@ -652,11 +697,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                         label: const Text(
                           'Open Calendar Picker...',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: () async {
                           final picked = await showDateRangePicker(
@@ -685,7 +732,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: const Icon(Icons.check_rounded, size: 18),
                   label: const Text('Apply Range'),
                   style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   ),
@@ -806,7 +854,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         orderProvider.isLoading ||
         restockProvider.isLoading;
 
-    if (isSyncing && inventory.transactions.isEmpty && inventory.products.isEmpty) {
+    if (isSyncing &&
+        inventory.transactions.isEmpty &&
+        inventory.products.isEmpty) {
       return Container(
         color: Theme.of(context).colorScheme.surface,
         alignment: Alignment.center,
@@ -866,71 +916,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ? LinearProgressIndicator(
                           backgroundColor: Colors.transparent,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                                Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withValues(alpha: 0.7),
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: () async {
-                          context.read<InventoryProvider>().initialize();
-                          context.read<RestockProvider>().refresh();
-                          await Future.delayed(
-                              const Duration(milliseconds: 600));
-                        },
-                        child: ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 20),
+                            Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.7),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      context.read<InventoryProvider>().initialize();
+                      context.read<RestockProvider>().refresh();
+                      await Future.delayed(const Duration(milliseconds: 600));
+                    },
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 20),
+                      children: [
+                        _buildHeader(context, inventory, isSyncing),
+                        const SizedBox(height: 20),
+                        _buildKpiGrid(context, data, auth.role),
+                        const SizedBox(height: 16),
+                        _buildSummaryMetrics(
+                          context,
+                          data,
+                          auth.role,
+                          inventory.products.length,
+                          categoryCount,
+                        ),
+                        const SizedBox(height: 24),
+                        _buildLowStockWarnings(context, data, inventory),
+                        const SizedBox(height: 24),
+                        _buildChartSection(
+                          context,
+                          data,
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildHeader(context, inventory, isSyncing),
-                            const SizedBox(height: 20),
-                            _buildKpiGrid(context, data, auth.role),
-                            const SizedBox(height: 16),
-                            _buildSummaryMetrics(
-                              context,
-                              data,
-                              auth.role,
-                              inventory.products.length,
-                              categoryCount,
-                            ),
-                            const SizedBox(height: 24),
-                            _buildLowStockWarnings(context, data, inventory),
-                            const SizedBox(height: 24),
-                            _buildChartSection(
-                              context,
-                              data,
-                            ),
-                            const SizedBox(height: 24),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                    child:
-                                        _buildFastMovingSection(context, data)),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                    child: _buildSlowMovingSection(
-                                        context, data, inventory)),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                            _buildRecentTransactionsSection(
-                                context, data),
+                            Expanded(
+                                child: _buildFastMovingSection(context, data)),
+                            const SizedBox(width: 16),
+                            Expanded(
+                                child: _buildSlowMovingSection(
+                                    context, data, inventory)),
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 24),
+                        _buildRecentTransactionsSection(context, data),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-        );
+        ),
+      ),
+    );
   }
 
   // ── 3. MODULAR WIDGET COMPONENTS (BLAST DOORS) ─────────────────────────────
@@ -1258,7 +1305,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: Text(p.name,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
-                        'Threshold: ${p.lowStockThreshold} ${p.unit} • Current: ${p.stock} ${p.unit}',
+                        'Threshold: ${p.lowStockThreshold} ${p.unit} • Current: ${p.totalStock} ${p.unit}',
                         style: const TextStyle(fontSize: 10)),
                     trailing: Wrap(
                       spacing: 6,
@@ -1271,7 +1318,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 p.supplierId!.isNotEmpty) {
                               final supplier = inventory.suppliers.firstWhere(
                                 (s) => s.id == p.supplierId,
-                                orElse: () => Supplier(id: '', name: ''),
+                                orElse: () => const Supplier(id: '', name: ''),
                               );
                               if (supplier.id.isNotEmpty) {
                                 Navigator.push(
@@ -1399,7 +1446,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onTap: () => widget.onTabChange(AppTab.reports),
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1410,7 +1458,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 color: Theme.of(context).colorScheme.primary)),
                         const SizedBox(width: 2),
                         Icon(Icons.arrow_forward_rounded,
-                            size: 12, color: Theme.of(context).colorScheme.primary),
+                            size: 12,
+                            color: Theme.of(context).colorScheme.primary),
                       ],
                     ),
                   ),
@@ -1521,7 +1570,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onTap: () => widget.onTabChange(AppTab.reports),
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1532,7 +1582,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 color: Theme.of(context).colorScheme.primary)),
                         const SizedBox(width: 2),
                         Icon(Icons.arrow_forward_rounded,
-                            size: 12, color: Theme.of(context).colorScheme.primary),
+                            size: 12,
+                            color: Theme.of(context).colorScheme.primary),
                       ],
                     ),
                   ),
@@ -1778,7 +1829,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
           final settings = inventory.settings;
-          final isClosed = settings.isClosed;
           final isEffectivelyClosed = settings.effectivelyClosed;
           final closureReason = settings.closureReason;
 
@@ -1990,8 +2040,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   context: context,
                                   initialTime: customStart,
                                 );
-                                if (t != null)
+                                if (t != null) {
                                   setDialogState(() => customStart = t);
+                                }
                               },
                               child: InputDecorator(
                                 decoration: InputDecoration(
@@ -2014,8 +2065,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   context: context,
                                   initialTime: customEnd,
                                 );
-                                if (t != null)
+                                if (t != null) {
                                   setDialogState(() => customEnd = t);
+                                }
                               },
                               child: InputDecorator(
                                 decoration: InputDecoration(
@@ -2479,8 +2531,8 @@ class _RevenueProfitChartState extends State<_RevenueProfitChart> {
       return FlSpot(e.key.toDouble(), safeY);
     }).toList();
 
-    final greenColor = const Color(0xFF10B981);
-    final blueColor = const Color(0xFF3B82F6);
+    const greenColor = Color(0xFF10B981);
+    const blueColor = Color(0xFF3B82F6);
 
     final int numDays = metrics.length;
     final double titleInterval = numDays <= 7

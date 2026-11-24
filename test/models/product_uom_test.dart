@@ -18,7 +18,7 @@ void main() {
 
     group('hasBulkPacking', () {
       test('returns true when itemsPerCase is greater than 1', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.hasBulkPacking, isTrue);
       });
 
@@ -50,19 +50,21 @@ void main() {
     });
 
     group('convertBulkToUnits', () {
-      test('converts 3 bulk boxes (piecesPerPack = 24) to exactly 72 base units', () {
-        final product = defaultProduct; // itemsPerCase = 24
+      test(
+          'converts 3 bulk boxes (piecesPerPack = 24) to exactly 72 base units',
+          () {
+        const product = defaultProduct; // itemsPerCase = 24
         final result = product.convertBulkToUnits(3);
         expect(result, equals(72));
       });
 
       test('returns 0 base units when converting 0 bulk boxes', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.convertBulkToUnits(0), equals(0));
       });
 
       test('clamps negative bulk quantities to 0', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.convertBulkToUnits(-3), equals(0));
       });
 
@@ -86,20 +88,25 @@ void main() {
     });
 
     group('calculateUnitCostFromPack', () {
-      test('calculates exact unit cost from bulk pack cost (₱480.00 / 24 = ₱20.00)', () {
-        final product = defaultProduct; // itemsPerCase = 24
+      test(
+          'calculates exact unit cost from bulk pack cost (₱480.00 / 24 = ₱20.00)',
+          () {
+        const product = defaultProduct; // itemsPerCase = 24
         final unitCost = product.calculateUnitCostFromPack(480.0);
         expect(unitCost, equals(20.00));
       });
 
-      test('handles division resulting in decimal rounding (₱500.00 / 24 = ₱20.83)', () {
-        final product = defaultProduct; // itemsPerCase = 24
+      test(
+          'handles division resulting in decimal rounding (₱500.00 / 24 = ₱20.83)',
+          () {
+        const product = defaultProduct; // itemsPerCase = 24
         // 500 / 24 = 20.833333...
         final unitCost = product.calculateUnitCostFromPack(500.0);
         expect(unitCost, equals(20.83));
       });
 
-      test('handles fractional division rounding up (₱100.00 / 6 = ₱16.67)', () {
+      test('handles fractional division rounding up (₱100.00 / 6 = ₱16.67)',
+          () {
         final product = defaultProduct.copyWith(itemsPerCase: 6);
         // 100 / 6 = 16.66666... -> rounds to 16.67
         final unitCost = product.calculateUnitCostFromPack(100.0);
@@ -107,12 +114,14 @@ void main() {
       });
 
       test('returns 0.0 if bulkCost is zero or negative', () {
-        final product = defaultProduct;
+        const product = defaultProduct;
         expect(product.calculateUnitCostFromPack(0.0), equals(0.0));
         expect(product.calculateUnitCostFromPack(-480.0), equals(0.0));
       });
 
-      test('returns bulkCost unmodified when itemsPerCase is 0 or null (piecesPerPack defaults to 1)', () {
+      test(
+          'returns bulkCost unmodified when itemsPerCase is 0 or null (piecesPerPack defaults to 1)',
+          () {
         final product = defaultProduct.copyWith(itemsPerCase: 0);
         expect(product.calculateUnitCostFromPack(500.0), equals(500.0));
       });
@@ -120,35 +129,48 @@ void main() {
 
     group('formattedBulkStock', () {
       test('formats exact box counts correctly (48 pcs = "2 boxes")', () {
-        final product = defaultProduct.copyWith(stock: 48, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+        final product = defaultProduct.copyWith(
+            stock: 48, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(product.formattedBulkStock, equals('2 boxes'));
       });
 
       test('formats single box count correctly (24 pcs = "1 box")', () {
-        final product = defaultProduct.copyWith(stock: 24, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+        final product = defaultProduct.copyWith(
+            stock: 24, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(product.formattedBulkStock, equals('1 box'));
       });
 
-      test('formats loose pieces correctly when stock is less than a box (10 pcs = "10 pcs")', () {
-        final product = defaultProduct.copyWith(stock: 10, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+      test(
+          'formats loose pieces correctly when stock is less than a box (10 pcs = "10 pcs")',
+          () {
+        final product = defaultProduct.copyWith(
+            stock: 10, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(product.formattedBulkStock, equals('10 pcs'));
       });
 
-      test('formats mixed stock correctly with boxes and loose pieces (50 pcs = "2 boxes, 2 pcs")', () {
-        final product = defaultProduct.copyWith(stock: 50, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+      test(
+          'formats mixed stock correctly with boxes and loose pieces (50 pcs = "2 boxes, 2 pcs")',
+          () {
+        final product = defaultProduct.copyWith(
+            stock: 50, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(product.formattedBulkStock, equals('2 boxes, 2 pcs'));
       });
 
-      test('formats single box with remainder correctly (29 pcs = "1 box, 5 pcs")', () {
-        final product = defaultProduct.copyWith(stock: 29, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+      test(
+          'formats single box with remainder correctly (29 pcs = "1 box, 5 pcs")',
+          () {
+        final product = defaultProduct.copyWith(
+            stock: 29, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(product.formattedBulkStock, equals('1 box, 5 pcs'));
       });
 
       test('returns "0 pcs" when stock is zero or negative', () {
-        final productZero = defaultProduct.copyWith(stock: 0, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+        final productZero = defaultProduct.copyWith(
+            stock: 0, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(productZero.formattedBulkStock, equals('0 pcs'));
 
-        final productNegative = defaultProduct.copyWith(stock: -5, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
+        final productNegative = defaultProduct.copyWith(
+            stock: -5, itemsPerCase: 24, bulkUnit: 'box', unit: 'pcs');
         expect(productNegative.formattedBulkStock, equals('0 pcs'));
       });
 

@@ -19,13 +19,16 @@ extension AdminDateFilterExt on AdminDateFilter {
       case AdminDateFilter.all:
         return true;
       case AdminDateFilter.today:
-        return date.isAfter(todayStart.subtract(const Duration(milliseconds: 1)));
+        return date
+            .isAfter(todayStart.subtract(const Duration(milliseconds: 1)));
       case AdminDateFilter.thisWeek:
         final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
-        return date.isAfter(weekStart.subtract(const Duration(milliseconds: 1)));
+        return date
+            .isAfter(weekStart.subtract(const Duration(milliseconds: 1)));
       case AdminDateFilter.thisMonth:
         final monthStart = DateTime(now.year, now.month, 1);
-        return date.isAfter(monthStart.subtract(const Duration(milliseconds: 1)));
+        return date
+            .isAfter(monthStart.subtract(const Duration(milliseconds: 1)));
     }
   }
 }
@@ -167,8 +170,8 @@ class _AdminFilterBarState extends State<AdminFilterBar> {
                       : Colors.white,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: theme.colorScheme.outlineVariant
-                        .withValues(alpha: 0.5),
+                    color:
+                        theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
                   ),
                 ),
                 child: TextField(
@@ -408,9 +411,7 @@ class _AdminFilterBarState extends State<AdminFilterBar> {
                           fontWeight:
                               isSelected ? FontWeight.bold : FontWeight.w500,
                           color: isSelected
-                              ? (isDark
-                                  ? GdcColors.darkEmerald
-                                  : Colors.white)
+                              ? (isDark ? GdcColors.darkEmerald : Colors.white)
                               : theme.colorScheme.onSurface,
                         ),
                         backgroundColor: isDark
@@ -419,9 +420,8 @@ class _AdminFilterBarState extends State<AdminFilterBar> {
                         selectedColor: isDark
                             ? GdcColors.emeraldPrimary
                             : GdcColors.darkEmerald,
-                        checkmarkColor: isDark
-                            ? GdcColors.darkEmerald
-                            : Colors.white,
+                        checkmarkColor:
+                            isDark ? GdcColors.darkEmerald : Colors.white,
                         onSelected: (val) {
                           if (widget.onCategoryChanged != null) {
                             widget.onCategoryChanged!(cat);

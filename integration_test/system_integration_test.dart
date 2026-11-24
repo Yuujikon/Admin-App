@@ -9,7 +9,9 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   group('End-to-End System Integration Test Suite', () {
-    testWidgets('Full Loop: Intake -> Multi-Batch -> POS FIFO Checkout -> COGS Audit', (WidgetTester tester) async {
+    testWidgets(
+        'Full Loop: Intake -> Multi-Batch -> POS FIFO Checkout -> COGS Audit',
+        (WidgetTester tester) async {
       // ----------------------------------------------------------------------
       // Step 1: Ingest Mock Product with Initial Batch #1
       // ----------------------------------------------------------------------
@@ -18,8 +20,10 @@ void main() {
       expect(testBarcode.length, 12);
 
       const double initialUnitCost = 20.0;
-      const String category = 'Snacks'; // 30% margin rule -> Selling Price ₱26.00
-      final double calculatedSellingPrice = CategoryMarkupRules.calculateSellingPrice(
+      const String category =
+          'Snacks'; // 30% margin rule -> Selling Price ₱26.00
+      final double calculatedSellingPrice =
+          CategoryMarkupRules.calculateSellingPrice(
         unitCost: initialUnitCost,
         category: category,
       );
@@ -30,7 +34,8 @@ void main() {
         productId: 'prod-1001',
         quantity: 10,
         unitCost: initialUnitCost,
-        expiryDate: DateTime.now().add(const Duration(days: 15)), // Expiring in 15 days
+        expiryDate:
+            DateTime.now().add(const Duration(days: 15)), // Expiring in 15 days
         createdAt: DateTime.now().subtract(const Duration(days: 2)),
         invoiceNumber: 'INV-001',
       );
@@ -56,7 +61,8 @@ void main() {
         productId: 'prod-1001',
         quantity: 20,
         unitCost: 22.0,
-        expiryDate: DateTime.now().add(const Duration(days: 60)), // Expiring in 60 days
+        expiryDate:
+            DateTime.now().add(const Duration(days: 60)), // Expiring in 60 days
         createdAt: DateTime.now(),
         invoiceNumber: 'INV-002',
       );
@@ -76,8 +82,8 @@ void main() {
         productId: 'prod-1001',
         name: 'Test Potato Chips 100g',
         price: calculatedSellingPrice, // ₱26.00
-        costPrice: initialUnitCost,     // ₱20.00 base
-        qty: 15,                        // Exceeds Batch #1 (10 pcs) by 5 pcs
+        costPrice: initialUnitCost, // ₱20.00 base
+        qty: 15, // Exceeds Batch #1 (10 pcs) by 5 pcs
         isPerishable: true,
       );
 
@@ -85,7 +91,8 @@ void main() {
       // Step 4: Perform In-Memory FIFO Batch Stock Deduction (FIFO Logic)
       // ----------------------------------------------------------------------
       int remainingToDeduct = initialCartItem.qty; // 15 pcs
-      final List<ProductBatch> sortedBatches = List.from(updatedProductMultiBatch.batches);
+      final List<ProductBatch> sortedBatches =
+          List.from(updatedProductMultiBatch.batches);
 
       // Sort by FIFO (date created ascending)
       sortedBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -164,9 +171,11 @@ void main() {
       // Batch #1 should be completely depleted (removed from active batches)
       expect(postCheckoutBatches.length, 1);
       expect(postCheckoutBatches.first.id, 'batch-002');
-      expect(postCheckoutBatches.first.quantity, 15); // 20 - 5 = 15 pcs remaining
+      expect(
+          postCheckoutBatches.first.quantity, 15); // 20 - 5 = 15 pcs remaining
 
-      final int finalProductStock = postCheckoutBatches.fold(0, (sum, b) => sum + b.quantity);
+      final int finalProductStock =
+          postCheckoutBatches.fold(0, (sum, b) => sum + b.quantity);
       expect(finalProductStock, 15); // 30 - 15 = 15 pcs remaining
 
       // Total Revenue = 15 pcs * ₱26 = ₱390.00

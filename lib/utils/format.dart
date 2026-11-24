@@ -6,6 +6,9 @@ final _peso = NumberFormat.currency(locale: 'fil_PH', symbol: 'P');
 /// Formats a monetary amount into Philippine Peso currency representation.
 String formatPeso(double amount) => _peso.format(amount);
 
+/// Alias for [formatPeso] for unified currency formatting.
+String formatCurrency(double amount) => formatPeso(amount);
+
 /// Formats a [DateTime] into a localized string (`MMM d, y hh:mm a`).
 String formatDate(DateTime dt) => DateFormat('MMM d, y hh:mm a').format(dt);
 

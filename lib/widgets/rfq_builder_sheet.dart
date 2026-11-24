@@ -105,8 +105,7 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
         requestedQty: qty,
         quotedUnitPrice: product.costPrice > 0 ? product.costPrice : null,
       ));
-      _qtyControllers[product.id] =
-          TextEditingController(text: qty.toString());
+      _qtyControllers[product.id] = TextEditingController(text: qty.toString());
     });
   }
 
@@ -128,7 +127,8 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
     }
     if (_items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add at least one product to the RFQ.')),
+        const SnackBar(
+            content: Text('Please add at least one product to the RFQ.')),
       );
       return;
     }
@@ -206,10 +206,12 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
     buffer.writeln('-----------------------------------');
     buffer.writeln('Items Requested:');
     for (var i in rfq.items) {
-      buffer.writeln('• ${i.productName} (SKU: ${i.sku}): ${i.requestedQty} pcs');
+      buffer
+          .writeln('• ${i.productName} (SKU: ${i.sku}): ${i.requestedQty} pcs');
     }
     buffer.writeln('-----------------------------------');
-    buffer.writeln('Please provide unit price quote at your earliest convenience.');
+    buffer.writeln(
+        'Please provide unit price quote at your earliest convenience.');
 
     final shareText = buffer.toString();
 
@@ -253,7 +255,8 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: shareText));
               ScaffoldMessenger.of(ctx).showSnackBar(
-                const SnackBar(content: Text('RFQ payload copied to clipboard!')),
+                const SnackBar(
+                    content: Text('RFQ payload copied to clipboard!')),
               );
             },
           ),
@@ -317,10 +320,12 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
                   const SizedBox(height: 12),
                   Expanded(
                     child: filtered.isEmpty
-                        ? const Center(child: Text('No matching products found'))
+                        ? const Center(
+                            child: Text('No matching products found'))
                         : ListView.separated(
                             itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final p = filtered[index];
                               final isAdded =
@@ -414,7 +419,9 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            isEditing ? 'Edit RFQ' : 'Create Request For Quotation',
+                            isEditing
+                                ? 'Edit RFQ'
+                                : 'Create Request For Quotation',
                             style: const TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.w900),
                           ),
@@ -447,14 +454,14 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
               ),
               const SizedBox(height: 6),
               DropdownButtonFormField<Supplier>(
-                value: _selectedSupplier,
+                initialValue: _selectedSupplier,
                 isExpanded: true,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.storefront_rounded),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
                 hint: const Text('Choose a supplier...'),
                 items: suppliers.map((s) {
@@ -491,7 +498,8 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
                           initialDate: _expectedDeliveryDate ??
                               DateTime.now().add(const Duration(days: 3)),
                           firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(const Duration(days: 90)),
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 90)),
                         );
                         if (picked != null) {
                           setState(() => _expectedDeliveryDate = picked);

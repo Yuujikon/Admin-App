@@ -25,7 +25,6 @@ class _CustomerRestrictionsScreenState
   final FirestoreService _fs = FirestoreService();
   String _searchQuery = '';
   String _selectedFilter = 'all'; // 'all', 'appeals', 'restricted', 'locked'
-  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -111,15 +110,17 @@ class _CustomerRestrictionsScreenState
 
     final pendingAppeals = pendingAppealsMap.values.toSet().toList();
 
-    final int totalRestrictedCount = customers.where((c) => c.isRestricted).length;
     final int temporaryRestrictedCount =
         customers.where((c) => c.isRestricted && !c.isPermanentlyLocked).length;
-    final int lockedCount = customers.where((c) => c.isPermanentlyLocked).length;
+    final int lockedCount =
+        customers.where((c) => c.isPermanentlyLocked).length;
 
     // Apply Filter Tab Selection
     List<Customer> filteredOffendingCustomers = offendingCustomers.where((c) {
       if (_selectedFilter == 'appeals') return c.appealStatus == 'pending';
-      if (_selectedFilter == 'restricted') return c.isRestricted && !c.isPermanentlyLocked;
+      if (_selectedFilter == 'restricted') {
+        return c.isRestricted && !c.isPermanentlyLocked;
+      }
       if (_selectedFilter == 'locked') return c.isPermanentlyLocked;
       return true;
     }).toList();
@@ -129,7 +130,8 @@ class _CustomerRestrictionsScreenState
         final q = _searchQuery.toLowerCase();
         final matchesName = c.name.toLowerCase().contains(q);
         final matchesEmail = c.email?.toLowerCase().contains(q) ?? false;
-        final matchesReason = c.appealMessage?.toLowerCase().contains(q) ?? false;
+        final matchesReason =
+            c.appealMessage?.toLowerCase().contains(q) ?? false;
         if (!matchesName && !matchesEmail && !matchesReason) return false;
       }
       return true;
@@ -229,8 +231,8 @@ class _CustomerRestrictionsScreenState
                 _buildTierRow('2nd Offense', '24-Hour Order Restriction'),
                 _buildTierRow(
                     '3rd Offense', '72-Hour (3-Day) Order Restriction'),
-                _buildTierRow(
-                    '4th Offense', 'Permanent Account Lock (Requires Complaint/Appeal Review)'),
+                _buildTierRow('4th Offense',
+                    'Permanent Account Lock (Requires Complaint/Appeal Review)'),
               ],
             ),
           ),
@@ -273,14 +275,16 @@ class _CustomerRestrictionsScreenState
                   label: const Text('All Records'),
                   selected: _selectedFilter == 'all',
                   onSelected: (_) => setState(() => _selectedFilter = 'all'),
-                  selectedColor: GdcColors.emeraldPrimary.withValues(alpha: 0.2),
+                  selectedColor:
+                      GdcColors.emeraldPrimary.withValues(alpha: 0.2),
                   checkmarkColor: GdcColors.darkEmerald,
                 ),
                 const SizedBox(width: 8),
                 FilterChip(
                   label: Text('Pending Complaints (${pendingAppeals.length})'),
                   selected: _selectedFilter == 'appeals',
-                  onSelected: (_) => setState(() => _selectedFilter = 'appeals'),
+                  onSelected: (_) =>
+                      setState(() => _selectedFilter = 'appeals'),
                   selectedColor: Colors.red.shade100,
                   checkmarkColor: Colors.red,
                 ),
@@ -288,7 +292,8 @@ class _CustomerRestrictionsScreenState
                 FilterChip(
                   label: Text('Temp Restricted ($temporaryRestrictedCount)'),
                   selected: _selectedFilter == 'restricted',
-                  onSelected: (_) => setState(() => _selectedFilter = 'restricted'),
+                  onSelected: (_) =>
+                      setState(() => _selectedFilter = 'restricted'),
                   selectedColor: Colors.amber.shade100,
                   checkmarkColor: Colors.amber.shade900,
                 ),
@@ -346,7 +351,6 @@ class _CustomerRestrictionsScreenState
               ],
             ),
             const SizedBox(height: 12),
-
             if (filteredOffendingCustomers.isEmpty)
               Container(
                 padding: const EdgeInsets.all(24),
@@ -386,10 +390,17 @@ class _CustomerRestrictionsScreenState
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.15) : Theme.of(context).colorScheme.surfaceContainerLow,
+          color: isSelected
+              ? color.withValues(alpha: 0.15)
+              : Theme.of(context).colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? color : Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: isSelected
+                ? color
+                : Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.3),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -482,7 +493,8 @@ class _CustomerRestrictionsScreenState
                 CircleAvatar(
                   radius: 22,
                   backgroundColor: Colors.red.shade100,
-                  child: const Icon(Icons.no_accounts_rounded, color: Colors.red),
+                  child:
+                      const Icon(Icons.no_accounts_rounded, color: Colors.red),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -723,10 +735,13 @@ class _CustomerRestrictionsScreenState
             ),
             const SizedBox(height: 12),
 
-            if (c.isRestricted && !c.isPermanentlyLocked && c.restrictedUntil != null) ...[
+            if (c.isRestricted &&
+                !c.isPermanentlyLocked &&
+                c.restrictedUntil != null) ...[
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.amber.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -761,10 +776,13 @@ class _CustomerRestrictionsScreenState
               ),
               const SizedBox(height: 4),
               ...c.offenseHistory.take(4).map((h) {
-                final String reason = h['reason']?.toString() ?? 'Ghosted order';
+                final String reason =
+                    h['reason']?.toString() ?? 'Ghosted order';
                 final String orderId = h['orderId']?.toString() ?? '';
-                final String flaggedType = h['flaggedType']?.toString() ?? 'Offense';
-                final int offenseNum = (h['offenseNumber'] as num? ?? 1).toInt();
+                final String flaggedType =
+                    h['flaggedType']?.toString() ?? 'Offense';
+                final int offenseNum =
+                    (h['offenseNumber'] as num? ?? 1).toInt();
                 final bool isLifted = flaggedType == 'Restriction Lifted';
 
                 return Padding(
@@ -773,7 +791,9 @@ class _CustomerRestrictionsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        isLifted ? Icons.check_circle_outline_rounded : Icons.fiber_manual_record_rounded,
+                        isLifted
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.fiber_manual_record_rounded,
                         size: 12,
                         color: isLifted ? Colors.green : Colors.grey,
                       ),
@@ -785,8 +805,11 @@ class _CustomerRestrictionsScreenState
                               : 'Offense #$offenseNum (${orderId.isNotEmpty ? orderId : "System"}): $reason',
                           style: TextStyle(
                             fontSize: 11,
-                            fontWeight: isLifted ? FontWeight.bold : FontWeight.normal,
-                            color: isLifted ? Colors.green.shade800 : theme.colorScheme.onSurfaceVariant,
+                            fontWeight:
+                                isLifted ? FontWeight.bold : FontWeight.normal,
+                            color: isLifted
+                                ? Colors.green.shade800
+                                : theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -820,8 +843,8 @@ class _CustomerRestrictionsScreenState
                   icon: const Icon(Icons.restore_rounded, size: 16),
                   label: const Text('Reset Record'),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                 ),
               ],
@@ -843,7 +866,8 @@ class _CustomerRestrictionsScreenState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
               Container(
@@ -852,7 +876,8 @@ class _CustomerRestrictionsScreenState
                   color: GdcColors.emeraldPrimary.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.lock_open_rounded, color: GdcColors.darkEmerald),
+                child: const Icon(Icons.lock_open_rounded,
+                    color: GdcColors.darkEmerald),
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -875,7 +900,10 @@ class _CustomerRestrictionsScreenState
                     color: Theme.of(context).colorScheme.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.5),
                     ),
                   ),
                   child: Column(
@@ -883,23 +911,28 @@ class _CustomerRestrictionsScreenState
                     children: [
                       Text(
                         c.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       if (c.email != null && c.email!.isNotEmpty)
                         Text(
                           c.email!,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: c.isPermanentlyLocked ? Colors.red.shade100 : Colors.amber.shade100,
+                              color: c.isPermanentlyLocked
+                                  ? Colors.red.shade100
+                                  : Colors.amber.shade100,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -907,7 +940,9 @@ class _CustomerRestrictionsScreenState
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: c.isPermanentlyLocked ? Colors.red.shade900 : Colors.amber.shade900,
+                                color: c.isPermanentlyLocked
+                                    ? Colors.red.shade900
+                                    : Colors.amber.shade900,
                               ),
                             ),
                           ),
@@ -927,7 +962,8 @@ class _CustomerRestrictionsScreenState
                   controller: reasonCtrl,
                   maxLines: 3,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Complaint verified - order delay was due to store delay / Granted 1st grace period',
+                    hintText:
+                        'e.g. Complaint verified - order delay was due to store delay / Granted 1st grace period',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -966,6 +1002,7 @@ class _CustomerRestrictionsScreenState
             ElevatedButton.icon(
               onPressed: () async {
                 final reason = reasonCtrl.text.trim();
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(ctx);
 
                 await _fs.liftCustomerRestriction(
@@ -977,9 +1014,10 @@ class _CustomerRestrictionsScreenState
                 );
 
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(
-                      content: Text('Successfully removed ordering restriction for ${c.name}'),
+                      content: Text(
+                          'Successfully removed ordering restriction for ${c.name}'),
                       backgroundColor: Colors.green,
                     ),
                   );
@@ -990,7 +1028,8 @@ class _CustomerRestrictionsScreenState
               style: ElevatedButton.styleFrom(
                 backgroundColor: GdcColors.darkEmerald,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ],
@@ -1044,20 +1083,20 @@ class _CustomerRestrictionsScreenState
               final email = emailCtrl.text.trim();
               final reason = reasonCtrl.text.trim();
               if (email.isEmpty) return;
+              final messenger = ScaffoldMessenger.of(context);
 
               Navigator.pop(ctx);
               await _fs.recordCustomerOffense(
                 email: email,
                 customerName: email,
                 orderId: 'MANUAL',
-                reason: reason.isNotEmpty
-                    ? reason
-                    : 'Manual Admin Ghosting Flag',
+                reason:
+                    reason.isNotEmpty ? reason : 'Manual Admin Ghosting Flag',
                 isManualAdminFlag: true,
               );
 
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(
                     content: Text('Recorded offense penalty for $email'),
                     backgroundColor: Colors.green,
@@ -1094,7 +1133,7 @@ class _CustomerRestrictionsScreenState
 
     if (confirm) {
       await _fs.rejectCustomerAppeal(c.id);
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Rejected complaint/appeal for ${c.name}'),
@@ -1123,7 +1162,7 @@ class _CustomerRestrictionsScreenState
 
     if (confirm) {
       await _fs.resetCustomerOffenses(c.id);
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Cleared offense history for ${c.name}'),

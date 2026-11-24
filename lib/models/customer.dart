@@ -101,9 +101,8 @@ class Customer {
       'notes': notes,
       'createdAt': Timestamp.fromDate(createdAt),
       'offenseCount': offenseCount,
-      'restrictedUntil': restrictedUntil != null
-          ? Timestamp.fromDate(restrictedUntil!)
-          : null,
+      'restrictedUntil':
+          restrictedUntil != null ? Timestamp.fromDate(restrictedUntil!) : null,
       'isPermanentlyLocked': isPermanentlyLocked,
       'offenseHistory': offenseHistory,
       if (appealStatus != null) 'appealStatus': appealStatus,

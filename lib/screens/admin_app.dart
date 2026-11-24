@@ -146,127 +146,126 @@ class _AdminAppState extends State<AdminApp> {
             .length +
         pendingRefundsCount;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double availableWidth = constraints.maxWidth;
-        final bool isCompact = availableWidth < Responsive.compactBreakpoint;
-        final bool isExpanded = availableWidth >= Responsive.expandedBreakpoint;
+    return LayoutBuilder(builder: (context, constraints) {
+      final double availableWidth = constraints.maxWidth;
+      final bool isCompact = availableWidth < Responsive.compactBreakpoint;
+      final bool isExpanded = availableWidth >= Responsive.expandedBreakpoint;
 
-        final destinations = AdminDestination.getPrimaryDestinations(
-          role: role,
-          isCompact: isCompact,
-        );
+      final destinations = AdminDestination.getPrimaryDestinations(
+        role: role,
+        isCompact: isCompact,
+      );
 
-        // Ensure active destination is fallback-safe for the role
-        if (role == UserRole.none &&
-            _activeDestinationId == AdminDestination.dashboardId) {
-          _activeDestinationId = AdminDestination.posId;
-        }
+      // Ensure active destination is fallback-safe for the role
+      if (role == UserRole.none &&
+          _activeDestinationId == AdminDestination.dashboardId) {
+        _activeDestinationId = AdminDestination.posId;
+      }
 
-        // Security Guard: Prevent non-admin roles from accessing restricted destinations
-        if (role != UserRole.admin &&
-            (_activeDestinationId == AdminDestination.shiftId ||
-                _activeDestinationId == AdminDestination.reportsId ||
-                _activeDestinationId == AdminDestination.salesHistoryId ||
-                _activeDestinationId == AdminDestination.inventoryRecordsId)) {
-          _activeDestinationId = AdminDestination.dashboardId;
-        }
+      // Security Guard: Prevent non-admin roles from accessing restricted destinations
+      if (role != UserRole.admin &&
+          (_activeDestinationId == AdminDestination.shiftId ||
+              _activeDestinationId == AdminDestination.reportsId ||
+              _activeDestinationId == AdminDestination.salesHistoryId ||
+              _activeDestinationId == AdminDestination.inventoryRecordsId)) {
+        _activeDestinationId = AdminDestination.dashboardId;
+      }
 
-        // Build navigation items with badge for pre-orders
-        List<NavigationDestination> navDestinations = destinations.map((d) {
-          Widget iconWidget = Icon(d.icon);
-          Widget selectedIconWidget = Icon(d.selectedIcon ?? d.icon);
+      // Build navigation items with badge for pre-orders
+      List<NavigationDestination> navDestinations = destinations.map((d) {
+        Widget iconWidget = Icon(d.icon);
+        Widget selectedIconWidget = Icon(d.selectedIcon ?? d.icon);
 
-          if (d.id == AdminDestination.preOrdersId && toProcessCount > 0) {
-            iconWidget = Badge.count(
-              count: toProcessCount,
-              backgroundColor: Theme.of(context).colorScheme.error,
-              child: iconWidget,
-            );
-            selectedIconWidget = Badge.count(
-              count: toProcessCount,
-              backgroundColor: Theme.of(context).colorScheme.error,
-              child: selectedIconWidget,
-            );
-          }
-
-          return NavigationDestination(
-            icon: iconWidget,
-            selectedIcon: selectedIconWidget,
-            label: d.label,
+        if (d.id == AdminDestination.preOrdersId && toProcessCount > 0) {
+          iconWidget = Badge.count(
+            count: toProcessCount,
+            backgroundColor: Theme.of(context).colorScheme.error,
+            child: iconWidget,
           );
-        }).toList();
-
-        int selectedRailIndex =
-            destinations.indexWhere((d) => d.id == _activeDestinationId);
-        if (selectedRailIndex == -1) {
-          selectedRailIndex =
-              destinations.indexWhere((d) => d.id == AdminDestination.moreId);
-          if (selectedRailIndex == -1) selectedRailIndex = 0;
+          selectedIconWidget = Badge.count(
+            count: toProcessCount,
+            backgroundColor: Theme.of(context).colorScheme.error,
+            child: selectedIconWidget,
+          );
         }
 
-        // Available page widgets
-        Widget activePage = switch (_activeDestinationId) {
-          AdminDestination.dashboardId => DashboardScreen(
-              onTabChange: (targetTab, {category}) {
-                _navigateToTab(targetTab, category: category);
-              },
-            ),
-          AdminDestination.posId => const PosScreen(),
-          AdminDestination.inventoryId =>
-            InventoryScreen(initialCategory: _inventoryCategory),
-          AdminDestination.preOrdersId => const PreOrdersScreen(),
-          AdminDestination.shiftId => const ShiftScreen(),
-          AdminDestination.reportsId => const ReportsScreen(),
-          AdminDestination.salesHistoryId => const SalesHistoryScreen(),
-          AdminDestination.inventoryRecordsId => const InventoryRecordsScreen(),
-          AdminDestination.suppliersId => const SupplierManagementScreen(),
-          _ => MoreManagementScreen(
-              onNavigateToTab: (tab) => _navigateToTab(tab),
-            ),
-        };
+        return NavigationDestination(
+          icon: iconWidget,
+          selectedIcon: selectedIconWidget,
+          label: d.label,
+        );
+      }).toList();
 
-        return CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
-              GlobalAdminSearchPalette.show(
-                context,
-                onNavigateTab: (tab, {category}) =>
-                    _navigateToTab(tab, category: category),
-              );
+      int selectedRailIndex =
+          destinations.indexWhere((d) => d.id == _activeDestinationId);
+      if (selectedRailIndex == -1) {
+        selectedRailIndex =
+            destinations.indexWhere((d) => d.id == AdminDestination.moreId);
+        if (selectedRailIndex == -1) selectedRailIndex = 0;
+      }
+
+      // Available page widgets
+      Widget activePage = switch (_activeDestinationId) {
+        AdminDestination.dashboardId => DashboardScreen(
+            onTabChange: (targetTab, {category}) {
+              _navigateToTab(targetTab, category: category);
             },
-            const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
-              GlobalAdminSearchPalette.show(
-                context,
-                onNavigateTab: (tab, {category}) =>
-                    _navigateToTab(tab, category: category),
-              );
-            },
+          ),
+        AdminDestination.posId => const PosScreen(),
+        AdminDestination.inventoryId =>
+          InventoryScreen(initialCategory: _inventoryCategory),
+        AdminDestination.preOrdersId => const PreOrdersScreen(),
+        AdminDestination.shiftId => const ShiftScreen(),
+        AdminDestination.reportsId => const ReportsScreen(),
+        AdminDestination.salesHistoryId => const SalesHistoryScreen(),
+        AdminDestination.inventoryRecordsId => const InventoryRecordsScreen(),
+        AdminDestination.suppliersId => const SupplierManagementScreen(),
+        _ => MoreManagementScreen(
+            onNavigateToTab: (tab) => _navigateToTab(tab),
+          ),
+      };
+
+      return CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+            GlobalAdminSearchPalette.show(
+              context,
+              onNavigateTab: (tab, {category}) =>
+                  _navigateToTab(tab, category: category),
+            );
           },
-          child: PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, result) {
-              _handleBackPop(didPop);
-            },
-            child: Scaffold(
-              backgroundColor: Theme.of(context).brightness == Brightness.dark
-                  ? Theme.of(context).scaffoldBackgroundColor
-                  : const Color(0xFFF1F5F9),
-              body: SafeArea(
-                child: Column(
-                  children: [
-                    // Global Top Utility Header
-                    _AdminTopBar(
-                      auth: auth,
-                      isCompact: isCompact,
-                      onOpenSearch: () {
-                        GlobalAdminSearchPalette.show(
-                          context,
-                          onNavigateTab: (tab, {category}) =>
-                              _navigateToTab(tab, category: category),
-                        );
-                      },
-                    ),
+          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
+            GlobalAdminSearchPalette.show(
+              context,
+              onNavigateTab: (tab, {category}) =>
+                  _navigateToTab(tab, category: category),
+            );
+          },
+        },
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            _handleBackPop(didPop);
+          },
+          child: Scaffold(
+            backgroundColor: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).scaffoldBackgroundColor
+                : const Color(0xFFF1F5F9),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  // Global Top Utility Header
+                  _AdminTopBar(
+                    auth: auth,
+                    isCompact: isCompact,
+                    onOpenSearch: () {
+                      GlobalAdminSearchPalette.show(
+                        context,
+                        onNavigateTab: (tab, {category}) =>
+                            _navigateToTab(tab, category: category),
+                      );
+                    },
+                  ),
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,8 +291,8 @@ class _AdminAppState extends State<AdminApp> {
                               children: [
                                 Expanded(
                                   child: SingleChildScrollView(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12),
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
                                       children: destinations.map((d) {
@@ -360,7 +359,8 @@ class _AdminAppState extends State<AdminApp> {
                             child: Align(
                               alignment: Alignment.topCenter,
                               child: ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 1280),
+                                constraints:
+                                    const BoxConstraints(maxWidth: 1280),
                                 child: activePage,
                               ),
                             ),
@@ -524,10 +524,7 @@ class _AdminTopBar extends StatelessWidget {
         color: theme.colorScheme.surface,
         border: Border(
           bottom: BorderSide(
-            color: theme
-                .colorScheme
-                .outlineVariant
-                .withValues(alpha: 0.4),
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
             width: 1,
           ),
         ),
@@ -583,8 +580,8 @@ class _AdminTopBar extends StatelessWidget {
                       : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: theme.colorScheme.outlineVariant
-                        .withValues(alpha: 0.5),
+                    color:
+                        theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
                   ),
                 ),
                 child: Row(
@@ -599,8 +596,8 @@ class _AdminTopBar extends StatelessWidget {
                       'Search & filter anything…',
                       style: TextStyle(
                         fontSize: 13,
-                        color: theme.colorScheme.onSurface
-                            .withValues(alpha: 0.5),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                     const Spacer(),

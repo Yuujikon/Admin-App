@@ -154,7 +154,8 @@ class _ActionWarningDialogState extends State<ActionWarningDialog> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                  color: colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: colorScheme.outlineVariant.withValues(alpha: 0.5),
@@ -250,9 +251,8 @@ class _ActionWarningDialogState extends State<ActionWarningDialog> {
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          onPressed: isConfirmDisabled
-              ? null
-              : () => Navigator.pop(context, true),
+          onPressed:
+              isConfirmDisabled ? null : () => Navigator.pop(context, true),
           child: Text(
             widget.confirmLabel,
             style: const TextStyle(

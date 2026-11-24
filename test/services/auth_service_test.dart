@@ -13,7 +13,8 @@ void main() {
       authService = AuthService();
     });
 
-    test('initial state has no failed attempts and is not locked out', () async {
+    test('initial state has no failed attempts and is not locked out',
+        () async {
       final isLocked = await authService.isLockedOut();
       final failed = await authService.getFailedAttempts();
       final remSec = await authService.getRemainingLockoutSeconds();

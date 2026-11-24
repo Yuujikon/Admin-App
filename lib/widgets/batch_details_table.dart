@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/product.dart';
 import '../config/theme.dart';
+import '../utils/format.dart';
 
 /// Material 3 Data Table Widget displaying all active & historical FIFO batches
 /// for a selected product in the Admin Inventory Management view.
@@ -10,6 +11,8 @@ class BatchDetailsTable extends StatefulWidget {
   final List<ProductBatch> batches;
   final bool showOnlyActive;
   final Function(ProductBatch batch)? onBatchTap;
+  final String? Function(ProductBatch batch)? poNumberResolver;
+  final String? Function(ProductBatch batch)? supplierNameResolver;
 
   const BatchDetailsTable({
     super.key,
@@ -17,6 +20,8 @@ class BatchDetailsTable extends StatefulWidget {
     required this.batches,
     this.showOnlyActive = true,
     this.onBatchTap,
+    this.poNumberResolver,
+    this.supplierNameResolver,
   });
 
   @override
@@ -24,7 +29,7 @@ class BatchDetailsTable extends StatefulWidget {
 }
 
 class _BatchDetailsTableState extends State<BatchDetailsTable> {
-  int _sortColumnIndex = 0; // Default sort by Date Received (FIFO)
+  int _sortColumnIndex = 2; // Default sort by Date Arrived (Primary FIFO Key)
   bool _sortAscending = true;
   bool _filterActiveOnly = true;
 
@@ -37,36 +42,27 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
   List<ProductBatch> _getProcessedBatches() {
     List<ProductBatch> list = List.from(widget.batches);
 
-    // Filter zero quantity batches if requested
     if (_filterActiveOnly) {
-      list = list.where((b) => b.quantityRemaining > 0).toList();
+      list = list.where((b) => b.isActive).toList();
     }
 
-    // Sort according to selected column
     list.sort((a, b) {
       int comparison = 0;
       switch (_sortColumnIndex) {
-        case 0: // Batch ID / Date Received
-          comparison = a.dateReceived.compareTo(b.dateReceived);
+        case 0: // Batch ID
+          comparison = a.batchId.compareTo(b.batchId);
           break;
-        case 1: // Expiration Date
-          if (a.expirationDate == null && b.expirationDate == null) {
-            comparison = 0;
-          } else if (a.expirationDate == null) {
-            comparison = 1;
-          } else if (b.expirationDate == null) {
-            comparison = -1;
-          } else {
-            comparison = a.expirationDate!.compareTo(b.expirationDate!);
-          }
+        case 1: // Date Purchased
+          comparison = a.datePurchased.compareTo(b.datePurchased);
           break;
-        case 2: // Quantity Remaining
-          comparison = a.quantityRemaining.compareTo(b.quantityRemaining);
+        case 2: // Date Arrived (FIFO)
+          comparison = ProductBatch.compareFifo(a, b);
           break;
-        case 3: // Status / Days Left
-          final daysA = a.daysUntilExpiration ?? 99999;
-          final daysB = b.daysUntilExpiration ?? 99999;
-          comparison = daysA.compareTo(daysB);
+        case 3: // Remaining / Initial Qty
+          comparison = a.remainingQty.compareTo(b.remainingQty);
+          break;
+        case 4: // Unit Cost
+          comparison = a.costPrice.compareTo(b.costPrice);
           break;
       }
       return _sortAscending ? comparison : -comparison;
@@ -79,18 +75,29 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final semantic = theme.semantic;
+
+    final DateTime now = DateTime.now();
+    final activeSorted = widget.batches
+        .where((b) => b.isSellableAt(now))
+        .toList()
+      ..sort(ProductBatch.compareFifo);
+    final String? oldestActiveBatchId =
+        activeSorted.isNotEmpty ? activeSorted.first.batchId : null;
+
     final processedBatches = _getProcessedBatches();
-    final totalActiveStock = widget.batches
-        .where((b) => b.quantityRemaining > 0)
-        .fold<int>(0, (sum, b) => sum + b.quantityRemaining);
-
-    final totalNearExpiryCount = widget.batches
-        .where((b) => b.quantityRemaining > 0 && b.isNearExpiration)
+    final totalActiveStock =
+        ProductBatch.sumSellableStock(widget.batches, now: now);
+    final expiredWithQtyCount = widget.batches
+        .where((b) => b.isExpiredAt(now) && b.remainingQty > 0)
+        .length;
+    final depletedCount = widget.batches
+        .where((b) =>
+            !b.isSellableAt(now) && !(b.isExpiredAt(now) && b.remainingQty > 0))
         .length;
 
-    final totalExpiredCount = widget.batches
-        .where((b) => b.quantityRemaining > 0 && b.isExpired)
-        .length;
+    final totalNearExpiryCount =
+        activeSorted.where((b) => b.isNearExpiration).length;
+    final totalExpiredCount = expiredWithQtyCount;
 
     return Card(
       elevation: 0,
@@ -104,7 +111,6 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header Bar & Product Summary
             Row(
               children: [
                 Container(
@@ -131,21 +137,20 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                         ),
                       ),
                       Text(
-                        'Total FIFO Tracked Stock: $totalActiveStock ${widget.product.unit}',
+                        'Total Sellable FIFO Stock: $totalActiveStock ${widget.product.unit} • ${activeSorted.length} Active'
+                        '${totalExpiredCount > 0 ? ', $totalExpiredCount Expired' : ''}'
+                        ', $depletedCount Depleted',
                         style: theme.textTheme.bodyMedium,
                       ),
                     ],
                   ),
                 ),
                 FilterChip(
-                  label:
-                      Text(_filterActiveOnly ? 'Active Only' : 'All Batches'),
+                  label: Text(_filterActiveOnly
+                      ? 'Active Only'
+                      : 'All (Incl. Depleted)'),
                   selected: _filterActiveOnly,
-                  onSelected: (val) {
-                    setState(() {
-                      _filterActiveOnly = val;
-                    });
-                  },
+                  onSelected: (val) => setState(() => _filterActiveOnly = val),
                   avatar: Icon(
                     _filterActiveOnly ? Icons.filter_alt : Icons.filter_alt_off,
                     size: 16,
@@ -153,10 +158,7 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
-            // Expiration Quick Alert Summary Banner (if warnings exist)
             if (totalNearExpiryCount > 0 || totalExpiredCount > 0)
               Container(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -201,8 +203,6 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                   ],
                 ),
               ),
-
-            // Empty State
             if (processedBatches.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 32.0),
@@ -210,7 +210,7 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                   child: Column(
                     children: [
                       Icon(
-                        Icons.no_photography_outlined,
+                        Icons.layers_clear_outlined,
                         size: 48,
                         color: theme.colorScheme.onSurfaceVariant
                             .withValues(alpha: 0.4),
@@ -227,7 +227,6 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                 ),
               )
             else
-              // Material 3 Data Table
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -237,13 +236,13 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                     theme.colorScheme.surfaceContainerHighest
                         .withValues(alpha: 0.5),
                   ),
-                  dataRowMinHeight: 52,
-                  dataRowMaxHeight: 60,
+                  dataRowMinHeight: 54,
+                  dataRowMaxHeight: 64,
                   horizontalMargin: 16,
-                  columnSpacing: 24,
+                  columnSpacing: 20,
                   columns: [
                     DataColumn(
-                      label: const Text('Batch ID / Received'),
+                      label: const Text('PO / Batch Ref & Supplier'),
                       onSort: (columnIndex, ascending) {
                         setState(() {
                           _sortColumnIndex = columnIndex;
@@ -252,13 +251,16 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                       },
                     ),
                     DataColumn(
-                      label: const Row(
-                        children: [
-                          Icon(Icons.event, size: 16),
-                          SizedBox(width: 4),
-                          Text('Expiration Date'),
-                        ],
-                      ),
+                      label: const Text('Date Purchased'),
+                      onSort: (columnIndex, ascending) {
+                        setState(() {
+                          _sortColumnIndex = columnIndex;
+                          _sortAscending = ascending;
+                        });
+                      },
+                    ),
+                    DataColumn(
+                      label: const Text('Date Arrived (FIFO)'),
                       onSort: (columnIndex, ascending) {
                         setState(() {
                           _sortColumnIndex = columnIndex;
@@ -268,7 +270,7 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                     ),
                     DataColumn(
                       numeric: true,
-                      label: const Text('Qty Remaining'),
+                      label: const Text('Remaining / Initial'),
                       onSort: (columnIndex, ascending) {
                         setState(() {
                           _sortColumnIndex = columnIndex;
@@ -277,7 +279,8 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                       },
                     ),
                     DataColumn(
-                      label: const Text('FIFO Status'),
+                      numeric: true,
+                      label: const Text('Unit Cost'),
                       onSort: (columnIndex, ascending) {
                         setState(() {
                           _sortColumnIndex = columnIndex;
@@ -285,9 +288,16 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
                         });
                       },
                     ),
+                    const DataColumn(label: Text('FIFO Queue Status')),
                   ],
                   rows: processedBatches.map((batch) {
-                    return _buildDataRow(context, batch, theme, semantic);
+                    return _buildDataRow(
+                      context,
+                      batch,
+                      theme,
+                      isOldestActive: batch.isActive &&
+                          batch.batchId == oldestActiveBatchId,
+                    );
                   }).toList(),
                 ),
               ),
@@ -300,218 +310,118 @@ class _BatchDetailsTableState extends State<BatchDetailsTable> {
   DataRow _buildDataRow(
     BuildContext context,
     ProductBatch batch,
-    ThemeData theme,
-    GdcSemanticColors semantic,
-  ) {
-    final dateStr = batch.expirationDate != null
-        ? DateFormat('MMM dd, yyyy').format(batch.expirationDate!)
-        : 'N/A (No Expiry)';
-
-    final receivedStr = DateFormat('MMM dd, yyyy').format(batch.dateReceived);
-    final batchDisplayId = batch.batchId.length > 8
-        ? batch.batchId.substring(0, 8)
-        : (batch.batchId.isEmpty ? 'BATCH-00' : batch.batchId);
-
-    final statusWidget = _buildStatusBadge(batch, theme, semantic);
+    ThemeData theme, {
+    required bool isOldestActive,
+  }) {
+    final purchasedStr = DateFormat('MMM dd, yyyy').format(batch.datePurchased);
+    final arrivedStr = DateFormat('MMM dd, yyyy').format(batch.dateArrived);
+    final denomInitial = batch.initialQty >= batch.remainingQty
+        ? batch.initialQty
+        : batch.remainingQty;
 
     return DataRow(
+      color: isOldestActive
+          ? WidgetStateProperty.all(Colors.green.withValues(alpha: 0.06))
+          : null,
       onSelectChanged:
           widget.onBatchTap != null ? (_) => widget.onBatchTap!(batch) : null,
       cells: [
-        // Batch ID & Received Date
         DataCell(
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '#$batchDisplayId',
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              Text(
-                'Rec: $receivedStr',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
+          Builder(builder: (_) {
+            final resolvedPo =
+                widget.poNumberResolver?.call(batch) ?? batch.poNumber;
+            final resolvedSupplier =
+                widget.supplierNameResolver?.call(batch) ?? batch.supplierName;
+            final primaryRef =
+                batch.primaryReference(resolvedPoNumber: resolvedPo);
+            final subLabel =
+                (resolvedSupplier != null && resolvedSupplier.trim().isNotEmpty)
+                    ? resolvedSupplier.trim()
+                    : (resolvedPo != null && resolvedPo.trim().isNotEmpty
+                        ? 'Batch: ${batch.displayBatchId}'
+                        : 'Unlinked Supplier');
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  primaryRef,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 12.5),
                 ),
-              ),
-            ],
-          ),
+                Text(
+                  subLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            );
+          }),
         ),
-
-        // Expiration Date
+        DataCell(Text(purchasedStr, style: const TextStyle(fontSize: 12))),
         DataCell(
           Text(
-            dateStr,
+            arrivedStr,
             style: TextStyle(
-              fontWeight: batch.isNearExpiration || batch.isExpired
-                  ? FontWeight.bold
-                  : FontWeight.normal,
-              color: batch.isExpired
-                  ? theme.colorScheme.error
-                  : (batch.isNearExpiration
-                      ? semantic.warning
-                      : theme.colorScheme.onSurface),
+              fontSize: 12,
+              fontWeight: isOldestActive ? FontWeight.bold : FontWeight.normal,
+              color: isOldestActive ? Colors.green.shade800 : null,
             ),
           ),
         ),
-
-        // Quantity Remaining
         DataCell(
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: batch.quantityRemaining == 0
-                  ? theme.colorScheme.outline.withValues(alpha: 0.1)
-                  : theme.colorScheme.primary.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${batch.quantityRemaining} ${widget.product.unit}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: batch.quantityRemaining == 0
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.colorScheme.primary,
-              ),
+          Text(
+            '${batch.remainingQty} / $denomInitial ${widget.product.unit}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12.5,
+              color: !batch.isActive
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.colorScheme.primary,
             ),
           ),
         ),
-
-        // Status Visual Indicator
-        DataCell(statusWidget),
+        DataCell(
+          Text(
+            formatPeso(batch.costPrice),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+        DataCell(_buildFifoBadge(batch, isOldestActive: isOldestActive)),
       ],
     );
   }
 
-  Widget _buildStatusBadge(
-      ProductBatch batch, ThemeData theme, GdcSemanticColors semantic) {
-    if (batch.quantityRemaining == 0) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.outline.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.block_outlined,
-                size: 14, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(
-              'Depleted',
-              style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      );
-    }
+  Widget _buildFifoBadge(ProductBatch batch, {required bool isOldestActive}) {
+    final bool isExpiredWithQty = batch.isExpired && batch.remainingQty > 0;
+    final bool isDepleted = !batch.isSellable;
+    final Color color = isExpiredWithQty
+        ? Colors.red.shade700
+        : (isDepleted
+            ? Colors.grey.shade600
+            : (isOldestActive ? Colors.green.shade700 : Colors.blue.shade700));
+    final String label = isExpiredWithQty
+        ? 'EXPIRED'
+        : (isDepleted
+            ? 'DEPLETED'
+            : (isOldestActive ? 'SELLING NOW (OLDEST)' : 'QUEUED (NEWER)'));
 
-    final days = batch.daysUntilExpiration;
-
-    if (days == null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: semantic.info.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.all_inclusive, size: 14, color: semantic.info),
-            const SizedBox(width: 4),
-            Text(
-              'Non-perishable',
-              style: TextStyle(
-                  fontSize: 11,
-                  color: semantic.info,
-                  fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (days <= 0) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.error.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border:
-              Border.all(color: theme.colorScheme.error.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cancel_outlined,
-                size: 14, color: theme.colorScheme.error),
-            const SizedBox(width: 4),
-            Text(
-              'Expired ($days d)',
-              style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.error,
-                  fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (days <= 30) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: semantic.warning.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: semantic.warning.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.warning_amber_rounded,
-                size: 14, color: semantic.warning),
-            const SizedBox(width: 4),
-            Text(
-              'Expires in $days d',
-              style: TextStyle(
-                  fontSize: 11,
-                  color: semantic.warning,
-                  fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Safe / Healthy Batch
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: semantic.success.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle_outline, size: 14, color: semantic.success),
-          const SizedBox(width: 4),
-          Text(
-            'Safe ($days d left)',
-            style: TextStyle(
-                fontSize: 11,
-                color: semantic.success,
-                fontWeight: FontWeight.w700),
-          ),
-        ],
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
       ),
     );
   }

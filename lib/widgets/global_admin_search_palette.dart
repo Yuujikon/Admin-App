@@ -511,8 +511,8 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface
-                            .withValues(alpha: 0.7),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
                     const Spacer(),
@@ -520,8 +520,8 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
                       'Global Search & Smart Filtering active',
                       style: TextStyle(
                         fontSize: 11,
-                        color: theme.colorScheme.onSurface
-                            .withValues(alpha: 0.5),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                   ],
@@ -675,7 +675,8 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
         final matchesId = o.id.toLowerCase().contains(q);
         final matchesOrderId = o.orderId.toLowerCase().contains(q);
         final matchesName = o.customerName.toLowerCase().contains(q);
-        final matchesPhone = o.customerPhone?.toLowerCase().contains(q) ?? false;
+        final matchesPhone =
+            o.customerPhone?.toLowerCase().contains(q) ?? false;
         final matchesStatus = o.status.name.toLowerCase().contains(q);
 
         if (q.isEmpty ||
@@ -691,9 +692,11 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
                   'Phone: ${o.customerPhone ?? "N/A"} • Total: ${formatPeso(o.total)} • Status: ${o.status.name.toUpperCase()}',
               domainLabel: 'Pre-Order',
               icon: Icons.assignment_rounded,
-              iconColor: isPending ? Colors.blue.shade700 : Colors.purple.shade700,
+              iconColor:
+                  isPending ? Colors.blue.shade700 : Colors.purple.shade700,
               badge: o.status.name.toUpperCase(),
-              badgeColor: isPending ? Colors.blue.shade700 : Colors.purple.shade700,
+              badgeColor:
+                  isPending ? Colors.blue.shade700 : Colors.purple.shade700,
               onTap: () {
                 widget.onNavigateTab(AppTab.preOrders);
               },
@@ -712,13 +715,11 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
             tx.customerEmail?.toLowerCase().contains(q) ?? false;
         final matchesPayment = tx.paymentMethod.name.toLowerCase().contains(q);
 
-        if (q.isEmpty ||
-            matchesId ||
-            matchesCustomer ||
-            matchesPayment) {
+        if (q.isEmpty || matchesId || matchesCustomer || matchesPayment) {
           list.add(
             GlobalSearchResultItem(
-              title: 'Tx #${tx.id.substring(0, tx.id.length > 8 ? 8 : tx.id.length)} - ${formatPeso(tx.total)}',
+              title:
+                  'Tx #${tx.id.substring(0, tx.id.length > 8 ? 8 : tx.id.length)} - ${formatPeso(tx.total)}',
               subtitle:
                   'Customer: ${tx.customerEmail ?? "Walk-in"} • Method: ${tx.paymentMethod.name.toUpperCase()}',
               domainLabel: 'Sales Receipt',
@@ -782,9 +783,11 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
                   'Email: ${c.email ?? "N/A"} • Total Spent: ${formatPeso(c.totalSpent)} • Offenses: ${c.offenseCount}',
               domainLabel: 'Customer Profile',
               icon: Icons.people_alt_rounded,
-              iconColor: isRestricted ? Colors.red.shade700 : Colors.cyan.shade700,
+              iconColor:
+                  isRestricted ? Colors.red.shade700 : Colors.cyan.shade700,
               badge: isRestricted ? 'OFFENSES: ${c.offenseCount}' : 'ACTIVE',
-              badgeColor: isRestricted ? Colors.red.shade700 : Colors.cyan.shade700,
+              badgeColor:
+                  isRestricted ? Colors.red.shade700 : Colors.cyan.shade700,
               onTap: () {
                 widget.onNavigateTab(AppTab.more);
               },
@@ -798,14 +801,17 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
     if (_selectedDomain == GlobalSearchDomain.all ||
         _selectedDomain == GlobalSearchDomain.deliveryLogs) {
       for (final dl in inventory.deliveryLogs) {
-        final matchesInvoice = dl.invoiceNumber?.toLowerCase().contains(q) ?? false;
-        final matchesSupplier = dl.supplierName?.toLowerCase().contains(q) ?? false;
+        final matchesInvoice =
+            dl.invoiceNumber?.toLowerCase().contains(q) ?? false;
+        final matchesSupplier =
+            dl.supplierName?.toLowerCase().contains(q) ?? false;
         final matchesReceiver = dl.receivedBy.toLowerCase().contains(q);
 
         if (q.isEmpty || matchesInvoice || matchesSupplier || matchesReceiver) {
           list.add(
             GlobalSearchResultItem(
-              title: 'Delivery Invoice #${dl.invoiceNumber ?? "N/A"} (${dl.supplierName ?? "General"})',
+              title:
+                  'Delivery Invoice #${dl.invoiceNumber ?? "N/A"} (${dl.supplierName ?? "General"})',
               subtitle:
                   'Received By: ${dl.receivedBy} • Total Value: ${formatPeso(dl.totalValue)} • Qty: ${dl.qtyReceived}',
               domainLabel: 'Delivery Log',

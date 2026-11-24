@@ -28,7 +28,8 @@ class AuditLogService {
       String role = 'unknown';
       String? name;
       try {
-        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        final userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
         if (userDoc.exists) {
           role = userDoc.data()?['role'] ?? 'none';
           name = userDoc.data()?['name'];
@@ -40,7 +41,8 @@ class AuditLogService {
       final logRef = _firestore.collection('audit_logs').doc();
       final auditLog = AuditLog(
         id: logRef.id,
-        timestamp: Timestamp.now(), // Will be overwritten by serverTimestamp in toMap
+        timestamp:
+            Timestamp.now(), // Will be overwritten by serverTimestamp in toMap
         actorId: user.uid,
         actorEmail: user.email ?? 'Unknown',
         actorName: name,
@@ -79,7 +81,8 @@ class AuditLogService {
     });
   }
 
-  Future<List<AuditLog>> fetchAuditLogs({int limit = 50, DocumentSnapshot? startAfter}) async {
+  Future<List<AuditLog>> fetchAuditLogs(
+      {int limit = 50, DocumentSnapshot? startAfter}) async {
     Query query = _firestore
         .collection('audit_logs')
         .orderBy('timestamp', descending: true)
@@ -91,7 +94,8 @@ class AuditLogService {
 
     final snapshot = await query.get();
     return snapshot.docs
-        .map((doc) => AuditLog.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+        .map((doc) =>
+            AuditLog.fromMap(doc.data() as Map<String, dynamic>, doc.id))
         .toList();
   }
 }

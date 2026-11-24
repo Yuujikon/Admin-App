@@ -9,14 +9,13 @@ import '../models/shift_session.dart';
 import '../models/restock_inquiry.dart';
 import '../models/transaction.dart';
 import '../models/refund_request.dart';
-import '../models/order.dart';
 import '../providers/inventory_provider.dart';
+import '../providers/procurement_provider.dart';
 import '../providers/shift_provider.dart';
 import '../providers/restock_provider.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/premium_components.dart';
-import '../services/firestore_service.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
 import '../widgets/admin_filter_bar.dart';
@@ -90,6 +89,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final inventory = context.watch<InventoryProvider>();
+    final procurement = context.watch<ProcurementProvider>();
     final shiftProvider = context.watch<ShiftProvider>();
     final restockProvider = context.watch<RestockProvider>();
 
@@ -108,6 +108,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       final q = _searchQuery.toLowerCase();
       return log.productName.toLowerCase().contains(q) ||
           (log.invoiceNumber?.toLowerCase().contains(q) ?? false) ||
+          (log.supplierName?.toLowerCase().contains(q) ?? false) ||
           log.receivedBy.toLowerCase().contains(q) ||
           (log.notes?.toLowerCase().contains(q) ?? false);
     }).toList();
@@ -124,12 +125,20 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       if (!_matchesDateFilter(wrapper.batch.dateReceived)) return false;
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase();
+      final supplierName = procurement.resolveSupplierNameForBatch(
+        wrapper.batch,
+        suppliers: inventory.suppliers,
+        fallbackProductSupplierId: wrapper.product.supplierId,
+      );
+      final poNumber = procurement.resolvePoNumberForBatch(wrapper.batch);
       return wrapper.product.name.toLowerCase().contains(q) ||
           wrapper.batch.id.toLowerCase().contains(q) ||
+          (supplierName?.toLowerCase().contains(q) ?? false) ||
+          (poNumber?.toLowerCase().contains(q) ?? false) ||
           (wrapper.batch.invoiceNumber?.toLowerCase().contains(q) ?? false);
     }).toList();
-    filteredBatches.sort(
-        (a, b) => b.batch.dateReceived.compareTo(a.batch.dateReceived));
+    filteredBatches
+        .sort((a, b) => b.batch.dateReceived.compareTo(a.batch.dateReceived));
 
     // 3. Filtered Sales Stock Depletion Transactions
     final filteredSales = transactions.where((tx) {
@@ -214,7 +223,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
           final q = _searchQuery.toLowerCase();
           if (!log.productName.toLowerCase().contains(q) &&
               !(log.notes?.toLowerCase().contains(q) ?? false) &&
-              !log.receivedBy.toLowerCase().contains(q)) continue;
+              !log.receivedBy.toLowerCase().contains(q)) {
+            continue;
+          }
         }
         filteredAudits.add(_AuditRecordWrapper(
           title: 'Shelf Audit Overage',
@@ -235,7 +246,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         if (_searchQuery.isNotEmpty) {
           final q = _searchQuery.toLowerCase();
           if (!loss.productName.toLowerCase().contains(q) &&
-              !loss.notes.toLowerCase().contains(q)) continue;
+              !loss.notes.toLowerCase().contains(q)) {
+            continue;
+          }
         }
         filteredAudits.add(_AuditRecordWrapper(
           title: 'Shelf Audit Shortage',
@@ -276,8 +289,13 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
 
     // Sales Outflows
     for (final tx in filteredSales) {
-      final totalQtySold = tx.items.fold<int>(0, (sum, i) => sum + (tx.isRefunded ? 0 : (i.qty - i.returnedQty).clamp(0, 999999)));
-      final itemSnippet = tx.items.map((i) => '${i.name} (x${i.qty})').join(', ');
+      final totalQtySold = tx.items.fold<int>(
+          0,
+          (sum, i) =>
+              sum +
+              (tx.isRefunded ? 0 : (i.qty - i.returnedQty).clamp(0, 999999)));
+      final itemSnippet =
+          tx.items.map((i) => '${i.name} (x${i.qty})').join(', ');
       final shortTxId =
           tx.id.length >= 8 ? tx.id.substring(0, 8).toUpperCase() : tx.id;
 
@@ -316,7 +334,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     // Customer Refunds
     for (final ref in filteredRefunds) {
       final totalQtyRef = ref.items.fold<int>(0, (sum, i) => sum + i.qty);
-      final itemSnippet = ref.items.map((i) => '${i.name} (x${i.qty})').join(', ');
+      final itemSnippet =
+          ref.items.map((i) => '${i.name} (x${i.qty})').join(', ');
       final shortRefId =
           ref.id.length >= 8 ? ref.id.substring(0, 8).toUpperCase() : ref.id;
 
@@ -404,7 +423,9 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     final totalSalesVal =
         filteredSales.fold<double>(0, (sum, s) => sum + s.total);
     final totalSalesQty = filteredSales.fold<int>(
-        0, (sum, s) => sum + s.items.fold<int>(0, (iSum, item) => iSum + item.qty));
+        0,
+        (sum, s) =>
+            sum + s.items.fold<int>(0, (iSum, item) => iSum + item.qty));
     final activeLotsCount =
         allBatches.where((b) => b.batch.quantityRemaining > 0).length;
     final totalLossVal =
@@ -601,10 +622,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                         _RecordTab.auditReconciliations,
                         Icons.fact_check_outlined),
                     const SizedBox(width: 6),
-                    _buildTabChip(
-                        'Combined Timeline (${timelineItems.length})',
-                        _RecordTab.allTimeline,
-                        Icons.history_rounded),
+                    _buildTabChip('Combined Timeline (${timelineItems.length})',
+                        _RecordTab.allTimeline, Icons.history_rounded),
                   ],
                 ),
               ),
@@ -842,7 +861,12 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         return ListView.separated(
           itemCount: filteredBatches.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (ctx, i) => _buildBatchLotRow(ctx, filteredBatches[i]),
+          itemBuilder: (ctx, i) => _buildBatchLotRow(
+            ctx,
+            filteredBatches[i],
+            ctx.read<InventoryProvider>(),
+            ctx.read<ProcurementProvider>(),
+          ),
         );
 
       case _RecordTab.salesTransactions:
@@ -857,7 +881,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
         return ListView.separated(
           itemCount: filteredSales.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (ctx, i) => _buildSaleTransactionRow(ctx, filteredSales[i]),
+          itemBuilder: (ctx, i) =>
+              _buildSaleTransactionRow(ctx, filteredSales[i]),
         );
 
       case _RecordTab.lossWaste:
@@ -1054,13 +1079,28 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
   }
 
   Widget _buildBatchLotRow(
-      BuildContext context, _BatchRecordWrapper wrapper) {
+    BuildContext context,
+    _BatchRecordWrapper wrapper,
+    InventoryProvider inventory,
+    ProcurementProvider procurement,
+  ) {
     final theme = Theme.of(context);
     final batch = wrapper.batch;
     final product = wrapper.product;
-    final isDepleted = batch.quantityRemaining <= 0;
+    final isDepleted = batch.remainingQty <= 0;
     final isExpired = batch.isExpired;
     final isNearExpiry = batch.isNearExpiration;
+    final resolvedPo = procurement.resolvePoNumberForBatch(batch);
+    final supplierName = procurement.resolveSupplierNameForBatch(
+          batch,
+          suppliers: inventory.suppliers,
+          fallbackProductSupplierId: product.supplierId,
+        ) ??
+        'Unlinked Supplier';
+    final int displayInitialQty = batch.initialQty >= batch.remainingQty
+        ? batch.initialQty
+        : batch.remainingQty;
+    final bool isUnlinkedSupplier = !batch.hasValidSupplier;
 
     final statusColor = isDepleted
         ? Colors.grey
@@ -1139,7 +1179,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Batch #${batch.id.length >= 8 ? batch.id.substring(0, 8) : batch.id} • Stock: ${batch.quantityRemaining} / ${batch.quantity} ${product.unit}',
+                '${batch.primaryReference(resolvedPoNumber: resolvedPo)} • Stock: ${batch.remainingQty} / $displayInitialQty ${product.unit}',
                 style:
                     const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
@@ -1149,7 +1189,19 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                 runSpacing: 2,
                 children: [
                   Text(
-                    'Unit Cost: ${formatPeso(batch.unitCost)}',
+                    'Supplier: $supplierName',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isUnlinkedSupplier
+                          ? FontWeight.bold
+                          : FontWeight.w500,
+                      color: isUnlinkedSupplier
+                          ? Colors.orange.shade900
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    '• Unit Cost: ${formatPeso(batch.costPrice)}',
                     style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant),
@@ -1182,8 +1234,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
     );
   }
 
-  Widget _buildSaleTransactionRow(
-      BuildContext context, StoreTransaction tx) {
+  Widget _buildSaleTransactionRow(BuildContext context, StoreTransaction tx) {
     final theme = Theme.of(context);
     final totalQty = tx.items.fold<int>(0, (sum, i) => sum + i.qty);
     final shortTxId =
@@ -1398,7 +1449,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
   Widget _buildAuditReconciliationRow(
       BuildContext context, _AuditRecordWrapper audit) {
     final theme = Theme.of(context);
-    final color = audit.isOverage ? Colors.teal.shade700 : Colors.amber.shade900;
+    final color =
+        audit.isOverage ? Colors.teal.shade700 : Colors.amber.shade900;
 
     return Card(
       elevation: 0,
@@ -1848,9 +1900,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                       Text('Stock Delivery Arrival Entry',
                           style: TextStyle(
                               fontSize: 12,
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurfaceVariant)),
+                              color:
+                                  Theme.of(ctx).colorScheme.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -1862,10 +1913,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _detailRow('Total Valuation', formatPeso(log.totalValue)),
             _detailRow('Received By', log.receivedBy),
             _detailRow('Invoice / DR Number', log.invoiceNumber ?? 'N/A'),
-            _detailRow(
-                'Received Timestamp',
-                DateFormat('EEEE, MMM d, yyyy • h:mm a')
-                    .format(log.createdAt)),
+            _detailRow('Received Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(log.createdAt)),
             if (log.expiryDate != null)
               _detailRow('Expiry Date',
                   DateFormat('MMM d, yyyy').format(log.expiryDate!)),
@@ -1881,8 +1930,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ProductDetailScreen(
-                            product: linkedProduct!),
+                        builder: (_) =>
+                            ProductDetailScreen(product: linkedProduct!),
                       ),
                     );
                   },
@@ -1943,7 +1992,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Sale Tx #${tx.id.length >= 8 ? tx.id.substring(0, 8).toUpperCase() : tx.id}',
+                      Text(
+                          'Sale Tx #${tx.id.length >= 8 ? tx.id.substring(0, 8).toUpperCase() : tx.id}',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 2),
@@ -1959,7 +2009,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _detailRow('Payment Method', tx.paymentMethod.name.toUpperCase()),
             _detailRow('Cash Tendered', formatPeso(tx.cashTendered)),
             _detailRow('Change Given', formatPeso(tx.changeGiven)),
-            _detailRow('Customer Email', tx.customerEmail ?? 'Walk-in Customer'),
+            _detailRow(
+                'Customer Email', tx.customerEmail ?? 'Walk-in Customer'),
             _detailRow('Timestamp',
                 DateFormat('EEEE, MMM d, yyyy • h:mm a').format(tx.createdAt)),
             const SizedBox(height: 12),
@@ -2045,8 +2096,10 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _detailRow('Processed By', loss.processedBy ?? 'System / Staff'),
             _detailRow('Notes / Reason',
                 loss.notes.isNotEmpty ? loss.notes : 'No extra notes'),
-            _detailRow('Logged Timestamp',
-                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(loss.createdAt)),
+            _detailRow(
+                'Logged Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                    .format(loss.createdAt)),
           ],
         ),
       ),
@@ -2095,7 +2148,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Refund #${refund.id.length >= 8 ? refund.id.substring(0, 8).toUpperCase() : refund.id}',
+                      Text(
+                          'Refund #${refund.id.length >= 8 ? refund.id.substring(0, 8).toUpperCase() : refund.id}',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 2),
@@ -2113,8 +2167,10 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _detailRow('Customer Email', refund.customerEmail),
             _detailRow('Reason', refund.reason),
             _detailRow('Processed By', refund.processedByEmail ?? 'Admin'),
-            _detailRow('Timestamp',
-                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(refund.createdAt)),
+            _detailRow(
+                'Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                    .format(refund.createdAt)),
             const SizedBox(height: 12),
             const Text('Returned Items:',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -2185,7 +2241,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                       const SizedBox(height: 2),
                       Text(
                           'Session Status: ${shift.status == ShiftStatus.active ? "Active" : "Closed"}',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -2196,13 +2253,17 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _detailRow('Cash Sales Recorded', formatPeso(shift.cashSales)),
             _detailRow('Actual Cash Counted',
                 formatPeso(shift.actualCashCounted ?? 0)),
-            _detailRow('Cash Difference / Variance',
-                formatPeso(shift.cashDifference)),
-            _detailRow('Opened At',
-                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(shift.openedAt)),
+            _detailRow(
+                'Cash Difference / Variance', formatPeso(shift.cashDifference)),
+            _detailRow(
+                'Opened At',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                    .format(shift.openedAt)),
             if (shift.closedAt != null)
-              _detailRow('Closed At',
-                  DateFormat('EEEE, MMM d, yyyy • h:mm a').format(shift.closedAt!)),
+              _detailRow(
+                  'Closed At',
+                  DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                      .format(shift.closedAt!)),
           ],
         ),
       ),
@@ -2254,8 +2315,10 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 2),
-                      Text('Request for Quotation (RFQ) #${inquiry.inquiryNumber}',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                          'Request for Quotation (RFQ) #${inquiry.inquiryNumber}',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -2263,11 +2326,13 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             ),
             const Divider(height: 28),
             _detailRow('Status', inquiry.status.name.toUpperCase()),
-            _detailRow('Total Ordered Value',
-                formatPeso(inquiry.totalOrderedValue)),
+            _detailRow(
+                'Total Ordered Value', formatPeso(inquiry.totalOrderedValue)),
             _detailRow('Total Items Requested', '${inquiry.totalRequestedQty}'),
-            _detailRow('Date Created',
-                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(inquiry.createdAt)),
+            _detailRow(
+                'Date Created',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                    .format(inquiry.createdAt)),
           ],
         ),
       ),
@@ -2329,9 +2394,8 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                       Text(audit.title,
                           style: TextStyle(
                               fontSize: 12,
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurfaceVariant)),
+                              color:
+                                  Theme.of(ctx).colorScheme.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -2343,8 +2407,10 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
             _detailRow('Audit Valuation', formatPeso(audit.cost)),
             _detailRow('Auditor / Staff', audit.auditor),
             _detailRow('Discrepancy Notes', audit.notes),
-            _detailRow('Audit Timestamp',
-                DateFormat('EEEE, MMM d, yyyy • h:mm a').format(audit.timestamp)),
+            _detailRow(
+                'Audit Timestamp',
+                DateFormat('EEEE, MMM d, yyyy • h:mm a')
+                    .format(audit.timestamp)),
           ],
         ),
       ),
@@ -2357,8 +2423,7 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: const TextStyle(fontSize: 13, color: Colors.grey)),
+          Text(label, style: const TextStyle(fontSize: 13, color: Colors.grey)),
           const SizedBox(width: 12),
           Expanded(
             child: Text(

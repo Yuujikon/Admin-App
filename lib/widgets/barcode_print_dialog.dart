@@ -69,11 +69,9 @@ class BarcodePrintDialog extends StatefulWidget {
 
 class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
   int _copies = 1;
-  bool _isThermalPrinting = false;
 
   @override
   Widget build(BuildContext context) {
-    final printer = context.watch<PrinterProvider>();
     final theme = Theme.of(context);
 
     return Dialog(
@@ -217,14 +215,14 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
             const SizedBox(height: 8),
             // Presets row: 1, 5, 10, 20, 50
             Row(
-              children: [1, 5, 10, 20, 50].map((num) {
-                final isSelected = _copies == num;
+              children: [1, 5, 10, 20, 50].map((count) {
+                final isSelected = _copies == count;
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
-                    label: Text('$num'),
+                    label: Text('$count'),
                     selected: isSelected,
-                    onSelected: (_) => setState(() => _copies = num),
+                    onSelected: (_) => setState(() => _copies = count),
                   ),
                 );
               }).toList(),
@@ -532,7 +530,7 @@ class _BarcodePrintDialogState extends State<BarcodePrintDialog> {
     const labelWidthMm = 50.0;
     const labelHeightMm = 30.0;
 
-    final pageFormat = PdfPageFormat(
+    const pageFormat = PdfPageFormat(
       labelWidthMm * PdfPageFormat.mm,
       labelHeightMm * PdfPageFormat.mm,
       marginAll: 2 * PdfPageFormat.mm,

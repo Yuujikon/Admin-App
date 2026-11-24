@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
+import '../models/batch.dart';
 import '../models/order.dart';
 import '../models/transaction.dart';
 import '../providers/inventory_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/format.dart';
 
-enum ItemCondition { unopenedSealed, openedBroken }
+enum ItemCondition { goodRestock, damagedWriteOff }
 
 enum ReturnActionType { cashRefund, itemSwap }
 
@@ -41,13 +43,12 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
 
   CartItem? _matchedItem;
   String? _errorMessage;
-  bool _hasScanned = false;
   bool _isProcessing = false;
 
   // Inspection Gate State
-  ItemCondition? _selectedCondition;
+  ItemCondition? _selectedCondition = ItemCondition.goodRestock;
   ReturnActionType _actionType = ReturnActionType.cashRefund;
-  bool _isDamagedSwap = false;
+  String? _preferredBatchId;
   int _returnQty = 1;
 
   @override
@@ -71,10 +72,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     final items = widget.transaction.items;
 
     // 1. Check if input matches Receipt # / Order ID / Transaction ID
-    final String txId =
-        widget.transaction.id.replaceAll('#', '').toLowerCase();
-    final String? orderId =
-        widget.orderId?.replaceAll('#', '').toLowerCase();
+    final String txId = widget.transaction.id.replaceAll('#', '').toLowerCase();
+    final String? orderId = widget.orderId?.replaceAll('#', '').toLowerCase();
 
     final bool isReceiptMatch = normalized.isNotEmpty &&
         (txId == normalized ||
@@ -100,8 +99,8 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
 
     // 3. Match by Product Name
     if (matchingIndex < 0) {
-      matchingIndex = items.indexWhere(
-          (i) => i.name.toLowerCase().contains(normalized));
+      matchingIndex =
+          items.indexWhere((i) => i.name.toLowerCase().contains(normalized));
     }
 
     if (matchingIndex < 0) {
@@ -114,7 +113,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
       }
 
       setState(() {
-        _hasScanned = false;
         _errorMessage =
             'Mismatch: Barcode/Number "$cleanInput" was not found on this receipt.';
       });
@@ -124,7 +122,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     final matched = items[matchingIndex];
     if (matched.returnedQty >= matched.qty) {
       setState(() {
-        _hasScanned = false;
         _errorMessage =
             'All units of "${matched.name}" on this receipt have already been returned.';
       });
@@ -132,32 +129,27 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     }
 
     setState(() {
-      _hasScanned = true;
       _matchedItem = matched;
       _returnQty = 1;
-      _selectedCondition = null;
+      _selectedCondition = ItemCondition.goodRestock;
+      _preferredBatchId = null;
       _errorMessage = null;
     });
   }
 
   void _showItemPickerForReceipt([List<CartItem>? customItems]) {
     final availableItems = customItems ??
-        widget.transaction.items
-            .where((i) => i.returnedQty < i.qty)
-            .toList();
+        widget.transaction.items.where((i) => i.returnedQty < i.qty).toList();
 
     if (availableItems.isEmpty) {
       setState(() {
-        _hasScanned = false;
-        _errorMessage =
-            'All items on this receipt have already been returned.';
+        _errorMessage = 'All items on this receipt have already been returned.';
       });
       return;
     }
 
     if (availableItems.length == 1) {
       setState(() {
-        _hasScanned = true;
         _matchedItem = availableItems.first;
         _returnQty = 1;
         _selectedCondition = null;
@@ -200,7 +192,6 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     ).then((selected) {
       if (selected != null) {
         setState(() {
-          _hasScanned = true;
           _matchedItem = selected;
           _returnQty = 1;
           _selectedCondition = null;
@@ -213,9 +204,7 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
   void _showUnbarcodedPicker() => _showItemPickerForReceipt();
 
   Future<void> _confirmReturn() async {
-    if (_matchedItem == null ||
-        _selectedCondition != ItemCondition.unopenedSealed ||
-        _isProcessing) {
+    if (_matchedItem == null || _selectedCondition == null || _isProcessing) {
       return;
     }
 
@@ -224,29 +213,45 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
     try {
       final fs = FirestoreService();
       final isCash = _actionType == ReturnActionType.cashRefund;
+      final isGood = _selectedCondition == ItemCondition.goodRestock;
+      final inventory = context.read<InventoryProvider>();
 
-      await fs.processItemReturn(
+      final result = await fs.processItemReturn(
         transactionId: widget.transaction.id,
-        orderId: widget.orderId,
+        orderId: widget.orderId ?? widget.transaction.orderId,
         productId: _matchedItem!.productId,
         variantId: _matchedItem!.variantId,
         barcode: _matchedItem!.barcode,
         returnQty: _returnQty,
         isCashRefund: isCash,
-        isDamagedSwap: !isCash && _isDamagedSwap,
+        isDamagedSwap: !isGood,
+        condition: isGood ? 'SELLABLE' : 'DAMAGED',
+        preferredBatchId: _preferredBatchId,
+        productName: _matchedItem!.name,
+        unitPrice: _matchedItem!.unitPriceAtSale,
+        settings: inventory.settings,
       );
 
       if (mounted) {
-        // Refresh local inventory state
-        context.read<InventoryProvider>().initialize();
+        inventory.initialize();
+
+        final batchSummary = isGood
+            ? result.restoredAllocations
+                .map((a) => '${a.batchId} (+${a.qtyReturned})')
+                .join(', ')
+            : result.writtenOffAllocations
+                .map((a) => '${a.batchId} (${a.qtyReturned} write-off)')
+                .join(', ');
 
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               isCash
-                  ? 'Cash Refund Processed! $_returnQty unit(s) of "${_matchedItem!.name}" restocked.'
-                  : '1-to-1 Item Swap Processed for "${_matchedItem!.name}".',
+                  ? (isGood
+                      ? 'Refund Processed! $_returnQty unit(s) restored to original batch${batchSummary.isNotEmpty ? " ($batchSummary)" : ""}.'
+                      : 'Refund Processed! $_returnQty damaged unit(s) written off${batchSummary.isNotEmpty ? " ($batchSummary)" : ""} (not restocked).')
+                  : '1-to-1 Item Swap Processed for "${_matchedItem!.name}"${batchSummary.isNotEmpty ? " ($batchSummary)" : ""}.',
             ),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
@@ -427,7 +432,7 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                   ),
                 ),
               ] else ...[
-                // STEP 3: Inspection Gate & Action
+                // STEP 3: Batch Backtracking, Condition Choice & Action
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -435,47 +440,150 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.teal.shade200),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.check_circle_rounded,
-                          color: Colors.teal, size: 28),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _matchedItem!.name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 14),
+                      Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded,
+                              color: Colors.teal, size: 28),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _matchedItem!.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14),
+                                ),
+                                Text(
+                                  'Original Sale: ${DateFormat('MMM d, yyyy h:mm a').format(widget.transaction.createdAt)}',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.teal.shade800),
+                                ),
+                                Text(
+                                  'Price: ${formatPeso(_matchedItem!.price)} • Bought: ${_matchedItem!.qty} • Returned: ${_matchedItem!.returnedQty}',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey),
+                                ),
+                              ],
                             ),
-                            Text(
-                              'Barcode: ${_matchedItem!.barcode.isNotEmpty ? _matchedItem!.barcode : "N/A"} • Price: ${formatPeso(_matchedItem!.price)}',
-                              style: const TextStyle(
-                                  fontSize: 11, fontFamily: 'monospace'),
-                            ),
-                            Text(
-                              'Bought: ${_matchedItem!.qty} • Already Returned: ${_matchedItem!.returnedQty}',
-                              style: const TextStyle(
-                                  fontSize: 11, color: Colors.grey),
-                            ),
-                          ],
-                        ),
+                          ),
+                          TextButton(
+                            onPressed: () => setState(() {
+                              _matchedItem = null;
+                              _preferredBatchId = null;
+                            }),
+                            child: const Text('Rescan'),
+                          ),
+                        ],
                       ),
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _matchedItem = null;
-                          _hasScanned = false;
-                        }),
-                        child: const Text('Rescan'),
+                      const SizedBox(height: 8),
+                      Builder(builder: (context) {
+                        final allocs = _matchedItem!.batchAllocations
+                            .where((a) =>
+                                a.batchId.isNotEmpty &&
+                                !a.batchId.startsWith('fallback-') &&
+                                !a.batchId.startsWith('variant-'))
+                            .toList();
+                        if (allocs.isEmpty) {
+                          return Text(
+                            'Legacy Receipt: Restocking will restore to oldest active batch or create a RETURN-RESTORE batch.',
+                            style: TextStyle(
+                                fontSize: 10.5, color: Colors.amber.shade900),
+                          );
+                        }
+                        return Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: allocs.map((a) {
+                            final refLabel = (a.poNumber != null &&
+                                    a.poNumber!.trim().isNotEmpty)
+                                ? ProductBatch.formatPoNumber(a.poNumber!)
+                                : ProductBatch.formatBatchIdForDisplay(
+                                    a.batchId);
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.teal.shade300),
+                              ),
+                              child: Text(
+                                'Source: $refLabel (${a.qtyDeducted}x @ ${formatPeso(a.costPrice)})',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.teal.shade900,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+                const Text(
+                  'RETURN CONDITION & BATCH DISPOSITION',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.grey,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                RadioGroup<ItemCondition>(
+                  groupValue: _selectedCondition,
+                  onChanged: (v) => setState(() => _selectedCondition = v),
+                  child: const Column(
+                    children: [
+                      RadioListTile<ItemCondition>(
+                        title: Text(
+                          'Option A — Good Condition (Restock to Original Batch)',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.green),
+                        ),
+                        subtitle: Text(
+                          'Restores qty back to original FIFO batch (reactivates DEPLETED batches to front of queue).',
+                        ),
+                        value: ItemCondition.goodRestock,
+                        activeColor: Colors.green,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      RadioListTile<ItemCondition>(
+                        title: Text(
+                          'Option B — Damaged / Defective (Write-Off)',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.red),
+                        ),
+                        subtitle: Text(
+                          'Does NOT restore stock or batch qty; logs permanent write-off against exact original batch.',
+                        ),
+                        value: ItemCondition.damagedWriteOff,
+                        activeColor: Colors.red,
+                        contentPadding: EdgeInsets.zero,
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 14),
                 const Text(
-                  'PHYSICAL SEAL & CONDITION CHECK',
+                  'SELECT RETURN ACTION',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
@@ -484,129 +592,69 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                   ),
                 ),
                 const SizedBox(height: 8),
-
-                RadioListTile<ItemCondition>(
-                  title: const Text('Unopened & Factory Sealed',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  subtitle: const Text(
-                      'Packaging is intact, unbroken seal. Eligible for return/swap.'),
-                  value: ItemCondition.unopenedSealed,
-                  groupValue: _selectedCondition,
-                  onChanged: (v) => setState(() => _selectedCondition = v),
-                  activeColor: Colors.teal,
-                  contentPadding: EdgeInsets.zero,
-                ),
-
-                RadioListTile<ItemCondition>(
-                  title: const Text('Opened / Seal Broken',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.red)),
-                  subtitle:
-                      const Text('Package has been opened or seal tampered.'),
-                  value: ItemCondition.openedBroken,
-                  groupValue: _selectedCondition,
-                  onChanged: (v) => setState(() => _selectedCondition = v),
-                  activeColor: Colors.red,
-                  contentPadding: EdgeInsets.zero,
-                ),
-
-                if (_selectedCondition == ItemCondition.openedBroken) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red.shade300),
+                SegmentedButton<ReturnActionType>(
+                  segments: const [
+                    ButtonSegment(
+                      value: ReturnActionType.cashRefund,
+                      label:
+                          Text('Cash Refund', style: TextStyle(fontSize: 12)),
+                      icon: Icon(Icons.attach_money_rounded, size: 16),
                     ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.block_rounded, color: Colors.red, size: 20),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Refund Blocked: Opened items cannot be refunded or swapped per store policy.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                if (_selectedCondition == ItemCondition.unopenedSealed) ...[
-                  const SizedBox(height: 16),
-                  const Text(
-                    'SELECT RETURN ACTION',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.grey,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SegmentedButton<ReturnActionType>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ReturnActionType.cashRefund,
-                        label: Text('Cash Refund (+Restock)',
-                            style: TextStyle(fontSize: 12)),
-                        icon: Icon(Icons.attach_money_rounded, size: 16),
-                      ),
-                      ButtonSegment(
-                        value: ReturnActionType.itemSwap,
-                        label: Text('1-to-1 Item Swap',
-                            style: TextStyle(fontSize: 12)),
-                        icon: Icon(Icons.swap_horiz_rounded, size: 16),
-                      ),
-                    ],
-                    selected: {_actionType},
-                    onSelectionChanged: (s) =>
-                        setState(() => _actionType = s.first),
-                  ),
-                  if (_actionType == ReturnActionType.itemSwap) ...[
-                    const SizedBox(height: 12),
-                    CheckboxListTile(
-                      title: const Text(
-                          'Mark returned unit as Damaged / Expired (-1 sellable stock)',
-                          style: TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold)),
-                      subtitle: const Text(
-                          'Check this if returned unit cannot go back to sellable shelf.'),
-                      value: _isDamagedSwap,
-                      onChanged: (v) =>
-                          setState(() => _isDamagedSwap = v ?? false),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
+                    ButtonSegment(
+                      value: ReturnActionType.itemSwap,
+                      label: Text('1-to-1 Item Swap',
+                          style: TextStyle(fontSize: 12)),
+                      icon: Icon(Icons.swap_horiz_rounded, size: 16),
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Quantity to return:',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 13)),
-                      DropdownButton<int>(
-                        value: _returnQty,
-                        items: List.generate(
-                          _matchedItem!.qty - _matchedItem!.returnedQty,
-                          (i) => DropdownMenuItem(
-                              value: i + 1, child: Text('${i + 1}')),
+                  selected: {_actionType},
+                  onSelectionChanged: (s) =>
+                      setState(() => _actionType = s.first),
+                ),
+
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Quantity to return:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                    DropdownButton<int>(
+                      value: _returnQty,
+                      items: List.generate(
+                        _matchedItem!.qty - _matchedItem!.returnedQty,
+                        (i) => DropdownMenuItem(
+                            value: i + 1, child: Text('${i + 1}')),
+                      ),
+                      onChanged: (v) {
+                        if (v != null) setState(() => _returnQty = v);
+                      },
+                    ),
+                  ],
+                ),
+
+                if (_matchedItem!.batchAllocations.length > 1) ...[
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String?>(
+                    initialValue: _preferredBatchId,
+                    decoration: const InputDecoration(
+                      labelText: 'Target Original Batch (Multi-Batch Sale)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Auto (Reverse FIFO Allocation Order)'),
+                      ),
+                      ..._matchedItem!.batchAllocations.map(
+                        (a) => DropdownMenuItem<String?>(
+                          value: a.batchId,
+                          child: Text('${a.batchId} (${a.qtyDeducted} sold)'),
                         ),
-                        onChanged: (v) {
-                          if (v != null) setState(() => _returnQty = v);
-                        },
                       ),
                     ],
+                    onChanged: (v) => setState(() => _preferredBatchId = v),
                   ),
                 ],
 
@@ -614,11 +662,9 @@ class _ReturnSwapDialogState extends State<ReturnSwapDialog> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed:
-                        (_selectedCondition == ItemCondition.unopenedSealed &&
-                                !_isProcessing)
-                            ? _confirmReturn
-                            : null,
+                    onPressed: (_selectedCondition != null && !_isProcessing)
+                        ? _confirmReturn
+                        : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.teal,
                       foregroundColor: Colors.white,

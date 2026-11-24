@@ -630,7 +630,7 @@ class UserManagementScreen extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: selectedRole,
+                  initialValue: selectedRole,
                   decoration: const InputDecoration(
                       labelText: 'Assign Authorized Role',
                       border: OutlineInputBorder()),
@@ -658,7 +658,10 @@ class UserManagementScreen extends StatelessWidget {
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
-                await FirebaseFirestore.instance.collection('users').doc(id).update({
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(id)
+                    .update({
                   'role': selectedRole,
                   'status': 'approved',
                   'isDisabled': false,
@@ -669,7 +672,7 @@ class UserManagementScreen extends StatelessWidget {
                   action: 'ROLE_UPDATE',
                   targetId: id,
                   targetName: email,
-                  summary: 'Approved and granted role ${selectedRole}',
+                  summary: 'Approved and granted role $selectedRole',
                 );
                 if (context.mounted) {
                   Navigator.pop(ctx);
@@ -756,7 +759,7 @@ class UserManagementScreen extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: ['admin', 'trustedPartner'].contains(selected)
+                  initialValue: ['admin', 'trustedPartner'].contains(selected)
                       ? selected
                       : 'trustedPartner',
                   decoration: const InputDecoration(
@@ -813,7 +816,10 @@ class UserManagementScreen extends StatelessWidget {
                   }
                 }
 
-                await FirebaseFirestore.instance.collection('users').doc(id).update({
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(id)
+                    .update({
                   'role': selected,
                   'status': 'approved',
                   'isDisabled': false,
@@ -823,7 +829,7 @@ class UserManagementScreen extends StatelessWidget {
                   action: 'ROLE_UPDATE',
                   targetId: id,
                   targetName: email,
-                  summary: 'Updated role to ${selected}',
+                  summary: 'Updated role to $selected',
                 );
                 if (context.mounted) {
                   Navigator.pop(ctx);
@@ -1027,7 +1033,10 @@ class UserManagementScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green, foregroundColor: Colors.white),
             onPressed: () async {
-              await FirebaseFirestore.instance.collection('users').doc(id).update({
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(id)
+                  .update({
                 'isDisabled': false,
                 'status': 'approved',
                 'role': previousRole,
@@ -1054,15 +1063,6 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
-  void _showAddEmployeeDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (dialogCtx) => const _AddEmployeeDialog(),
-    );
-  }
-
   void _showHelp(BuildContext context) {
     showDialog(
       context: context,
@@ -1073,14 +1073,14 @@ class UserManagementScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
                 '• Admin (Purple Badge): Full access to POS, Inventory, Reports, System & Staff Settings.',
                 style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 6),
-            const Text(
+            SizedBox(height: 6),
+            Text(
                 '• Trusted Partner (Copper Badge): Full operational access to POS, Pre-Orders, Stock, Inventory Records, Reports & Suppliers.',
                 style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(
                 '• Admin Retirement: To disable your own admin account, ensure another active Admin exists first.',
                 style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -1255,9 +1255,10 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: ['admin', 'trustedPartner'].contains(_selectedRole)
-                    ? _selectedRole
-                    : 'trustedPartner',
+                initialValue:
+                    ['admin', 'trustedPartner'].contains(_selectedRole)
+                        ? _selectedRole
+                        : 'trustedPartner',
                 decoration: const InputDecoration(
                   labelText: 'Assigned Role',
                   prefixIcon:

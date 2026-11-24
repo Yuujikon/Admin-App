@@ -7,9 +7,10 @@ import 'package:flutter/services.dart';
 import '../models/supplier.dart';
 import '../models/product.dart';
 import '../models/restock_inquiry.dart';
+import '../models/purchase_order.dart';
 import '../providers/inventory_provider.dart';
+import '../providers/procurement_provider.dart';
 import '../providers/restock_provider.dart';
-import '../services/notification_service.dart';
 import '../config/theme.dart';
 import '../utils/format.dart';
 import '../widgets/supplier_sheet.dart';
@@ -18,6 +19,7 @@ import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/add_product_sheet.dart';
 import '../widgets/product_edit_sheet.dart';
 import '../widgets/rfq_builder_sheet.dart';
+import '../widgets/po_builder_sheet.dart';
 
 class SupplierDetailScreen extends StatefulWidget {
   final Supplier supplier;
@@ -298,7 +300,8 @@ class _OverviewTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  onPressed: () => _launchAction(context, 'tel:${supplier.phone}'),
+                  onPressed: () =>
+                      _launchAction(context, 'tel:${supplier.phone}'),
                   icon: Icon(Icons.call_rounded, color: semantic.success),
                   tooltip: 'Call Supplier',
                 ),
@@ -306,8 +309,8 @@ class _OverviewTab extends StatelessWidget {
                   onPressed: () {
                     final msg =
                         'Hello ${supplier.name}, this is GDC Store regarding inventory supply restocking.';
-                    _launchAction(
-                        context, 'sms:${supplier.phone}?body=${Uri.encodeComponent(msg)}');
+                    _launchAction(context,
+                        'sms:${supplier.phone}?body=${Uri.encodeComponent(msg)}');
                   },
                   icon: Icon(Icons.message_rounded, color: semantic.info),
                   tooltip: 'Send SMS',
@@ -316,9 +319,30 @@ class _OverviewTab extends StatelessWidget {
             )),
         _infoTile(context, Icons.email_outlined, 'Email', supplier.email,
             trailing: IconButton(
-              onPressed: () => _launchAction(context, 'mailto:${supplier.email}'),
+              onPressed: () =>
+                  _launchAction(context, 'mailto:${supplier.email}'),
               icon: Icon(Icons.email_rounded, color: semantic.info),
             )),
+        _infoTile(
+          context,
+          Icons.location_on_outlined,
+          'Physical Address',
+          supplier.address.isEmpty
+              ? 'Not set (Required for PO PDF)'
+              : supplier.address,
+        ),
+        _infoTile(
+          context,
+          Icons.badge_outlined,
+          'TIN / Business ID',
+          supplier.tin.isEmpty ? 'Not set' : supplier.tin,
+        ),
+        _infoTile(
+          context,
+          Icons.payments_outlined,
+          'Payment Terms',
+          supplier.paymentTerms.isEmpty ? 'Not set' : supplier.paymentTerms,
+        ),
         const SizedBox(height: 24),
 
         // ── Settings Section ─────────────────────────────────────────────────
@@ -423,7 +447,9 @@ class _OverviewTab extends StatelessWidget {
     } else if (uri.scheme == 'sms' || uri.scheme == 'tel') {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not launch ${uri.scheme.toUpperCase()} app.')),
+          SnackBar(
+              content:
+                  Text('Could not launch ${uri.scheme.toUpperCase()} app.')),
         );
       }
     }
@@ -965,7 +991,7 @@ class _LinkExistingProductsModalState
                           otherSupplierName = inventory.suppliers
                               .firstWhere((s) => s.id == p.supplierId,
                                   orElse: () =>
-                                      Supplier(id: '', name: 'Unknown'))
+                                      const Supplier(id: '', name: 'Unknown'))
                               .name;
                         }
 
@@ -1247,6 +1273,24 @@ class _RestockTabState extends State<_RestockTab> {
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
+              onPressed: () {
+                PoBuilderSheet.show(
+                  context: context,
+                  initialSupplier: widget.supplier,
+                );
+              },
+              icon: const Icon(Icons.shopping_bag_rounded),
+              label: const Text('CREATE PURCHASE ORDER (PO)'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(56),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
               onPressed: () async {
                 if (filteredToRestock.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1284,11 +1328,11 @@ class _RestockTabState extends State<_RestockTab> {
                 }
               },
               icon: const Icon(Icons.bolt_rounded),
-              label: const Text('GENERATE INQUIRY'),
+              label: const Text('GENERATE INQUIRY DRAFT'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(56),
+                minimumSize: const Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
               ),
@@ -1323,8 +1367,8 @@ class _RestockTabState extends State<_RestockTab> {
     List<Product> products,
     String adminName,
   ) {
-    final buffer =
-        StringBuffer('[GDC SARI-SARI STORE] REQUEST FOR QUOTATION (RFQ) & RESTOCK ORDER\n');
+    final buffer = StringBuffer(
+        '[GDC SARI-SARI STORE] REQUEST FOR QUOTATION (RFQ) & RESTOCK ORDER\n');
     buffer.writeln('Supplier: ${supplier.name}');
     if (supplier.contactName.isNotEmpty) {
       buffer.writeln('Contact Person: ${supplier.contactName}');
@@ -1575,56 +1619,314 @@ class _HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final restock = context.watch<RestockProvider>();
-    final history = restock.inquiries
+    final procurement = context.watch<ProcurementProvider>();
+    final inventory = context.watch<InventoryProvider>();
+    final theme = Theme.of(context);
+
+    final productNameById = {
+      for (final p in inventory.products) p.id: p.name,
+    };
+
+    // 1. Live received batches linked to this supplier (updates reactively on batch creation)
+    final supplierBatches = procurement.inventoryBatches
+        .where((b) => b.supplierId?.trim() == supplierId)
+        .toList()
+      ..sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
+
+    // 2. Live Purchase Orders for this supplier
+    final supplierPos = procurement.purchaseOrders
+        .where((po) => po.supplierId.trim() == supplierId)
+        .toList()
+      ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+
+    // 3. Direct Delivery Logs for this supplier
+    final supplierDeliveries = inventory.deliveryLogs
+        .where((d) => d.supplierId?.trim() == supplierId)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // 4. Historical Restock Inquiries for this supplier
+    final historyInquiries = restock.inquiries
         .where((ri) =>
             ri.supplierId == supplierId &&
             (ri.status == RestockInquiryStatus.fulfilled ||
                 ri.status == RestockInquiryStatus.cancelled))
-        .toList();
+        .toList()
+      ..sort((a, b) =>
+          (b.sentAt ?? b.createdAt).compareTo(a.sentAt ?? a.createdAt));
 
-    if (history.isEmpty) {
+    if (supplierBatches.isEmpty &&
+        supplierPos.isEmpty &&
+        supplierDeliveries.isEmpty &&
+        historyInquiries.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.history_rounded, size: 64, color: Colors.black12),
             SizedBox(height: 16),
-            Text('No restock history for this supplier.',
+            Text('No orders, deliveries, or batches for this supplier yet.',
                 style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
     }
 
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: history.length,
-      itemBuilder: (context, index) {
-        final ri = history[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            title: Text(ri.inquiryNumber,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(
-                'Sent: ${DateFormat('MMM dd, yyyy').format(ri.sentAt ?? ri.createdAt)}'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  onPressed: () =>
-                      sendRestockEmail(context, ri, updateStatus: false),
-                  icon: const Icon(Icons.email_outlined,
-                      color: Colors.blue, size: 20),
-                  tooltip: 'Resend Email',
-                ),
-                _StatusBadge(status: ri.status),
-              ],
-            ),
-            onTap: () => _showHistoryDetails(context, ri),
+      children: [
+        if (supplierBatches.isNotEmpty) ...[
+          _buildSectionHeader(
+            context,
+            'Received Batches',
+            supplierBatches.length,
+            Icons.layers_rounded,
+            theme.colorScheme.primary,
           ),
-        );
-      },
+          const SizedBox(height: 8),
+          ...supplierBatches.map((batch) {
+            final prodName = batch.productName.isNotEmpty
+                ? batch.productName
+                : (productNameById[batch.productId] ?? 'Unknown Product');
+            final isDepleted = batch.quantityRemaining <= 0;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: (isDepleted ? Colors.grey : Colors.green)
+                      .withValues(alpha: 0.14),
+                  child: Icon(
+                    Icons.inventory_2_rounded,
+                    size: 18,
+                    color: isDepleted ? Colors.grey : Colors.green.shade700,
+                  ),
+                ),
+                title: Text(
+                  prodName,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  '${batch.poNumber != null && batch.poNumber!.isNotEmpty ? 'PO ${batch.poNumber} • ' : ''}'
+                  'Batch ${batch.batchId}\n'
+                  'Arrived: ${DateFormat('MMM dd, yyyy').format(batch.receivedAt)} • '
+                  'Cost: ${formatPeso(batch.unitCost)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                isThreeLine: true,
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${batch.quantityRemaining} / ${batch.initialQty}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: isDepleted ? Colors.grey : Colors.green.shade800,
+                      ),
+                    ),
+                    Text(
+                      isDepleted ? 'DEPLETED' : 'ACTIVE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isDepleted ? Colors.grey : Colors.green.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
+        if (supplierPos.isNotEmpty) ...[
+          _buildSectionHeader(
+            context,
+            'Purchase Orders',
+            supplierPos.length,
+            Icons.receipt_long_rounded,
+            Colors.indigo,
+          ),
+          const SizedBox(height: 8),
+          ...supplierPos.map((po) {
+            final totalOrdered =
+                po.items.fold<int>(0, (s, item) => s + item.orderedQty);
+            final totalReceived =
+                po.items.fold<int>(0, (s, item) => s + item.receivedQty);
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.indigo.withValues(alpha: 0.12),
+                  child: const Icon(Icons.assignment_rounded,
+                      size: 18, color: Colors.indigo),
+                ),
+                title: Text(
+                  po.poNumber,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  '${DateFormat('MMM dd, yyyy').format(po.orderDate)} • '
+                  '${po.items.length} item(s) • Received $totalReceived / $totalOrdered',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (po.status == PurchaseOrderStatus.completed
+                            ? Colors.green
+                            : po.status == PurchaseOrderStatus.cancelled
+                                ? Colors.red
+                                : Colors.orange)
+                        .withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    po.status.displayName,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: po.status == PurchaseOrderStatus.completed
+                          ? Colors.green.shade800
+                          : po.status == PurchaseOrderStatus.cancelled
+                              ? Colors.red.shade800
+                              : Colors.orange.shade900,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
+        if (supplierDeliveries.isNotEmpty) ...[
+          _buildSectionHeader(
+            context,
+            'Delivery Logs',
+            supplierDeliveries.length,
+            Icons.local_shipping_rounded,
+            Colors.teal,
+          ),
+          const SizedBox(height: 8),
+          ...supplierDeliveries.take(30).map((log) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.teal.withValues(alpha: 0.12),
+                  child: const Icon(Icons.local_shipping_outlined,
+                      size: 18, color: Colors.teal),
+                ),
+                title: Text(
+                  log.productName,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  '${DateFormat('MMM dd, yyyy • h:mm a').format(log.createdAt)}'
+                  '${log.invoiceNumber != null && log.invoiceNumber!.isNotEmpty ? ' • Ref #${log.invoiceNumber}' : ''}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '+${log.qtyReceived}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.teal.shade800,
+                      ),
+                    ),
+                    Text(
+                      formatPeso(log.totalValue),
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
+        if (historyInquiries.isNotEmpty) ...[
+          _buildSectionHeader(
+            context,
+            'Restock Inquiries',
+            historyInquiries.length,
+            Icons.history_rounded,
+            Colors.blueGrey,
+          ),
+          const SizedBox(height: 8),
+          ...historyInquiries.map((ri) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                title: Text(ri.inquiryNumber,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                    'Sent: ${DateFormat('MMM dd, yyyy').format(ri.sentAt ?? ri.createdAt)}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () =>
+                          sendRestockEmail(context, ri, updateStatus: false),
+                      icon: const Icon(Icons.email_outlined,
+                          color: Colors.blue, size: 20),
+                      tooltip: 'Resend Email',
+                    ),
+                    _StatusBadge(status: ri.status),
+                  ],
+                ),
+                onTap: () => _showHistoryDetails(context, ri),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context,
+    String title,
+    int count,
+    IconData icon,
+    Color color,
+  ) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1842,8 +2144,7 @@ class _InquiryCardState extends State<_InquiryCard> {
                       ),
                     ),
                   ),
-                ]
-                else ...[
+                ] else ...[
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () {
@@ -2028,9 +2329,9 @@ void showEmailSetupGuideDialog(BuildContext context,
                           .primary
                           .withValues(alpha: 0.3)),
                 ),
-                child: Column(
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text('How to set default Email app on Android:',
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 12)),
@@ -2041,7 +2342,8 @@ void showEmailSetupGuideDialog(BuildContext context,
                     Text('2. Tap Default Apps → Email app.',
                         style: TextStyle(fontSize: 12)),
                     SizedBox(height: 4),
-                    Text('3. Select Gmail, Outlook, or your preferred Mail client.',
+                    Text(
+                        '3. Select Gmail, Outlook, or your preferred Mail client.',
                         style: TextStyle(fontSize: 12)),
                   ],
                 ),
@@ -2083,8 +2385,8 @@ void showEmailSetupGuideDialog(BuildContext context,
                 if (body != null && body.isNotEmpty) {
                   await Clipboard.setData(ClipboardData(text: body));
                 }
+                if (!context.mounted) return;
                 await context.read<RestockProvider>().sendInquiry(inquiry);
-                if (ctx.mounted) Navigator.pop(ctx);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -2093,6 +2395,7 @@ void showEmailSetupGuideDialog(BuildContext context,
                     ),
                   );
                 }
+                if (ctx.mounted) Navigator.pop(ctx);
               },
             ),
           ElevatedButton.icon(
@@ -2108,7 +2411,7 @@ void showEmailSetupGuideDialog(BuildContext context,
               if (body != null && body.isNotEmpty) {
                 await Clipboard.setData(ClipboardData(text: body));
               }
-              if (inquiry != null) {
+              if (inquiry != null && context.mounted) {
                 await context.read<RestockProvider>().sendInquiry(inquiry);
               }
               if (ctx.mounted) Navigator.pop(ctx);
@@ -2166,18 +2469,21 @@ void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
         buffer.writeln(
             '  Requested Quantity: $bulkStr (${item.requestedQty} ${item.unit} total)');
       } else {
-        buffer.writeln('  Requested Quantity: ${item.requestedQty} ${item.unit}');
+        buffer
+            .writeln('  Requested Quantity: ${item.requestedQty} ${item.unit}');
       }
     } else {
       buffer.writeln('  Requested Quantity: ${item.requestedQty} ${item.unit}');
     }
     buffer.writeln('');
   }
-  buffer.writeln('Please provide your official price quotation (unit cost, total price, applicable bulk discounts) and estimated delivery lead time.');
+  buffer.writeln(
+      'Please provide your official price quotation (unit cost, total price, applicable bulk discounts) and estimated delivery lead time.');
   buffer.writeln('\nThank you!\n\nBest regards,\nGDC Sari-Sari Store');
 
   final body = buffer.toString();
-  final subject = 'Request for Quotation (RFQ) #${inquiry.inquiryNumber} - GDC Sari-Sari Store';
+  final subject =
+      'Request for Quotation (RFQ) #${inquiry.inquiryNumber} - GDC Sari-Sari Store';
   final email = (inquiry.supplierContact ?? '').trim();
 
   final String mailtoUrl =
@@ -2187,7 +2493,8 @@ void sendRestockEmail(BuildContext context, RestockInquiry inquiry,
   bool launched = false;
   try {
     if (await canLaunchUrl(mailtoUri)) {
-      launched = await launchUrl(mailtoUri, mode: LaunchMode.externalApplication);
+      launched =
+          await launchUrl(mailtoUri, mode: LaunchMode.externalApplication);
     }
   } catch (e) {
     debugPrint('Email Launch Error: $e');
@@ -2247,14 +2554,16 @@ void sendRestockSms(BuildContext context, RestockInquiry inquiry, String phone,
             '$bQty ${prod.bulkUnit}${bQty > 1 ? 's' : ''}${extra > 0 ? " + $extra ${prod.unit}" : ""} (${item.requestedQty} ${item.unit})';
         buffer.writeln('• ${item.productName}: $bulkStr');
       } else {
-        buffer.writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
+        buffer.writeln(
+            '• ${item.productName}: ${item.requestedQty} ${item.unit}');
       }
     } else {
-      buffer.writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
+      buffer
+          .writeln('• ${item.productName}: ${item.requestedQty} ${item.unit}');
     }
   }
-  buffer
-      .writeln('\nPlease reply with your unit price quotation & stock availability. Thank you!');
+  buffer.writeln(
+      '\nPlease reply with your unit price quotation & stock availability. Thank you!');
 
   final msg = buffer.toString();
   final smsUrl = 'sms:$phone?body=${Uri.encodeComponent(msg)}';

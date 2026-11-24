@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../models/batch.dart';
 import '../models/transaction.dart';
 import '../models/order.dart';
 import '../models/refund_request.dart';
@@ -10,7 +11,6 @@ import '../providers/order_provider.dart';
 import '../providers/printer_provider.dart';
 import '../utils/format.dart';
 import '../widgets/responsive_layout.dart';
-import '../widgets/return_swap_dialog.dart';
 import '../widgets/scanner_dialog.dart';
 import '../services/firestore_service.dart';
 import '../shared/services/admin_messaging_service.dart';
@@ -93,7 +93,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       return riMatch.group(0)!.toUpperCase().replaceAll('#', '');
     }
 
-    return clean.replaceAll('"', '').replaceAll("'", '').replaceAll('#', '').trim();
+    return clean
+        .replaceAll('"', '')
+        .replaceAll("'", '')
+        .replaceAll('#', '')
+        .trim();
   }
 
   void _handleBarcodeScan(
@@ -287,161 +291,167 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         final parsed = _parseScannedReceiptCode(v);
                         final finalQuery = parsed.isNotEmpty ? parsed : v;
                         setState(() => _salesSearch = finalQuery);
-                        final clean = finalQuery.trim().replaceAll('#', '').toLowerCase();
+                        final clean =
+                            finalQuery.trim().replaceAll('#', '').toLowerCase();
                         if (clean.length >= 6) {
-                          final exactMatches = txs.where((tx) =>
-                              tx.id.replaceAll('#', '').toLowerCase() == clean).toList();
+                          final exactMatches = txs
+                              .where((tx) =>
+                                  tx.id.replaceAll('#', '').toLowerCase() ==
+                                  clean)
+                              .toList();
                           if (exactMatches.length == 1) {
-                          _showTxDetails(context, exactMatches.first, inventory);
+                            _showTxDetails(
+                                context, exactMatches.first, inventory);
+                          }
                         }
-                      }
-                    },
+                      },
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: filteredTxs.isEmpty
-                      ? Center(
-                          child: Text(
-                            _salesSearch.isNotEmpty
-                                ? 'No transactions matching "$_salesSearch"'
-                                : 'No store transactions recorded yet.',
-                            style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                          ),
-                        )
-                      : SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
-                          child: ResponsiveCardGrid(
-                            children: filteredTxs.map((tx) {
-                              return Card(
-                                key: ValueKey(tx.id),
-                                child: ListTile(
-                                  onTap: () =>
-                                      _showTxDetails(context, tx, inventory),
-                                  leading: CircleAvatar(
-                                      backgroundColor: Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer,
-                                      child: Icon(Icons.receipt,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary)),
-                                  title: Text(formatPeso(tx.total),
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          decoration: tx.isRefunded
-                                              ? TextDecoration.lineThrough
-                                              : null)),
-                                  subtitle: Text(DateFormat('MMM dd, hh:mm a')
-                                      .format(tx.createdAt)),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (tx.isRefunded)
-                                        Container(
-                                          margin:
-                                              const EdgeInsets.only(right: 8),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                              color: Colors.red.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(4)),
-                                          child: const Text('REFUNDED',
-                                              style: TextStyle(
-                                                  fontSize: 8,
-                                                  color: Colors.red,
-                                                  fontWeight: FontWeight.bold)),
-                                        ),
-                                      const Icon(Icons.chevron_right),
-                                    ],
+                  Expanded(
+                    child: filteredTxs.isEmpty
+                        ? Center(
+                            child: Text(
+                              _salesSearch.isNotEmpty
+                                  ? 'No transactions matching "$_salesSearch"'
+                                  : 'No store transactions recorded yet.',
+                              style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+                            child: ResponsiveCardGrid(
+                              children: filteredTxs.map((tx) {
+                                return Card(
+                                  key: ValueKey(tx.id),
+                                  child: ListTile(
+                                    onTap: () =>
+                                        _showTxDetails(context, tx, inventory),
+                                    leading: CircleAvatar(
+                                        backgroundColor: Theme.of(context)
+                                            .colorScheme
+                                            .primaryContainer,
+                                        child: Icon(Icons.receipt,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary)),
+                                    title: Text(formatPeso(tx.total),
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            decoration: tx.isRefunded
+                                                ? TextDecoration.lineThrough
+                                                : null)),
+                                    subtitle: Text(DateFormat('MMM dd, hh:mm a')
+                                        .format(tx.createdAt)),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (tx.isRefunded)
+                                          Container(
+                                            margin:
+                                                const EdgeInsets.only(right: 8),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                                color: Colors.red.shade50,
+                                                borderRadius:
+                                                    BorderRadius.circular(4)),
+                                            child: const Text('REFUNDED',
+                                                style: TextStyle(
+                                                    fontSize: 8,
+                                                    color: Colors.red,
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                          ),
+                                        const Icon(Icons.chevron_right),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            }).toList(),
+                                );
+                              }).toList(),
+                            ),
                           ),
-                        ),
-                ),
-              ],
-            ),
-
-            // ── TAB 2: REFUND HISTORY ─────────────────────────────────────────
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Column(
-                    children: [
-                      TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search refund records...',
-                          prefixIcon:
-                              const Icon(Icons.search_rounded, size: 20),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          suffixIcon: _refundSearch.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () =>
-                                      setState(() => _refundSearch = ''),
-                                )
-                              : null,
-                        ),
-                        onChanged: (v) => setState(() => _refundSearch = v),
-                      ),
-                      const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _filterChip(
-                                'All Processed (${processedRefunds.length})',
-                                RefundHistoryFilter.all),
-                            const SizedBox(width: 8),
-                            _filterChip('Approved ($approvedCount)',
-                                RefundHistoryFilter.approved),
-                            const SizedBox(width: 8),
-                            _filterChip('Rejected ($rejectedCount)',
-                                RefundHistoryFilter.rejected),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
-                ),
-                Expanded(
-                  child: filteredRefunds.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No processed refund records found.',
-                            style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
+                ],
+              ),
+
+              // ── TAB 2: REFUND HISTORY ─────────────────────────────────────────
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      children: [
+                        TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Search refund records...',
+                            prefixIcon:
+                                const Icon(Icons.search_rounded, size: 20),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            suffixIcon: _refundSearch.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () =>
+                                        setState(() => _refundSearch = ''),
+                                  )
+                                : null,
                           ),
-                        )
-                      : SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
-                          child: ResponsiveCardGrid(
-                            children: filteredRefunds.map((req) {
-                              return _RefundHistoryCard(req: req);
-                            }).toList(),
+                          onChanged: (v) => setState(() => _refundSearch = v),
+                        ),
+                        const SizedBox(height: 8),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _filterChip(
+                                  'All Processed (${processedRefunds.length})',
+                                  RefundHistoryFilter.all),
+                              const SizedBox(width: 8),
+                              _filterChip('Approved ($approvedCount)',
+                                  RefundHistoryFilter.approved),
+                              const SizedBox(width: 8),
+                              _filterChip('Rejected ($rejectedCount)',
+                                  RefundHistoryFilter.rejected),
+                            ],
                           ),
                         ),
-                ),
-              ],
-            ),
-          ],
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredRefunds.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No processed refund records found.',
+                              style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                            child: ResponsiveCardGrid(
+                              children: filteredRefunds.map((req) {
+                                return _RefundHistoryCard(req: req);
+                              }).toList(),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _filterChip(String label, RefundHistoryFilter filter) {
     final selected = _refundFilter == filter;
@@ -521,8 +531,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       'Date',
                       DateFormat('MMM dd, yyyy • hh:mm a')
                           .format(tx.createdAt)),
-                  _infoRow(Icons.receipt_outlined, 'Receipt #',
-                      tx.id.toUpperCase().length >= 8 ? tx.id.toUpperCase().substring(0, 8) : tx.id.toUpperCase()),
+                  _infoRow(
+                      Icons.receipt_outlined,
+                      'Receipt #',
+                      tx.id.toUpperCase().length >= 8
+                          ? tx.id.toUpperCase().substring(0, 8)
+                          : tx.id.toUpperCase()),
                   if (tx.orderId != null && tx.orderId!.isNotEmpty)
                     _infoRow(Icons.confirmation_number_outlined, 'Order Ref #',
                         tx.orderId!),
@@ -679,37 +693,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _confirmRefund(
-      BuildContext context, StoreTransaction tx, InventoryProvider inventory) {
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Refund Transaction?'),
-        content: const Text(
-            'This will replenish stock and reverse the payment. Continue?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              await inventory.refundTransaction(tx);
-              if (ctx.mounted) {
-                Navigator.pop(ctx);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Refund processed successfully')));
-              }
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text('Confirm Refund'),
-          ),
-        ],
       ),
     );
   }
@@ -919,282 +902,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       _handleBarcodeScan(scannedCode, txs, inventory);
     }
   }
-
-  void _showReceiptLookupDialog(
-      BuildContext context, List<StoreTransaction> txs) {
-    final searchCtrl = TextEditingController();
-    String query = '';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final cleanQuery = query.toLowerCase().trim();
-          List<StoreTransaction> matchedTxs = [];
-          if (cleanQuery.isNotEmpty) {
-            matchedTxs = txs.where((tx) {
-              return tx.id.toLowerCase().contains(cleanQuery) ||
-                  (tx.customerEmail != null &&
-                      tx.customerEmail!.toLowerCase().contains(cleanQuery));
-            }).toList();
-          }
-
-          return Dialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24)),
-            child: Container(
-              width: 580,
-              constraints: const BoxConstraints(maxHeight: 650),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.published_with_changes_rounded,
-                              color: Colors.teal, size: 24),
-                          SizedBox(width: 10),
-                          Text(
-                            'Process Return / Swap (Receipt Lookup)',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-
-                  // Receipt ID / Barcode Search Input
-                  TextField(
-                    controller: searchCtrl,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText:
-                          'Enter or scan Receipt ID (e.g. TX-1024 or scan thermal QR)...',
-                      prefixIcon: const Icon(Icons.qr_code_scanner_rounded),
-                      suffixIcon: query.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded),
-                              onPressed: () {
-                                searchCtrl.clear();
-                                setDialogState(() => query = '');
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onChanged: (val) {
-                      final clean = _parseScannedReceiptCode(val);
-                      final finalVal = clean.isNotEmpty ? clean : val;
-                      setDialogState(() => query = finalVal);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  Expanded(
-                    child: cleanQuery.isEmpty
-                        ? SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'RECENT TRANSACTIONS AVAILABLE FOR RETURN:',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.grey,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                ...txs.take(5).map((tx) => _buildTxLookupCard(
-                                    context, tx, ctx)),
-                              ],
-                            ),
-                          )
-                        : matchedTxs.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No receipt or transaction found matching "$query"',
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
-                              )
-                            : SingleChildScrollView(
-                                child: Column(
-                                  children: matchedTxs
-                                      .map((tx) => _buildTxLookupCard(
-                                          context, tx, ctx))
-                                      .toList(),
-                                ),
-                              ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildTxLookupCard(
-      BuildContext context, StoreTransaction tx, BuildContext dialogCtx) {
-    final theme = Theme.of(context);
-    final dateStr = DateFormat('MMM d, yyyy • h:mm a').format(tx.createdAt);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Receipt Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Receipt #${tx.id.substring(0, tx.id.length > 12 ? 12 : tx.id.length).toUpperCase()}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                    Text(
-                      dateStr,
-                      style: TextStyle(
-                          fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: tx.isRefunded
-                        ? Colors.red.shade100
-                        : Colors.green.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    tx.isRefunded ? 'FULLY REFUNDED' : 'PAID',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: tx.isRefunded ? Colors.red : Colors.green.shade900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-
-            // Itemized Products Breakdown Table
-            const Text(
-              'PURCHASED PRODUCTS & RETURN STATUS:',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                color: Colors.grey,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 6),
-
-            ..._buildItemizedReceiptRows(tx.items, context),
-
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total Amount: ${formatPeso(tx.total)}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                if (!tx.isRefunded)
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (confirmCtx) => AlertDialog(
-                          title: const Text('Initiate Refund Order?'),
-                          content: Text(
-                            'Are you sure you want to process a return/refund for Receipt #${tx.id.substring(0, tx.id.length > 8 ? 8 : tx.id.length).toUpperCase()}?',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(confirmCtx),
-                              child: const Text('CANCEL'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(confirmCtx);
-                                Navigator.pop(dialogCtx);
-                                showDialog(
-                                  context: context,
-                                  builder: (_) => _RefundOrderModal(
-                                    tx: tx,
-                                    inventory: context.read<InventoryProvider>(),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: const Text('PROCEED TO REFUND'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.published_with_changes_rounded,
-                        size: 16),
-                    label: const Text('REFUND ORDER'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ── REFUND HISTORY CARD ──────────────────────────────────────────────────────
@@ -1380,8 +1087,11 @@ class _RefundHistoryCard extends StatelessWidget {
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          Image.memory(base64Decode(req.photoBase64!),
-                              fit: BoxFit.cover, width: 80, height: 80),
+                          Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Image.memory(base64Decode(req.photoBase64!),
+                                fit: BoxFit.contain, width: 80, height: 80),
+                          ),
                           Container(
                             color: Colors.black.withValues(alpha: 0.2),
                             child: const Icon(Icons.zoom_in_rounded,
@@ -1489,6 +1199,7 @@ class _RefundOrderModal extends StatefulWidget {
 class _RefundOrderModalState extends State<_RefundOrderModal> {
   final Map<int, int> _selectedRefundQtys = {};
   final Map<int, String> _selectedConditions = {};
+  final Map<int, String?> _selectedPreferredBatchIds = {};
   final Map<int, TextEditingController> _qtyTextCtrls = {};
   bool _isProcessing = false;
 
@@ -1497,7 +1208,8 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
     super.initState();
     for (int idx = 0; idx < widget.tx.items.length; idx++) {
       _selectedRefundQtys[idx] = 0;
-      _selectedConditions[idx] = 'restock';
+      _selectedConditions[idx] = 'SELLABLE';
+      _selectedPreferredBatchIds[idx] = null;
     }
   }
 
@@ -1512,12 +1224,28 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
   void _promptRefundConfirmation() {
     if (_totalRefundUnits <= 0 || _isProcessing) return;
 
+    int restockUnits = 0;
+    int writeOffUnits = 0;
+    _selectedRefundQtys.forEach((idx, qty) {
+      if (qty > 0) {
+        final cond = _selectedConditions[idx] ?? 'SELLABLE';
+        if (cond == 'SELLABLE') {
+          restockUnits += qty;
+        } else {
+          writeOffUnits += qty;
+        }
+      }
+    });
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Confirm Refund of ${formatPeso(_totalRefundAmount)}?'),
         content: Text(
-          'Are you sure you want to process a refund of ${formatPeso(_totalRefundAmount)} for $_totalRefundUnits item unit(s)?\n\nThis will restock the items into inventory, update the customer receipt, and log a permanent Refund Record.',
+          'Refund $_totalRefundUnits unit(s) from sale on ${DateFormat('MMM d, yyyy').format(widget.tx.createdAt)}?\n\n'
+          '• Restock to Original FIFO Batch: $restockUnits unit(s)\n'
+          '• Damaged / Spoilage Write-Off (No Restock): $writeOffUnits unit(s)\n\n'
+          'This executes atomically, updates the receipt, and writes a batch audit log.',
         ),
         actions: [
           TextButton(
@@ -1577,19 +1305,23 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
             'barcode': item.barcode,
             'qty': qty,
             'price': item.price,
-            'condition': _selectedConditions[idx] ?? 'restock',
+            'condition': _selectedConditions[idx] ?? 'SELLABLE',
+            if (_selectedPreferredBatchIds[idx] != null)
+              'preferredBatchId': _selectedPreferredBatchIds[idx],
           });
         }
       });
 
       const String adminName = 'Store Admin';
 
-      await fs.processMultiItemRefund(
+      final result = await fs.processMultiItemRefund(
         transactionId: widget.tx.id,
+        orderId: widget.tx.orderId,
         itemsToRefund: itemsToRefund,
         totalRefundAmount: _totalRefundAmount,
         processedBy: adminName,
         customerEmail: widget.tx.customerEmail,
+        settings: widget.inventory.settings,
       );
 
       // Automatically send updated digital receipt email to customer
@@ -1599,7 +1331,7 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
           await AdminMessagingService().sendDigitalReceiptEmail(
             customerEmail: widget.tx.customerEmail!,
             customerName: widget.tx.customerEmail!.split('@').first,
-            orderId: widget.tx.id,
+            orderId: widget.tx.orderId ?? widget.tx.id,
             items: widget.tx.items,
             total: widget.tx.total - _totalRefundAmount,
             paymentMethod: widget.tx.paymentMethod.name.toUpperCase(),
@@ -1612,11 +1344,23 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
       widget.inventory.initialize();
 
       if (mounted) {
+        final restoredIds = result.restoredAllocations
+            .map((a) => '${a.batchId} (+${a.qtyReturned})')
+            .toList();
+        final writeOffIds = result.writtenOffAllocations
+            .map((a) => '${a.batchId} (${a.qtyReturned} write-off)')
+            .toList();
+        final batchSummary = [
+          if (restoredIds.isNotEmpty) 'Restored: ${restoredIds.join(', ')}',
+          if (writeOffIds.isNotEmpty) 'Write-Off: ${writeOffIds.join(', ')}',
+        ].join(' • ');
+
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Refund of ${formatPeso(_totalRefundAmount)} for $_totalRefundUnits item(s) processed! Recorded in Inventory Records.',
+              'Refund of ${formatPeso(_totalRefundAmount)} processed!'
+              '${batchSummary.isNotEmpty ? " $batchSummary" : ""}',
             ),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
@@ -1639,8 +1383,8 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
 
   Widget _buildQtyControl(int idx, int availableQty) {
     final currentQty = _selectedRefundQtys[idx] ?? 0;
-    final ctrl = _qtyTextCtrls[idx] ??=
-        TextEditingController(text: '$currentQty');
+    final ctrl =
+        _qtyTextCtrls[idx] ??= TextEditingController(text: '$currentQty');
 
     if (ctrl.text != '$currentQty') {
       ctrl.text = '$currentQty';
@@ -1723,31 +1467,30 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: _selectedConditions[idx] ?? 'restock',
+          value: _selectedConditions[idx] ?? 'SELLABLE',
           isDense: true,
+          isExpanded: true,
           icon: const Icon(Icons.arrow_drop_down, size: 20),
           style: const TextStyle(
               fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black),
           items: const [
             DropdownMenuItem(
-              value: 'restock',
-              child: Text('🟢 Unopened (Restock to Shelf)',
+              value: 'SELLABLE',
+              child: Text('🟢 Good Condition (Restock to Original Batch)',
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: Colors.green)),
             ),
             DropdownMenuItem(
-              value: 'damaged',
-              child: Text('🔴 Damaged / Package Broken',
+              value: 'DAMAGED',
+              child: Text('🔴 Damaged / Defective (Write-Off, No Restock)',
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: Colors.red)),
             ),
             DropdownMenuItem(
               value: 'expired',
-              child: Text('🟠 Expired / Spoilage',
+              child: Text('🟠 Expired / Spoilage (Write-Off, No Restock)',
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: Colors.deepOrange)),
-            ),
-            DropdownMenuItem(
-              value: 'other',
-              child: Text('⚪ Other Issue / Write-off',
-                  style: TextStyle(color: Colors.grey)),
             ),
           ],
           onChanged: (val) {
@@ -1765,14 +1508,15 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final todayStr = DateFormat('MMMM d, yyyy • h:mm a').format(DateTime.now());
+    final saleDateStr =
+        DateFormat('MMMM d, yyyy • h:mm a').format(widget.tx.createdAt);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Container(
-        width: 540,
+        width: 580,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxHeight: MediaQuery.of(context).size.height * 0.88,
         ),
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -1782,35 +1526,40 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        shape: BoxShape.circle,
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.published_with_changes_rounded,
+                            color: Colors.red, size: 22),
                       ),
-                      child: const Icon(Icons.published_with_changes_rounded,
-                          color: Colors.red, size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Refund Order #${widget.tx.id.substring(0, widget.tx.id.length > 10 ? 10 : widget.tx.id.length).toUpperCase()}',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Refund Order #${(widget.tx.orderId ?? widget.tx.id).substring(0, (widget.tx.orderId ?? widget.tx.id).length > 12 ? 12 : (widget.tx.orderId ?? widget.tx.id).length).toUpperCase()}',
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              'Original Sale Date: $saleDateStr',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.primary),
+                            ),
+                          ],
                         ),
-                        Text(
-                          'Date Today: $todayStr',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -1819,9 +1568,8 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
               ],
             ),
             const Divider(height: 24),
-
             const Text(
-              'SELECT ITEMS TO REFUND:',
+              'SELECT ITEMS & FIFO BATCH BACKTRACKING:',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w900,
@@ -1830,7 +1578,6 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
               ),
             ),
             const SizedBox(height: 8),
-
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
@@ -1842,6 +1589,12 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
 
                   final currentRefundQty = _selectedRefundQtys[idx] ?? 0;
                   final isSelected = currentRefundQty > 0;
+                  final realAllocations = item.batchAllocations
+                      .where((a) =>
+                          a.batchId.isNotEmpty &&
+                          !a.batchId.startsWith('fallback-') &&
+                          !a.batchId.startsWith('variant-'))
+                      .toList();
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -1889,7 +1642,8 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
                                             ? ' (${item.variantName})'
                                             : ''),
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.bold, fontSize: 13),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13),
                                   ),
                                   Text(
                                     '${formatPeso(item.price)} each • Available for refund: $availableQty unit(s)',
@@ -1907,21 +1661,85 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
                             ],
                             const SizedBox(width: 8),
                             Text(
-                              formatPeso(item.price * (isSelected ? currentRefundQty : availableQty)),
+                              formatPeso(item.price *
+                                  (isSelected
+                                      ? currentRefundQty
+                                      : availableQty)),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
-                                color: isSelected ? Colors.red.shade900 : Colors.black,
+                                color: isSelected
+                                    ? Colors.red.shade900
+                                    : theme.colorScheme.onSurface,
                               ),
                             ),
                           ],
                         ),
+
+                        // Batch Lineage Chips (shows exact source batch(es) from sale)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 48, top: 6),
+                          child: realAllocations.isEmpty
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'Legacy Receipt • Auto-restores to oldest active batch or RETURN-RESTORE batch',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                )
+                              : Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: realAllocations.map((alloc) {
+                                    final arrivedLabel = alloc.dateArrived !=
+                                            null
+                                        ? ' • Arr ${DateFormat('MMM d').format(alloc.dateArrived!)}'
+                                        : '';
+                                    final refLabel = (alloc.poNumber != null &&
+                                            alloc.poNumber!.trim().isNotEmpty)
+                                        ? ProductBatch.formatPoNumber(
+                                            alloc.poNumber!)
+                                        : ProductBatch.formatBatchIdForDisplay(
+                                            alloc.batchId);
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 7, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.teal.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.teal
+                                                .withValues(alpha: 0.35)),
+                                      ),
+                                      child: Text(
+                                        '$refLabel (${alloc.qtyDeducted}x @ ${formatPeso(alloc.costPrice)}$arrivedLabel)',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.teal.shade900,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                        ),
+
                         if (isSelected) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               const SizedBox(width: 48),
-                              const Text('Condition / Reason: ',
+                              const Text('Condition: ',
                                   style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
@@ -1930,6 +1748,72 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
                               Expanded(child: _buildConditionDropdown(idx)),
                             ],
                           ),
+                          if (realAllocations.length > 1 &&
+                              currentRefundQty < availableQty) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const SizedBox(width: 48),
+                                const Text('Target Batch: ',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey)),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.surface,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: Colors.teal.shade200),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String?>(
+                                        value: _selectedPreferredBatchIds[idx],
+                                        isDense: true,
+                                        isExpanded: true,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87),
+                                        items: [
+                                          const DropdownMenuItem<String?>(
+                                            value: null,
+                                            child: Text(
+                                                'Auto (Reverse FIFO Allocation Order)'),
+                                          ),
+                                          ...realAllocations.map(
+                                            (a) {
+                                              final label = (a.poNumber !=
+                                                          null &&
+                                                      a.poNumber!
+                                                          .trim()
+                                                          .isNotEmpty)
+                                                  ? '${ProductBatch.formatPoNumber(a.poNumber!)} (${ProductBatch.formatBatchIdForDisplay(a.batchId)})'
+                                                  : ProductBatch
+                                                      .formatBatchIdForDisplay(
+                                                          a.batchId);
+                                              return DropdownMenuItem<String?>(
+                                                value: a.batchId,
+                                                child: Text(
+                                                    '$label • ${a.qtyDeducted} sold'),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                        onChanged: (v) => setState(() =>
+                                            _selectedPreferredBatchIds[idx] =
+                                                v),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ],
                     ),
@@ -1940,7 +1824,6 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
             const SizedBox(height: 16),
             const Divider(height: 1),
             const SizedBox(height: 16),
-
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -1965,8 +1848,8 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
                       ),
                       Text(
                         '$_totalRefundUnits item unit(s) selected',
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.red.shade800),
+                        style:
+                            TextStyle(fontSize: 11, color: Colors.red.shade800),
                       ),
                     ],
                   ),
@@ -1982,7 +1865,6 @@ class _RefundOrderModalState extends State<_RefundOrderModal> {
               ),
             ),
             const SizedBox(height: 20),
-
             SizedBox(
               width: double.infinity,
               height: 48,

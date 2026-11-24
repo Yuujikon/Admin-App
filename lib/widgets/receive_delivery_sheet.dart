@@ -71,12 +71,20 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
   final Map<String, TextEditingController> _inquiryExtraQtyControllers = {};
 
   DateTime? _batchExpiry;
+  DateTime _datePurchased = DateTime.now();
+  DateTime _dateArrived = DateTime.now();
+  String? _selectedSupplierId;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _selectedProduct = widget.initialProduct;
+    _selectedSupplierId = widget.initialProduct?.supplierId;
+    if (widget.inquiry != null) {
+      _datePurchased = widget.inquiry!.createdAt;
+      _selectedSupplierId = widget.inquiry!.supplierId;
+    }
     _qtyCtrl = TextEditingController();
     _extraItemsCtrl = TextEditingController();
     _invoiceCtrl = TextEditingController();
@@ -309,7 +317,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _confirmDiscardChanges();
-        if (shouldPop && mounted) {
+        if (shouldPop && context.mounted) {
           Navigator.of(context).pop();
         }
       },
@@ -350,8 +358,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
 
           final totalUnits = prod.convertBulkToUnits(bQty) + extra;
           final pieceCost = prod.calculateUnitCostFromPack(packCost);
-          _inquiryQtyControllers[item.productId]?.text =
-              totalUnits.toString();
+          _inquiryQtyControllers[item.productId]?.text = totalUnits.toString();
           _inquiryCostControllers[item.productId]?.text = pieceCost > 0
               ? pieceCost.toStringAsFixed(2)
               : item.costPrice.toString();
@@ -434,7 +441,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                         height: 5,
                         margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(3),
                         ),
                       ),
@@ -519,6 +527,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                         prefixIcon: Icon(Icons.receipt_long_outlined),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    _buildBatchDatesRow(context),
 
                     const SizedBox(height: 20),
 
@@ -550,7 +560,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                           children: [
                             OutlinedButton.icon(
                               onPressed: () => _acceptAllInquiryQty(inquiry),
-                              icon: const Icon(Icons.done_all_rounded, size: 14),
+                              icon:
+                                  const Icon(Icons.done_all_rounded, size: 14),
                               label: const Text('Accept All Qty',
                                   style: TextStyle(
                                       fontSize: 11.5,
@@ -794,8 +805,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.bold),
                                       ),
-                                      icon: const Icon(
-                                          Icons.all_inbox_rounded,
+                                      icon: const Icon(Icons.all_inbox_rounded,
                                           size: 15),
                                     ),
                                   ],
@@ -827,10 +837,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                                   item.productId]
                                               ?.text = bQty.toString();
                                           _inquiryExtraQtyControllers[
-                                                  item.productId]
-                                              ?.text = extra > 0
-                                              ? extra.toString()
-                                              : '';
+                                                      item.productId]
+                                                  ?.text =
+                                              extra > 0 ? extra.toString() : '';
                                         } else {
                                           _inquiryBulkQtyControllers[
                                                   item.productId]
@@ -940,15 +949,15 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                               onChanged: (_) {
                                                 final bQty = int.tryParse(
                                                         _inquiryBulkQtyControllers[
-                                                                item.productId]
-                                                            ?.text ??
-                                                        '') ??
+                                                                    item.productId]
+                                                                ?.text ??
+                                                            '') ??
                                                     0;
                                                 final extra = int.tryParse(
                                                         _inquiryExtraQtyControllers[
-                                                                item.productId]
-                                                            ?.text ??
-                                                        '') ??
+                                                                    item.productId]
+                                                                ?.text ??
+                                                            '') ??
                                                     0;
                                                 final totalUnits = prod!
                                                         .convertBulkToUnits(
@@ -982,15 +991,15 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                               onChanged: (_) {
                                                 final bQty = int.tryParse(
                                                         _inquiryBulkQtyControllers[
-                                                                item.productId]
-                                                            ?.text ??
-                                                        '') ??
+                                                                    item.productId]
+                                                                ?.text ??
+                                                            '') ??
                                                     0;
                                                 final extra = int.tryParse(
                                                         _inquiryExtraQtyControllers[
-                                                                item.productId]
-                                                            ?.text ??
-                                                        '') ??
+                                                                    item.productId]
+                                                                ?.text ??
+                                                            '') ??
                                                     0;
                                                 final totalUnits = prod!
                                                         .convertBulkToUnits(
@@ -1017,24 +1026,25 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                         builder: (_) {
                                           final bQty = int.tryParse(
                                                   _inquiryBulkQtyControllers[
-                                                          item.productId]
-                                                      ?.text ??
-                                                  '') ??
+                                                              item.productId]
+                                                          ?.text ??
+                                                      '') ??
                                               0;
                                           final extra = int.tryParse(
                                                   _inquiryExtraQtyControllers[
-                                                          item.productId]
-                                                      ?.text ??
-                                                  '') ??
+                                                              item.productId]
+                                                          ?.text ??
+                                                      '') ??
                                               0;
-                                          final totalUnits = prod!
-                                                  .convertBulkToUnits(bQty) +
-                                              extra;
+                                          final totalUnits =
+                                              prod!.convertBulkToUnits(bQty) +
+                                                  extra;
                                           return Container(
                                             padding: const EdgeInsets.symmetric(
                                                 horizontal: 10, vertical: 7),
                                             decoration: BoxDecoration(
-                                              color: colorScheme.primaryContainer
+                                              color: colorScheme
+                                                  .primaryContainer
                                                   .withValues(alpha: 0.4),
                                               borderRadius:
                                                   BorderRadius.circular(10),
@@ -1085,7 +1095,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                                         TextSpan(
                                                           text:
                                                               '$totalUnits ${prod.unit} total',
-                                                          style: const TextStyle(
+                                                          style:
+                                                              const TextStyle(
                                                             fontWeight:
                                                                 FontWeight.w900,
                                                           ),
@@ -1509,6 +1520,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final inventory = context.watch<InventoryProvider>();
     final products = inventory.products;
+    final suppliers = inventory.suppliers;
 
     final int inputQty = int.tryParse(_qtyCtrl.text) ?? 0;
     final double inputCost = double.tryParse(_costCtrl.text) ?? 0;
@@ -1611,9 +1623,10 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
 
                     DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: products.any((p) => p.id == _selectedProduct?.id)
-                          ? _selectedProduct?.id
-                          : null,
+                      initialValue:
+                          products.any((p) => p.id == _selectedProduct?.id)
+                              ? _selectedProduct?.id
+                              : null,
                       decoration: const InputDecoration(
                         labelText: 'Delivered Product *',
                         prefixIcon: Icon(Icons.inventory_2_outlined),
@@ -1639,6 +1652,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                               products.firstWhere((prod) => prod.id == id);
                           setState(() {
                             _selectedProduct = p;
+                            _selectedSupplierId = p.supplierId;
                             if (p.hasBulkPacking) {
                               _isBulkMode = true;
                               _costCtrl.text =
@@ -1777,8 +1791,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                       Builder(builder: (context) {
                         final siblings = inventory
                             .getProductsByParentId(_selectedProduct!.parentId!);
-                        if (siblings.length <= 1)
+                        if (siblings.length <= 1) {
                           return const SizedBox.shrink();
+                        }
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1809,6 +1824,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                       : () {
                                           setState(() {
                                             _selectedProduct = sib;
+                                            _selectedSupplierId =
+                                                sib.supplierId;
                                             if (sib.hasBulkPacking) {
                                               _isBulkMode = true;
                                               _costCtrl.text =
@@ -2092,8 +2109,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     ),
                                     validator: (v) {
                                       final q = int.tryParse(v ?? '');
-                                      if (q == null || q <= 0)
+                                      if (q == null || q <= 0) {
                                         return 'Enter delivered qty';
+                                      }
                                       return null;
                                     },
                                   ),
@@ -2122,8 +2140,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                     ),
                                     validator: (v) {
                                       final c = double.tryParse(v ?? '');
-                                      if (c == null || c <= 0)
+                                      if (c == null || c <= 0) {
                                         return 'Enter unit cost';
+                                      }
                                       return null;
                                     },
                                   ),
@@ -2287,8 +2306,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                               ),
                               validator: (v) {
                                 final q = int.tryParse(v ?? '');
-                                if (q == null || q <= 0)
+                                if (q == null || q <= 0) {
                                   return 'Enter delivered qty';
+                                }
                                 return null;
                               },
                             ),
@@ -2312,8 +2332,9 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                               ),
                               validator: (v) {
                                 final c = double.tryParse(v ?? '');
-                                if (c == null || c <= 0)
+                                if (c == null || c <= 0) {
                                   return 'Enter unit cost';
+                                }
                                 return null;
                               },
                             ),
@@ -2355,6 +2376,75 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                         prefixIcon: Icon(Icons.receipt_long_outlined),
                       ),
                     ),
+
+                    const SizedBox(height: 12),
+
+                    // Required supplier selector for batch lineage & atomic validation
+                    if (suppliers.isNotEmpty) ...[
+                      Builder(builder: (context) {
+                        final String? resolvedSupplierVal = suppliers.any((s) =>
+                                s.id ==
+                                (_selectedSupplierId ??
+                                    _selectedProduct?.supplierId))
+                            ? (_selectedSupplierId ??
+                                _selectedProduct?.supplierId)
+                            : null;
+                        return DropdownButtonFormField<String?>(
+                          key: ValueKey(
+                              'delivery-supplier-${_selectedProduct?.id ?? 'none'}-${resolvedSupplierVal ?? 'null'}'),
+                          initialValue: resolvedSupplierVal,
+                          decoration: const InputDecoration(
+                            labelText: 'Supplier *',
+                            hintText: 'Select verified supplier',
+                            prefixIcon: Icon(Icons.storefront_outlined),
+                          ),
+                          items: suppliers
+                              .map(
+                                (s) => DropdownMenuItem<String?>(
+                                  value: s.id,
+                                  child: Text(s.name,
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              )
+                              .toList(),
+                          validator: (val) =>
+                              (val == null || val.trim().isEmpty)
+                                  ? 'Please select a supplier for this batch'
+                                  : null,
+                          onChanged: (val) =>
+                              setState(() => _selectedSupplierId = val),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.4)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.error_outline,
+                                color: Colors.red, size: 18),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'No suppliers registered yet. Add a supplier before receiving inventory batches.',
+                                style:
+                                    TextStyle(fontSize: 12, color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // FIFO Batch Dates: Date Purchased & Date Arrived (FIFO Sort Key)
+                    _buildBatchDatesRow(context),
 
                     const SizedBox(height: 16),
 
@@ -2602,6 +2692,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
             .firstWhere((prod) => prod.barcode == result.trim());
         setState(() {
           _selectedProduct = p;
+          _selectedSupplierId = p.supplierId;
           if (_isBulkMode && p.packCost != null) {
             _costCtrl.text = p.packCost.toString();
           } else {
@@ -2715,6 +2806,7 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       ],
     );
     if (!confirm) return;
+    if (!mounted) return;
 
     setState(() => _saving = true);
 
@@ -2726,12 +2818,41 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
           ? 'Bulk Box Delivery: $qty ${_selectedProduct!.bulkUnit}(s)${extra > 0 ? " + $extra loose" : ""} ($addedBaseUnits ${_selectedProduct!.unit} total) @ ${formatPeso(cost)}/${_selectedProduct!.bulkUnit}'
           : 'Single Delivery: $qty ${_selectedProduct!.unit} @ ${formatPeso(cost)}/${_selectedProduct!.unit}';
 
+      final String? effectiveSupplierId = (_selectedSupplierId != null &&
+              _selectedSupplierId!.trim().isNotEmpty)
+          ? _selectedSupplierId!.trim()
+          : _selectedProduct!.supplierId?.trim();
+      if (effectiveSupplierId == null ||
+          effectiveSupplierId.isEmpty ||
+          !inventory.suppliers.any((s) => s.id == effectiveSupplierId)) {
+        if (mounted) {
+          setState(() => _saving = false);
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Please select a valid supplier before creating an inventory batch.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final String effectiveSupplierName = inventory.suppliers
+          .firstWhere((s) => s.id == effectiveSupplierId)
+          .name;
+
       await inventory.receiveDeliveryWithUom(
         product: _selectedProduct!,
         inputQuantity: _isBulkMode ? qty : addedBaseUnits,
         inputCost: _isBulkMode ? cost : calculatedPieceCost,
+        extraLooseUnits: _isBulkMode ? extra : 0,
         isBulkDelivery: _isBulkMode,
+        datePurchased: _datePurchased,
+        dateArrived: _dateArrived,
         batchExpiryDate: _batchExpiry,
+        supplierId: effectiveSupplierId,
+        supplierName: effectiveSupplierName,
         invoiceNumber:
             _invoiceCtrl.text.trim().isEmpty ? null : _invoiceCtrl.text.trim(),
         notes: _notesCtrl.text.trim().isEmpty
@@ -2841,6 +2962,8 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
       await inventory.processInquiryDelivery(
         inquiry: inquiry,
         receivedItemData: receivedItemData,
+        datePurchased: _datePurchased,
+        dateArrived: _dateArrived,
         invoiceNumber:
             _invoiceCtrl.text.trim().isEmpty ? null : _invoiceCtrl.text.trim(),
       );
@@ -2866,5 +2989,123 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _pickBatchDate({required bool isPurchased}) async {
+    final initial = isPurchased ? _datePurchased : _dateArrived;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (isPurchased) {
+          _datePurchased = picked;
+        } else {
+          _dateArrived = picked;
+        }
+      });
+    }
+  }
+
+  Widget _buildBatchDatesRow(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: () => _pickBatchDate(isPurchased: true),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.shopping_bag_outlined,
+                      size: 16, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Date Purchased',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('MMM dd, yyyy').format(_datePurchased),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.edit_calendar_rounded, size: 15),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: InkWell(
+            onTap: () => _pickBatchDate(isPurchased: false),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.teal.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.teal.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.local_shipping_outlined,
+                      size: 16, color: Colors.teal.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Date Arrived (FIFO)',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.teal.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('MMM dd, yyyy').format(_dateArrived),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.edit_calendar_rounded,
+                      size: 15, color: Colors.teal.shade700),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

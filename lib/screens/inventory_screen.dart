@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -432,8 +431,11 @@ class _ProductRow extends StatelessWidget {
                         opacity:
                             product.status == ProductStatus.draft ? 0.5 : 1.0,
                         child: product.imageBytes != null
-                            ? Image.memory(product.imageBytes!,
-                                fit: BoxFit.cover, gaplessPlayback: true)
+                            ? Padding(
+                                padding: const EdgeInsets.all(2),
+                                child: Image.memory(product.imageBytes!,
+                                    fit: BoxFit.contain, gaplessPlayback: true),
+                              )
                             : Icon(
                                 isExpired
                                     ? Icons.event_busy_rounded
@@ -576,7 +578,9 @@ class _ProductRow extends StatelessWidget {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              '$effectiveStock ${product.unit}',
+                              product.totalReservedStock > 0
+                                  ? '$effectiveStock ${product.unit} (${product.totalReservedStock} res)'
+                                  : '$effectiveStock ${product.unit}',
                               style: TextStyle(
                                 fontSize: 10,
                                 color: isLow
@@ -600,11 +604,30 @@ class _ProductRow extends StatelessWidget {
                             onPressed: () =>
                                 BarcodePrintDialog.show(context, product),
                           ),
-                          IconButton(
-                            icon: Icon(Icons.history_toggle_off_rounded,
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withValues(alpha: 0.45),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            icon: Icon(Icons.layers_outlined,
                                 color: Theme.of(context).colorScheme.primary,
-                                size: 20),
-                            tooltip: 'Inspect Batches',
+                                size: 16),
+                            label: Text(
+                              'View Batches',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
                             onPressed: () {
                               showModalBottomSheet(
                                 context: context,
@@ -659,7 +682,9 @@ class _ProductRow extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          '$effectiveStock ${product.unit}',
+                          product.totalReservedStock > 0
+                              ? '$effectiveStock ${product.unit} (${product.totalReservedStock} res)'
+                              : '$effectiveStock ${product.unit}',
                           style: TextStyle(
                             fontSize: 10,
                             color: isLow
@@ -681,14 +706,31 @@ class _ProductRow extends StatelessWidget {
                         onPressed: () =>
                             BarcodePrintDialog.show(context, product),
                       ),
-                      IconButton(
-                        constraints:
-                            const BoxConstraints(minWidth: 40, minHeight: 40),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(Icons.history_toggle_off_rounded,
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          minimumSize: const Size(0, 32),
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.45),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        icon: Icon(Icons.layers_outlined,
                             color: Theme.of(context).colorScheme.primary,
-                            size: 20),
-                        tooltip: 'Batches',
+                            size: 14),
+                        label: Text(
+                          'Batches',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
                         onPressed: () {
                           showModalBottomSheet(
                             context: context,

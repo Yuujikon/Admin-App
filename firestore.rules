@@ -1,14 +1,48 @@
 rules_version = '2';
 
+// =============================================================================
+// FIRESTORE SECURITY RULES - GDC SARI-SARI STORE (CUSTOMER & ADMIN POS APPS)
+// =============================================================================
+//
+// Assumed Core Data Structures & Access Model:
+//  - products/{id}             : Public read; Staff manage; Customers update reserved stock at checkout.
+//  - catalog/{id}              : Master barcode catalog. Public read; Staff write.
+//  - bundles/{id}              : Product promotional bundles. Public read; Staff write.
+//  - watched_products/{id}     : User product restock watches. Auth read/write scoped to owner.
+//  - users/{userId}            : User profiles. Owner & Staff read; Owner update (blocked sensitive fields); Staff write.
+//  - users/{userId}/notif/{id} : User FCM notifications. Owner & Staff read/write.
+//  - orders/{orderId}          : Pre-orders. Customer read/create (if not ghosting restricted)/cancel; Staff manage.
+//  - transactions/{txId}       : POS & Customer receipts. Cashier, customer, & staff read; Staff create.
+//  - shifts/{shiftId}          : Cashier POS register shifts. Staff read/create/update; Admin delete.
+//  - settings/{settingId}      : Store config (e.g. store_settings). Public read; Staff write.
+//  - system_config/time_sim    : Dev time simulation offset. Auth read; Staff write.
+//  - supplier & inventory      : rfqs, purchase_orders, receiving_records, inventory_batches,
+//                                delivery_logs, loss_records, expenses, suppliers, refund_records.
+//                                Staff-only access (read & write).
+//  - restock_inquiries/{id}    : Auth customer create/read own; Staff manage.
+//  - customers/{customerId}    : Staff customer loyalty/profiles. Owner & Staff read; Owner update (blocked sensitive fields); Staff create/delete.
+//  - stock_audits/{auditId}    : Inventory physical stock count audits. Staff read/write.
+//  - audit_logs/{logId}        : Security & operational log trail. Staff read; Auth create; Immutable.
+//  - refund_requests/{id}      : Customer refund claims. Customer read/create own/cancel; Staff manage.
+//  - appeals/{appealId}        : Ghosting restriction appeals. Customer read/create own; Staff manage.
+//  - mail/{mailId}             : Firebase Email Trigger Queue. Auth create; Admin manage.
+//  - otp_requests/{contact}    : Sign-up OTP verification. Public get (single doc); List disabled; Auth create/update/delete.
+//
+// =============================================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─────────────────────────────────────────────────────────────────────────
-    // HELPER FUNCTIONS
+    // 1. HELPER FUNCTIONS
     // ─────────────────────────────────────────────────────────────────────────
 
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function hasTokenRole(role) {
@@ -19,7 +53,10 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.get('admin', false) == true ||
-        request.auth.token.get('email', '') == 'markjeo.hinampas@gmail.com'
+        (
+          request.auth.token.get('email', '') == 'markjeo.hinampas@gmail.com' &&
+          request.auth.token.get('email_verified', false) == true
+        )
       );
     }
 
@@ -41,17 +78,19 @@ service cloud.firestore {
         (isSignedIn() && getStaffRole() in ['trustedPartner', 'cashier', 'inventoryManager']);
     }
 
+    // Check if customer is attempting to reserve/release stock during pre-order checkout or cancellation
     function isCustomerReservationUpdate() {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
       return isSignedIn() &&
         affected.hasOnly(['stock', 'reservedStock', 'variants', 'notifyUserIds', 'updatedAt']) &&
         request.resource.data.get('stock', 0) >= 0 &&
+        request.resource.data.get('reservedStock', 0) >= 0 &&
         request.resource.data.get('price', 0) == resource.data.get('price', 0) &&
         request.resource.data.get('name', '') == resource.data.get('name', '') &&
         request.resource.data.get('costPrice', 0) == resource.data.get('costPrice', 0);
     }
 
-    // Check if customer is currently restricted or permanently locked due to ghosting offenses
+    // Check if customer is restricted/locked from placing new pre-orders due to ghosting offenses
     function isCustomerRestricted() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       let userExists = exists(userPath);
@@ -61,33 +100,117 @@ service cloud.firestore {
       return isLocked || (restrictedUntil != null && request.time < restrictedUntil);
     }
 
-    // Ensure non-staff users cannot modify their own offense counts or active lock fields
-    function isNotTamperingOffenses() {
+    // Prevent customers from modifying sensitive identity, role & restriction fields on their user doc
+    function isNotTamperingSensitiveFields() {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
-      return !affected.hasAny(['offenseCount', 'restrictedUntil', 'isPermanentlyLocked', 'offenseHistory', 'ghostedOrders']);
+      return !affected.hasAny([
+        'role',
+        'isAdmin',
+        'isSuperAdmin',
+        'offenseCount',
+        'restrictedUntil',
+        'isPermanentlyLocked',
+        'offenseHistory',
+        'ghostedOrders'
+      ]);
+    }
+
+    // Enforce default non-privileged role and lock flags when a customer creates their user document
+    function isValidUserCreation(userId) {
+      return isOwner(userId) &&
+        request.resource.data.get('role', 'customer') == 'customer' &&
+        request.resource.data.get('isAdmin', false) == false &&
+        request.resource.data.get('isPermanentlyLocked', false) == false &&
+        !('restrictedUntil' in request.resource.data);
+    }
+
+    // Prevent customers from tampering with loyalty spend, offenses, notes, or staff-managed metrics
+    function isNotTamperingCustomerFields() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return !affected.hasAny([
+        'totalSpent',
+        'offenseCount',
+        'restrictedUntil',
+        'isPermanentlyLocked',
+        'offenseHistory',
+        'appealStatus',
+        'notes',
+        'createdAt'
+      ]);
+    }
+
+    // Validate product FIFO batch subcollection document schema (products/{productId}/batches/{batchId})
+    function isValidProductBatch(productId, batchId) {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+          'batchId', 'productId', 'datePurchased', 'dateArrived',
+          'costPrice', 'initialQty', 'remainingQty', 'status'
+        ]) &&
+        data.batchId is string && data.batchId.size() > 0 && data.batchId.size() <= 100 &&
+        data.batchId == batchId &&
+        data.productId is string && data.productId == productId &&
+        (!('productName' in data) || data.productName == null || (data.productName is string && data.productName.size() <= 200)) &&
+        (!('supplierId' in data) || data.supplierId == null || (data.supplierId is string && data.supplierId.size() <= 128)) &&
+        (!('supplierName' in data) || data.supplierName == null || (data.supplierName is string && data.supplierName.size() <= 200)) &&
+        (!('poId' in data) || data.poId == null || (data.poId is string && data.poId.size() <= 128)) &&
+        (!('poNumber' in data) || data.poNumber == null || (data.poNumber is string && data.poNumber.size() <= 100)) &&
+        (!('invoiceNumber' in data) || data.invoiceNumber == null || (data.invoiceNumber is string && data.invoiceNumber.size() <= 120)) &&
+        data.datePurchased is timestamp &&
+        data.dateArrived is timestamp &&
+        (!('expiryDate' in data) || data.expiryDate == null || data.expiryDate is timestamp) &&
+        data.costPrice is number && data.costPrice >= 0 &&
+        data.initialQty is int && data.initialQty >= 0 &&
+        data.remainingQty is int && data.remainingQty >= 0 &&
+        data.status in ['ACTIVE', 'DEPLETED', 'EXPIRED', 'ARCHIVED'] &&
+        ((data.status == 'ACTIVE' && data.remainingQty > 0) ||
+         (data.status == 'DEPLETED' && data.remainingQty == 0) ||
+         data.status == 'EXPIRED' ||
+         data.status == 'ARCHIVED');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. PRODUCTS, BUNDLES & WATCHES
+    // 2. PRODUCTS, BUNDLES, CATALOG & WATCHES
     // ─────────────────────────────────────────────────────────────────────────
+    // Staff-only collectionGroup read for real-time FIFO batch sync across Inventory, POS & Batch screens
+    match /{path=**}/batches/{batchId} {
+      allow read: if isStaff();
+    }
+
     match /products/{productId} {
       allow read: if true;
-      allow create, delete: if isAdmin() || isStaff();
-      allow update: if isAdmin() || isStaff() || isCustomerReservationUpdate();
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || isCustomerReservationUpdate();
+
+      // FIFO Inventory Batches subcollection (Staff-only; protects supplier costPrice & stock integrity)
+      match /batches/{batchId} {
+        allow read: if isStaff();
+        allow create: if isStaff() && isValidProductBatch(productId, batchId);
+        allow update: if isStaff() &&
+          isValidProductBatch(productId, batchId) &&
+          request.resource.data.productId == resource.data.productId &&
+          request.resource.data.batchId == resource.data.batchId;
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /catalog/{catalogId} {
+      allow read: if true;
+      allow write: if isStaff();
     }
 
     match /bundles/{bundleId} {
       allow read: if true;
-      allow write: if isAdmin() || isStaff();
+      allow write: if isStaff();
     }
 
     match /watched_products/{watchId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read: if isSignedIn() && (isStaff() || resource.data.get('userId', '') == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.get('userId', '') == request.auth.uid;
+      allow update, delete: if isSignedIn() && (isStaff() || resource.data.get('userId', '') == request.auth.uid);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. SUPPLIER PROCUREMENT, RECEIVING & INVENTORY MANAGEMENT
+    // 3. SUPPLIER PROCUREMENT, RECEIVING & INVENTORY MANAGEMENT (STAFF ONLY)
     // ─────────────────────────────────────────────────────────────────────────
     match /rfqs/{rfqId} {
       allow read, write: if isStaff();
@@ -102,99 +225,115 @@ service cloud.firestore {
     }
 
     match /inventory_batches/{batchId} {
-      allow read: if true;
-      allow write: if isStaff();
-    }
-
-    match /restock_inquiries/{inquiryId} {
-      allow read, write: if isSignedIn() || isStaff();
-    }
-
-    match /suppliers/{supplierId} {
-      allow read: if true;
-      allow write: if isStaff() || isAdmin();
+      allow read, write: if isStaff();
     }
 
     match /delivery_logs/{logId} {
-      allow read: if isStaff();
-      allow write: if isStaff();
+      allow read, write: if isStaff();
     }
 
     match /loss_records/{lossId} {
-      allow read: if isStaff();
-      allow write: if isStaff();
+      allow read, write: if isStaff();
     }
 
     match /expenses/{expenseId} {
-      allow read: if isStaff();
-      allow write: if isStaff();
+      allow read, write: if isStaff();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read, write: if isStaff();
+    }
+
+    match /refund_records/{recordId} {
+      allow read, write: if isStaff();
+    }
+
+    match /restock_inquiries/{inquiryId} {
+      allow read: if isStaff() || (
+        isSignedIn() && (
+          resource.data.get('userId', '') == request.auth.uid ||
+          resource.data.get('createdBy', '') == request.auth.uid
+        )
+      );
+      allow create: if isStaff() || (
+        isSignedIn() && (
+          request.resource.data.get('userId', '') == request.auth.uid ||
+          request.resource.data.get('createdBy', '') == request.auth.uid
+        )
+      );
+      allow update: if isStaff() || (
+        isSignedIn() && (
+          resource.data.get('userId', '') == request.auth.uid ||
+          resource.data.get('createdBy', '') == request.auth.uid
+        )
+      );
+      allow delete: if isStaff();
     }
 
     match /customers/{customerId} {
-      allow read, write: if isSignedIn() || isStaff();
+      allow read: if isOwner(customerId) || isStaff();
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (isOwner(customerId) && isNotTamperingCustomerFields());
     }
 
     match /stock_audits/{auditId} {
-      allow create, read: if isSignedIn() || isStaff();
-      allow update, delete: if isStaff() || isAdmin();
+      allow read, write: if isStaff();
     }
 
-    match /catalog/{catalogId} {
-      allow read: if true;
-      allow write: if isStaff();
+    match /audit_logs/{logId} {
+      allow read: if isStaff();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Strict immutability, append-only
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. TRANSACTIONS & SHIFTS
+    // 4. TRANSACTIONS & SHIFTS (POS & RECEIPTS)
     // ─────────────────────────────────────────────────────────────────────────
     match /transactions/{txId} {
-      allow read: if isAdmin() || isStaff() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
-      allow create: if (isStaff() || isSignedIn()) && request.resource.data.get('total', 0) >= 0;
+      allow read: if isStaff() || (
+        isSignedIn() && (
+          resource.data.get('cashierId', '') == request.auth.uid ||
+          resource.data.get('customerId', '') == request.auth.uid
+        )
+      );
+      allow create: if isStaff() && request.resource.data.get('total', 0) >= 0;
       allow update, delete: if isAdmin();
     }
 
     match /shifts/{shiftId} {
-      allow read: if isAdmin() || isStaff() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
-      allow create: if (isStaff() || isSignedIn()) && request.resource.data.get('cashierId', '') == request.auth.uid;
-      allow update: if isAdmin() || isStaff() || (isSignedIn() && resource.data.get('cashierId', '') == request.auth.uid);
+      allow read, create, update: if isStaff();
       allow delete: if isAdmin();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 4. STORE SETTINGS & SYSTEM CONFIG
+    // 5. STORE SETTINGS & SYSTEM CONFIG
     // ─────────────────────────────────────────────────────────────────────────
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin() || isStaff();
-    }
-
-    match /store_settings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin() || isStaff();
+      allow write: if isStaff();
     }
 
     match /system_config/time_simulation {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isStaff();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. USERS & NOTIFICATIONS
+    // 6. USERS & NOTIFICATIONS
     // ─────────────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (request.auth.uid == userId || isStaff());
-      allow update: if isAdmin() || isStaff() || (
-        isSignedIn() && request.auth.uid == userId && isNotTamperingOffenses()
-      );
+      allow read: if isOwner(userId) || isStaff();
+      allow create: if isStaff() || isValidUserCreation(userId);
+      allow update: if isStaff() || (isOwner(userId) && isNotTamperingSensitiveFields());
       allow delete: if isAdmin();
 
       match /notifications/{notificationId} {
-        allow read, write: if isSignedIn() && (request.auth.uid == userId || isStaff());
+        allow read, write: if isOwner(userId) || isStaff();
       }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 6. ONLINE PRE-ORDERS & REFUNDS
+    // 7. ONLINE PRE-ORDERS, REFUNDS & APPEALS
     // ─────────────────────────────────────────────────────────────────────────
     match /orders/{orderId} {
       allow read: if isStaff() || (
@@ -218,7 +357,11 @@ service cloud.firestore {
 
       allow update: if isStaff() || (
         isSignedIn() && resource.data.get('customerId', '') == request.auth.uid &&
-        request.resource.data.get('status', '') in ['cancelled', 'refund_requested']
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        (
+          (request.resource.data.status == 'cancelled' && resource.data.get('status', '') in ['pending', 'staging', 'ready']) ||
+          (request.resource.data.status in ['refund_requested', 'refundRequested'] && resource.data.get('status', '') in ['collected', 'ready'])
+        )
       );
       allow delete: if isAdmin();
     }
@@ -233,7 +376,7 @@ service cloud.firestore {
           )
         )
       );
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && (isStaff() || request.resource.data.get('customerId', '') == request.auth.uid);
       allow update: if isStaff() || (
         isSignedIn() && resource.data.get('customerId', '') == request.auth.uid &&
         request.resource.data.get('status', '') == 'cancelled'
@@ -241,29 +384,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /refund_records/{recordId} {
-      allow read, write: if isStaff() || isAdmin();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 7. MAIL COLLECTION (Firebase Trigger Email Extension)
-    // ─────────────────────────────────────────────────────────────────────────
-    match /mail/{mailId} {
-      allow create: if isSignedIn();
-      allow read, update, delete: if isAdmin();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 8. OTP VERIFICATION REQUESTS
-    // ─────────────────────────────────────────────────────────────────────────
-    match /otp_requests/{contactMethod} {
-      // Allow anyone (unauthenticated users) to create an OTP request during sign-up
-      allow read, create, update, delete: if true;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 9. APPEALS (Customer Ghosting Restriction Appeals)
-    // ─────────────────────────────────────────────────────────────────────────
     match /appeals/{appealId} {
       allow read: if isStaff() || (
         isSignedIn() && (
@@ -280,12 +400,18 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 10. AUDIT LOGS
+    // 8. MAIL & OTP VERIFICATION REQUESTS
     // ─────────────────────────────────────────────────────────────────────────
-    match /audit_logs/{logId} {
-      allow read: if isAdmin();
+    match /mail/{mailId} {
       allow create: if isSignedIn();
-      allow update, delete: if false; // Strict immutability, append-only
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /otp_requests/{contactMethod} {
+      // Unauthenticated single-document OTP lookup during sign-up verification
+      allow get: if true;
+      allow list: if false;
+      allow create, update, delete: if true;
     }
   }
 }

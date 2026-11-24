@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -7,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import '../models/catalog_product.dart';
 import '../providers/auth_provider.dart';
@@ -22,6 +20,7 @@ import 'barcode_print_dialog.dart';
 import 'premium_components.dart';
 import '../config/theme.dart';
 import '../services/external_barcode_service.dart';
+import '../services/inventory_batch_service.dart';
 import '../utils/barcode_generator.dart';
 import 'action_warning_dialog.dart';
 import '../utils/pricing_engine.dart';
@@ -86,6 +85,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   late final TextEditingController _boxesReceivedCtrl;
   late final TextEditingController _extraItemsCtrl;
   late final TextEditingController _bulkUnitCtrl;
+  late final TextEditingController _manualMarkupCtrl;
   final TextEditingController _qtyCtrl = TextEditingController(text: '1');
   final TextEditingController _notesCtrl = TextEditingController();
 
@@ -106,6 +106,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   late final FocusNode _fItemsPerBox;
   late final FocusNode _fBoxesReceived;
   late final FocusNode _fExtraItems;
+  late final FocusNode _fManualMarkup;
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
@@ -125,14 +126,17 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   bool _showSupplierAlerts = false;
   bool _showPerishableDetails = false;
 
-  // Smart Pricing Engine & Bulk Cost Calculator Flags
-  bool _isManualPriceOverride = false;
+  // Dynamic Velocity-Based Markup & Bulk Cost Calculator State
+  String _pricingMode = Product.pricingModeAuto;
+  double _salesVelocityScore = 0.5;
   bool _isCalculatingPrice = false;
   bool _isCalculatingUom = false;
 
   File? _localPhoto;
   String? _photoBase64;
   DateTime? _expiryDate;
+  DateTime _datePurchased = DateTime.now();
+  DateTime _dateArrived = DateTime.now();
   List<ProductVariant> _variants = [];
 
   static const _defaultCategories = [
@@ -145,8 +149,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     'Condiments',
     'Others'
   ];
-
-  static const _commonUnits = ['pcs', 'pack', 'can', 'bottle', 'kg', 'sachet'];
 
   @override
   void initState() {
@@ -190,6 +192,10 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _extraItemsCtrl = TextEditingController(
         text: initExtra != null && initExtra > 0 ? initExtra.toString() : '');
     _bulkUnitCtrl = TextEditingController(text: p?.bulkUnit ?? 'box');
+    _manualMarkupCtrl = TextEditingController(
+        text: p?.manualMarkupPercent != null
+            ? p!.manualMarkupPercent!.toStringAsFixed(2)
+            : '');
 
     _fName = FocusNode();
     _fBrand = FocusNode();
@@ -207,6 +213,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _fItemsPerBox = FocusNode();
     _fBoxesReceived = FocusNode();
     _fExtraItems = FocusNode();
+    _fManualMarkup = FocusNode();
 
     _controllers = [
       _name,
@@ -226,6 +233,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _boxesReceivedCtrl,
       _extraItemsCtrl,
       _bulkUnitCtrl,
+      _manualMarkupCtrl,
       _qtyCtrl,
       _notesCtrl,
     ];
@@ -247,6 +255,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _fItemsPerBox,
       _fBoxesReceived,
       _fExtraItems,
+      _fManualMarkup,
     ];
 
     _focusMap = {
@@ -266,6 +275,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _fItemsPerBox: _itemsPerBoxCtrl,
       _fBoxesReceived: _boxesReceivedCtrl,
       _fExtraItems: _extraItemsCtrl,
+      _fManualMarkup: _manualMarkupCtrl,
     };
 
     _category = (p != null && allCats.contains(p.category))
@@ -279,6 +289,23 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _expiryDate = p?.expiryDate;
     _variants = p?.variants != null ? List.from(p!.variants) : [];
 
+    // Initialize Dynamic Velocity-Based Markup state
+    _pricingMode = p?.pricingMode ?? Product.pricingModeAuto;
+    _salesVelocityScore = p != null ? inventory.getLiveVelocityScore(p) : 0.5;
+    if (p != null &&
+        _pricingMode == Product.pricingModeManual &&
+        _manualMarkupCtrl.text.isEmpty &&
+        p.price > 0 &&
+        p.activeFifoUnitCost > 0) {
+      final rev = PricingEngine.reverseCalculateMarkupPercent(
+        sellingPrice: p.price,
+        unitCost: p.activeFifoUnitCost,
+      );
+      if (rev != null) {
+        _manualMarkupCtrl.text = rev.toStringAsFixed(2);
+      }
+    }
+
     // Auto-expand optional panels if product already has bulk data, parent ID, or supplier info
     _showBulkUom = p?.hasBulkPacking == true ||
         (initBoxes != null && initBoxes > 0) ||
@@ -288,10 +315,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         (p?.supplierId != null && p!.supplierId!.isNotEmpty) ||
             (p?.lowStockThreshold != null && p!.lowStockThreshold != 5);
     _showPerishableDetails = _perishable || p?.shelfDays != null;
-
-    if (p != null && p.price > 0 && p.costPrice > 0) {
-      _isManualPriceOverride = true;
-    }
 
     _barcode.addListener(_onBarcodeChanged);
     _costPrice.addListener(_onUnitCostChanged);
@@ -572,6 +595,21 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _expiryDate = p.expiryDate;
       _variants = List.from(p.variants);
 
+      _pricingMode = p.pricingMode;
+      _salesVelocityScore =
+          context.read<InventoryProvider>().getLiveVelocityScore(p);
+      if (p.manualMarkupPercent != null) {
+        _manualMarkupCtrl.text = p.manualMarkupPercent!.toStringAsFixed(2);
+      } else if (p.isManualPricing && p.price > 0 && p.activeFifoUnitCost > 0) {
+        final rev = PricingEngine.reverseCalculateMarkupPercent(
+          sellingPrice: p.price,
+          unitCost: p.activeFifoUnitCost,
+        );
+        _manualMarkupCtrl.text = rev != null ? rev.toStringAsFixed(2) : '';
+      } else {
+        _manualMarkupCtrl.clear();
+      }
+
       _showBulkUom =
           p.hasBulkPacking || (p.packCost != null && p.packCost! > 0);
       _showVariantFamily = p.parentId != null && p.parentId!.isNotEmpty;
@@ -586,6 +624,44 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         _fBarcode.requestFocus();
       }
     }
+  }
+
+  double _resolveActiveUnitCost() {
+    final boxPrice = double.tryParse(_boxPriceCtrl.text) ?? 0.0;
+    final itemsPerBox = int.tryParse(_itemsPerBoxCtrl.text) ?? 0;
+    if (boxPrice > 0 && itemsPerBox > 0) {
+      return double.parse((boxPrice / itemsPerBox).toStringAsFixed(2));
+    }
+    final enteredCost = double.tryParse(_costPrice.text) ?? 0.0;
+    if (enteredCost > 0 && enteredCost.isFinite) {
+      return enteredCost;
+    }
+    final activeBatchCost = _activeProduct?.activeFifoUnitCost ?? 0.0;
+    return activeBatchCost > 0 ? activeBatchCost : 0.0;
+  }
+
+  ItemPricingResult _evaluateCurrentPricing() {
+    final settings = context.read<InventoryProvider>().settings;
+    final double unitCost = _resolveActiveUnitCost();
+    final double? manualPct = double.tryParse(_manualMarkupCtrl.text.trim());
+    final candidate = Product(
+      id: _activeProduct?.id ?? '',
+      name: _name.text.trim(),
+      category: _category,
+      price: double.tryParse(_price.text) ?? 0.0,
+      costPrice: unitCost,
+      stock: int.tryParse(_stock.text) ?? 0,
+      pricingMode: _pricingMode,
+      manualMarkupPercent:
+          _pricingMode == Product.pricingModeManual ? manualPct : null,
+      salesVelocityScore: _salesVelocityScore,
+      batches: _activeProduct?.batches ?? const [],
+    );
+    return PricingEngine.evaluateProductPricing(
+      candidate,
+      unitCostOverride: unitCost,
+      settings: settings,
+    );
   }
 
   void _onUomCalculationChanged() {
@@ -622,21 +698,458 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
   void _onUnitCostChanged() {
     if (_isCalculatingUom) return;
-    _autoCalculateSellingPrice();
+    if (_pricingMode == Product.pricingModeAuto) {
+      _autoCalculateSellingPrice();
+    } else {
+      final manualPct = double.tryParse(_manualMarkupCtrl.text.trim());
+      final unitCost = _resolveActiveUnitCost();
+      if (manualPct != null && manualPct.isFinite && unitCost > 0) {
+        _isCalculatingPrice = true;
+        final settings = context.read<InventoryProvider>().settings;
+        final computed = PricingEngine.calculateFinalSellingPrice(
+          unitCost: unitCost,
+          markupPercent: manualPct,
+          roundingStep: settings.priceRoundingStep,
+        );
+        _price.text = computed.toStringAsFixed(2);
+        _isCalculatingPrice = false;
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   void _autoCalculateSellingPrice() {
-    if (_isCalculatingPrice || _isManualPriceOverride) return;
-    final unitCost = double.tryParse(_costPrice.text) ?? 0;
-    if (unitCost > 0) {
+    if (_isCalculatingPrice || _pricingMode != Product.pricingModeAuto) return;
+    final eval = _evaluateCurrentPricing();
+    if (!eval.hasInvalidCost && eval.finalSellingPrice > 0) {
       _isCalculatingPrice = true;
-      final suggested = CategoryMarkupRules.calculateSellingPrice(
-        unitCost: unitCost,
-        category: _category,
-      );
-      _price.text = suggested.toStringAsFixed(2);
+      _price.text = eval.finalSellingPrice.toStringAsFixed(2);
       _isCalculatingPrice = false;
     }
+  }
+
+  void _setPricingMode(String mode) {
+    if (_pricingMode == mode) return;
+    setState(() {
+      _pricingMode = mode;
+      if (mode == Product.pricingModeManual) {
+        if (_manualMarkupCtrl.text.trim().isEmpty) {
+          final unitCost = _resolveActiveUnitCost();
+          final currentPrice = double.tryParse(_price.text.trim()) ?? 0.0;
+          final reversed = (currentPrice > 0 && unitCost > 0)
+              ? PricingEngine.reverseCalculateMarkupPercent(
+                  sellingPrice: currentPrice,
+                  unitCost: unitCost,
+                )
+              : null;
+          if (reversed != null) {
+            _manualMarkupCtrl.text = reversed.toStringAsFixed(2);
+          } else {
+            final eval = _evaluateCurrentPricing();
+            _manualMarkupCtrl.text =
+                eval.computedMarkupPercent.toStringAsFixed(2);
+          }
+        }
+      } else {
+        _autoCalculateSellingPrice();
+      }
+    });
+  }
+
+  void _onManualMarkupChanged(String value) {
+    if (_isCalculatingPrice) return;
+    final markupPct = double.tryParse(value.trim());
+    final unitCost = _resolveActiveUnitCost();
+    if (markupPct != null && markupPct.isFinite && unitCost > 0) {
+      final settings = context.read<InventoryProvider>().settings;
+      final newPrice = PricingEngine.calculateFinalSellingPrice(
+        unitCost: unitCost,
+        markupPercent: markupPct,
+        roundingStep: settings.priceRoundingStep,
+      );
+      _isCalculatingPrice = true;
+      _price.text = newPrice.toStringAsFixed(2);
+      _isCalculatingPrice = false;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onDirectSellingPriceChanged(String value) {
+    if (_isCalculatingPrice) return;
+    final sellingPrice = double.tryParse(value.trim());
+    final unitCost = _resolveActiveUnitCost();
+    setState(() {
+      _pricingMode = Product.pricingModeManual;
+      if (sellingPrice != null && sellingPrice.isFinite && unitCost > 0) {
+        final reversed = PricingEngine.reverseCalculateMarkupPercent(
+          sellingPrice: sellingPrice,
+          unitCost: unitCost,
+        );
+        if (reversed != null) {
+          _isCalculatingPrice = true;
+          _manualMarkupCtrl.text = reversed.toStringAsFixed(2);
+          _isCalculatingPrice = false;
+        }
+      }
+    });
+  }
+
+  Widget _buildDynamicMarkupSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final eval = _evaluateCurrentPricing();
+    final bool isAuto = _pricingMode == Product.pricingModeAuto;
+    final ProductBatch? activeBatch = _activeProduct?.activeFifoBatch;
+
+    final Color speedColor = switch (eval.speedTag) {
+      'Fast Moving' => Colors.green.shade700,
+      'Slow Moving' => Colors.orange.shade800,
+      _ => Colors.blue.shade700,
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isAuto ? Icons.auto_awesome_rounded : Icons.tune_rounded,
+                size: 16,
+                color: isAuto ? cs.primary : Colors.deepOrange.shade700,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Dynamic Markup & Pricing Mode',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (isAuto ? cs.primary : Colors.deepOrange)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isAuto ? 'AUTO' : 'ADMIN OVERRIDE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: isAuto ? cs.primary : Colors.deepOrange.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Mode Toggle: Auto-Scale Markup vs Custom Admin Markup
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment<String>(
+                value: Product.pricingModeAuto,
+                icon: Icon(Icons.auto_graph_rounded, size: 15),
+                label: Text(
+                  'Auto-Scale Markup\n(Category & Speed)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, height: 1.15),
+                ),
+              ),
+              ButtonSegment<String>(
+                value: Product.pricingModeManual,
+                icon: Icon(Icons.lock_outline_rounded, size: 15),
+                label: Text(
+                  'Custom Admin\nMarkup',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, height: 1.15),
+                ),
+              ),
+            ],
+            selected: {_pricingMode},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) {
+              if (selection.isNotEmpty) {
+                _setPricingMode(selection.first);
+              }
+            },
+          ),
+
+          // Zero-Cost / Missing-Cost Warning Banner
+          if (eval.hasInvalidCost) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade500.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade600, width: 1),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline_rounded,
+                      color: Colors.red.shade700, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      eval.warningMessage ??
+                          'Missing or zero unit cost. Markup calculation skipped to prevent invalid pricing.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red.shade800,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          if (isAuto) ...[
+            const SizedBox(height: 10),
+            // Read-Only Auto-Scale Preview Badge
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: cs.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: cs.primary.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: speedColor.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.speed_rounded,
+                                size: 13, color: speedColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${eval.speedTag} (${eval.velocityScore.toStringAsFixed(2)})',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: speedColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          eval.usedGlobalBenchmarkOnly
+                              ? 'Global Benchmark: 15.0% – 25.0%'
+                              : '${eval.categoryRange.canonicalCategory}: ${eval.categoryRange.formattedRange}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _pricingPreviewMetric(
+                          context,
+                          label: 'Computed Markup',
+                          value:
+                              '${eval.computedMarkupPercent.toStringAsFixed(1)}%',
+                          valueColor: cs.primary,
+                        ),
+                      ),
+                      Expanded(
+                        child: _pricingPreviewMetric(
+                          context,
+                          label: activeBatch != null
+                              ? 'Active FIFO Cost'
+                              : 'Unit Cost',
+                          value: eval.hasInvalidCost
+                              ? 'Missing'
+                              : formatPeso(eval.unitCost),
+                          valueColor: eval.hasInvalidCost
+                              ? Colors.red.shade700
+                              : cs.onSurface,
+                        ),
+                      ),
+                      Expanded(
+                        child: _pricingPreviewMetric(
+                          context,
+                          label: 'Final Selling Price',
+                          value: eval.hasInvalidCost
+                              ? '—'
+                              : formatPeso(eval.finalSellingPrice),
+                          valueColor: Colors.green.shade700,
+                          sublabel: eval.hasInvalidCost
+                              ? null
+                              : 'Step ${formatPeso(eval.roundingStep)}',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _manualMarkupCtrl,
+                    focusNode: _fManualMarkup,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true, signed: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^-?\d*\.?\d*'))
+                    ],
+                    onChanged: _onManualMarkupChanged,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Custom Markup %',
+                      suffixText: '%',
+                      hintText: 'e.g. 18.5',
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    validator: (v) {
+                      if (_pricingMode != Product.pricingModeManual) {
+                        return null;
+                      }
+                      final m = double.tryParse(v?.trim() ?? '');
+                      if (m == null || !m.isFinite) {
+                        return 'Enter valid %';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: _price,
+                    focusNode: _fPrice,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+                    ],
+                    onChanged: _onDirectSellingPriceChanged,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Selling Price Override *',
+                      prefixText: '₱ ',
+                      hintText: 'e.g. 35.00',
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    validator: (v) {
+                      if (_pricingMode != Product.pricingModeManual) {
+                        return null;
+                      }
+                      final p = double.tryParse(v?.trim() ?? '');
+                      if (p == null || p <= 0) {
+                        return 'Required';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Locked manual override: background sales-speed syncs will not alter this markup. If a new FIFO batch activates with a different unit cost, selling price scales from this locked markup %.',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: cs.onSurfaceVariant,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _pricingPreviewMetric(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required Color valueColor,
+    String? sublabel,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: valueColor,
+          ),
+        ),
+        if (sublabel != null)
+          Text(
+            sublabel,
+            style: TextStyle(
+              fontSize: 9.5,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _buildBelowCostWarningBanner() {
@@ -648,7 +1161,9 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         : costPrice;
     final double sellingPrice = double.tryParse(_price.text) ?? 0.0;
 
-    if (sellingPrice <= 0 || calculatedUnitCost <= 0 || sellingPrice >= calculatedUnitCost) {
+    if (sellingPrice <= 0 ||
+        calculatedUnitCost <= 0 ||
+        sellingPrice >= calculatedUnitCost) {
       return const SizedBox.shrink();
     }
 
@@ -665,7 +1180,8 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.amber.shade800, size: 20),
+          Icon(Icons.warning_amber_rounded,
+              color: Colors.amber.shade800, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -963,7 +1479,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _confirmDiscardChanges();
-        if (shouldPop && mounted) {
+        if (shouldPop && context.mounted) {
           Navigator.of(context).pop();
         }
       },
@@ -1116,12 +1632,21 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                             child: CircularProgressIndicator(
                                                 strokeWidth: 2))
                                         : (_localPhoto != null
-                                            ? Image.file(_localPhoto!,
-                                                fit: BoxFit.cover)
+                                            ? Padding(
+                                                padding:
+                                                    const EdgeInsets.all(2),
+                                                child: Image.file(_localPhoto!,
+                                                    fit: BoxFit.contain),
+                                              )
                                             : (_photoBase64 != null
-                                                ? Image.memory(
-                                                    base64Decode(_photoBase64!),
-                                                    fit: BoxFit.cover)
+                                                ? Padding(
+                                                    padding:
+                                                        const EdgeInsets.all(2),
+                                                    child: Image.memory(
+                                                        base64Decode(
+                                                            _photoBase64!),
+                                                        fit: BoxFit.contain),
+                                                  )
                                                 : Icon(
                                                     Icons.add_a_photo_outlined,
                                                     size: 24,
@@ -1303,7 +1828,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                 Expanded(
                                   child: DropdownButtonFormField<String>(
                                     isExpanded: true,
-                                    value: allCats.contains(_category)
+                                    initialValue: allCats.contains(_category)
                                         ? _category
                                         : (allCats.isNotEmpty
                                             ? allCats.first
@@ -1335,192 +1860,66 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                             ),
                             const SizedBox(height: 10),
 
-                            // Base Unit Picker (Pills + Manual Text)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _unit,
-                                        focusNode: _fUnit,
-                                        decoration: const InputDecoration(
-                                          isDense: true,
-                                          labelText: 'Base Unit *',
-                                          hintText: 'e.g. pcs, bottle',
-                                          prefixIcon: Icon(Icons.label_outlined,
-                                              size: 18),
-                                          contentPadding: EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 10),
-                                        ),
-                                        onChanged: (_) => setState(() {}),
-                                        validator: (v) {
-                                          if (v == null || v.trim().isEmpty) {
-                                            return 'Enter base unit';
-                                          }
-                                          return null;
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: [
-                                      const Text('Quick Unit: ',
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey,
-                                              fontWeight: FontWeight.bold)),
-                                      ..._commonUnits.map(
-                                        (u) => Padding(
-                                          padding:
-                                              const EdgeInsets.only(right: 4),
-                                          child: InkWell(
-                                            onTap: () {
-                                              setState(() {
-                                                _unit.text = u;
-                                              });
-                                            },
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color: _unit.text.trim() == u
-                                                    ? Theme.of(context)
-                                                        .colorScheme
-                                                        .primaryContainer
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .surface,
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                                border: Border.all(
-                                                  color: _unit.text.trim() == u
-                                                      ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                      : Theme.of(context)
-                                                          .colorScheme
-                                                          .outlineVariant,
-                                                ),
-                                              ),
-                                              child: Text(
-                                                u,
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: _unit.text.trim() == u
-                                                      ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                      : Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurface,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-
-                            // Selling Price & Unit Cost (Auto-Margin Enabled)
+                            // Unit & Stock Display (Read-Only)
                             Row(
                               children: [
-                                if (context.watch<AppAuthProvider>().role ==
-                                    UserRole.admin) ...[
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _costPrice,
-                                      focusNode: _fCostPrice,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                              decimal: true),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                            RegExp(r'^\d*\.?\d*'))
-                                      ],
-                                      decoration: const InputDecoration(
-                                        isDense: true,
-                                        labelText: 'Unit Cost *',
-                                        prefixText: '₱ ',
-                                        hintText: 'e.g. 30.00',
-                                        contentPadding: EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 10),
-                                      ),
-                                      validator: (v) {
-                                        final c = double.tryParse(v ?? '');
-                                        if (c == null || c <= 0) {
-                                          return 'Required';
-                                        }
-                                        return null;
-                                      },
-                                    ),
+                                Expanded(
+                                  child:
+                                      ValueListenableBuilder<TextEditingValue>(
+                                    valueListenable: _stock,
+                                    builder: (context, stockValue, _) {
+                                      return ValueListenableBuilder<
+                                          TextEditingValue>(
+                                        valueListenable: _unit,
+                                        builder: (context, unitValue, _) {
+                                          final stockText =
+                                              stockValue.text.isNotEmpty
+                                                  ? stockValue.text
+                                                  : "0";
+                                          final unitText =
+                                              unitValue.text.isNotEmpty
+                                                  ? unitValue.text
+                                                  : "pcs";
+                                          return TextFormField(
+                                            key: ValueKey(
+                                                'stock_display_${stockText}_$unitText'),
+                                            initialValue:
+                                                '$stockText $unitText',
+                                            readOnly: true,
+                                            decoration: const InputDecoration(
+                                              isDense: true,
+                                              labelText: 'Base Unit',
+                                              prefixIcon: Icon(
+                                                  Icons.inventory_2_outlined,
+                                                  size: 18),
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 10),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
                                   ),
-                                  const SizedBox(width: 8),
-                                ],
+                                ),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _price,
-                                    focusNode: _fPrice,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                            decimal: true),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                          RegExp(r'^\d*\.?\d*'))
-                                    ],
-                                    onChanged: (_) {
-                                      if (!_isCalculatingPrice) {
-                                        setState(() =>
-                                            _isManualPriceOverride = true);
-                                      }
-                                    },
-                                    decoration: InputDecoration(
+                                    controller: _unit,
+                                    focusNode: _fUnit,
+                                    readOnly: true,
+                                    decoration: const InputDecoration(
                                       isDense: true,
-                                      labelText: 'Selling Price *',
-                                      prefixText: '₱ ',
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 10),
-                                      suffixIcon: Tooltip(
-                                        message:
-                                            'Auto-calculate from ${(CategoryMarkupRules.getMarginForCategory(_category) * 100).toInt()}% margin',
-                                        child: IconButton(
-                                          icon: Icon(
-                                            _isManualPriceOverride
-                                                ? Icons.lock_outline_rounded
-                                                : Icons.auto_awesome_rounded,
-                                            size: 16,
-                                            color: _isManualPriceOverride
-                                                ? Colors.orange
-                                                : Theme.of(context)
-                                                    .colorScheme
-                                                    .primary,
-                                          ),
-                                          onPressed: () {
-                                            setState(() =>
-                                                _isManualPriceOverride = false);
-                                            _autoCalculateSellingPrice();
-                                          },
-                                        ),
-                                      ),
+                                      labelText: 'Net Content',
+                                      prefixIcon:
+                                          Icon(Icons.label_outlined, size: 18),
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
                                     ),
                                     validator: (v) {
-                                      final p = double.tryParse(v ?? '');
-                                      if (p == null || p <= 0) {
-                                        return 'Required.';
+                                      if (v == null || v.trim().isEmpty) {
+                                        return 'Required';
                                       }
                                       return null;
                                     },
@@ -1528,22 +1927,77 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 10),
+
+                            // Unit Cost & Dynamic Velocity-Based Markup Controls
+                            if (context.watch<AppAuthProvider>().role ==
+                                UserRole.admin) ...[
+                              TextFormField(
+                                controller: _costPrice,
+                                focusNode: _fCostPrice,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d*\.?\d*'))
+                                ],
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  labelText: 'Unit Cost (Base COGS) *',
+                                  prefixText: '₱ ',
+                                  hintText: 'e.g. 30.00',
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                ),
+                                validator: (v) {
+                                  final c = double.tryParse(v ?? '');
+                                  if (c == null || c <= 0) {
+                                    return 'Required';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              _buildDynamicMarkupSection(context),
+                            ] else if (_activeProduct != null) ...[
+                              TextFormField(
+                                controller: _price,
+                                focusNode: _fPrice,
+                                readOnly: true,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  labelText: 'Selling Price',
+                                  prefixText: '₱ ',
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                ),
+                              ),
+                            ],
                             _buildBelowCostWarningBanner(),
                             const SizedBox(height: 10),
 
-                            // Initial Quantity (Base Units)
+                            // Initial Quantity (Base Units) — read-only on existing non-variant
+                            // products because FIFO batches are the single source of truth for stock.
                             TextFormField(
                               controller: _stock,
                               focusNode: _fStock,
+                              readOnly:
+                                  _activeProduct != null && _variants.isEmpty,
                               keyboardType: TextInputType.number,
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly
                               ],
                               decoration: InputDecoration(
                                 isDense: true,
-                                labelText:
-                                    'Initial Quantity (${_unit.text.isEmpty ? 'pcs' : _unit.text}) *',
+                                labelText: _activeProduct == null
+                                    ? 'Initial Quantity (${_unit.text.isEmpty ? 'pcs' : _unit.text}) *'
+                                    : 'Current Synced Stock (${_unit.text.isEmpty ? 'pcs' : _unit.text})',
                                 hintText: 'e.g. 50',
+                                helperText: _activeProduct != null &&
+                                        _variants.isEmpty
+                                    ? 'Derived from active FIFO batches. Use Receive Delivery or Shelf Audit to change stock.'
+                                    : null,
+                                helperMaxLines: 2,
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 10),
                               ),
@@ -1556,6 +2010,127 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                               },
                             ),
                             const SizedBox(height: 10),
+
+                            if (_activeProduct == null) ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () async {
+                                        final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate: _datePurchased,
+                                          firstDate: DateTime(2020),
+                                          lastDate: DateTime.now()
+                                              .add(const Duration(days: 365)),
+                                        );
+                                        if (picked != null && mounted) {
+                                          setState(
+                                              () => _datePurchased = picked);
+                                        }
+                                      },
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .surface,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .outlineVariant,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Date Purchased',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              DateFormat('MMM dd, yyyy')
+                                                  .format(_datePurchased),
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () async {
+                                        final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate: _dateArrived,
+                                          firstDate: DateTime(2020),
+                                          lastDate: DateTime.now()
+                                              .add(const Duration(days: 365)),
+                                        );
+                                        if (picked != null && mounted) {
+                                          setState(() => _dateArrived = picked);
+                                        }
+                                      },
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.teal
+                                              .withValues(alpha: 0.06),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: Colors.teal
+                                                .withValues(alpha: 0.4),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Date Arrived (FIFO)',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.teal.shade800,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              DateFormat('MMM dd, yyyy')
+                                                  .format(_dateArrived),
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                            ],
 
                             // Batch Expiry Date Selector
                             InkWell(
@@ -1907,7 +2482,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                 Expanded(
                                   child: DropdownButtonFormField<String>(
                                     isExpanded: true,
-                                    value: inventory.uniqueParentIds
+                                    initialValue: inventory.uniqueParentIds
                                             .contains(_parentIdCtrl.text.trim())
                                         ? _parentIdCtrl.text.trim()
                                         : (_parentIdCtrl.text.trim().isNotEmpty
@@ -2042,20 +2617,23 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                                 Expanded(
                                   child: DropdownButtonFormField<String?>(
                                     isExpanded: true,
-                                    value: suppliers
+                                    initialValue: suppliers
                                             .any((s) => s.id == _supplierId)
                                         ? _supplierId
                                         : null,
-                                    decoration: const InputDecoration(
+                                    decoration: InputDecoration(
                                       isDense: true,
-                                      labelText: 'Supplier',
-                                      contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 10),
+                                      labelText: _activeProduct == null
+                                          ? 'Supplier *'
+                                          : 'Supplier',
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 10),
                                     ),
                                     items: [
                                       const DropdownMenuItem<String?>(
                                           value: null,
-                                          child: Text('None / Direct')),
+                                          child: Text('Select Supplier')),
                                       ...suppliers.map((s) =>
                                           DropdownMenuItem<String?>(
                                               value: s.id,
@@ -2337,14 +2915,29 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       }
 
       setState(() {
-        if (result.name != null && result.name!.isNotEmpty)
+        if (result.name != null && result.name!.isNotEmpty) {
           _name.text = result.name!;
-        if (result.brand != null && result.brand!.isNotEmpty)
+        }
+        if (result.brand != null && result.brand!.isNotEmpty) {
           _brand.text = result.brand!;
-        if (result.category != null && result.category!.isNotEmpty)
+        }
+        if (result.category != null && result.category!.isNotEmpty) {
           _category = result.category!;
-        if (result.barcode != null && result.barcode!.isNotEmpty)
+        }
+        if (result.barcode != null && result.barcode!.isNotEmpty) {
           _barcode.text = result.barcode!;
+        }
+        if (result.photoBase64 != null &&
+            result.photoBase64!.isNotEmpty &&
+            _photoBase64 == null &&
+            _localPhoto == null) {
+          _photoBase64 = result.photoBase64;
+        }
+        if (result.unit != null &&
+            result.unit!.isNotEmpty &&
+            (_unit.text.trim().isEmpty || _unit.text.trim() == 'pcs')) {
+          _unit.text = result.unit!;
+        }
       });
       _autoCalculateSellingPrice();
     }
@@ -2388,13 +2981,21 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     if (catalogMatch.isNotEmpty) {
       final cp = catalogMatch.first;
       setState(() {
-        _name.text = cp.name;
+        if (_name.text.trim().isEmpty) {
+          _name.text = cp.name;
+        }
         final cpb = cp.brand;
-        if (cpb != null && cpb.isNotEmpty) {
+        if (cpb != null && cpb.isNotEmpty && _brand.text.trim().isEmpty) {
           _brand.text = cpb;
         }
         if (cp.category.isNotEmpty) {
           _category = cp.category;
+        }
+        if (_photoBase64 == null &&
+            _localPhoto == null &&
+            cp.photoBase64 != null &&
+            cp.photoBase64!.isNotEmpty) {
+          _photoBase64 = cp.photoBase64;
         }
         _autoGenerateParentGroupId();
       });
@@ -2435,10 +3036,28 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
     if (extInfo != null && mounted) {
       setState(() {
-        _name.text = extInfo.name;
+        if (_name.text.trim().isEmpty) {
+          _name.text = extInfo.name;
+        }
         final extBrand = extInfo.brand;
-        if (extBrand != null && extBrand.isNotEmpty) {
+        if (extBrand != null &&
+            extBrand.isNotEmpty &&
+            _brand.text.trim().isEmpty) {
           _brand.text = extBrand;
+        }
+        if (_photoBase64 == null &&
+            _localPhoto == null &&
+            extInfo.photoBase64 != null &&
+            extInfo.photoBase64!.isNotEmpty) {
+          _photoBase64 = extInfo.photoBase64;
+        }
+        if ((_unit.text.trim().isEmpty || _unit.text.trim() == 'pcs') &&
+            extInfo.unit != null &&
+            extInfo.unit!.isNotEmpty) {
+          _unit.text = extInfo.unit!;
+        }
+        if (extInfo.category != null && extInfo.category!.isNotEmpty) {
+          _category = extInfo.category!;
         }
         _autoGenerateParentGroupId();
       });
@@ -2543,8 +3162,16 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
     final name = _name.text.trim().capitalize();
     String barcode = _barcode.text.trim();
-    final price = double.tryParse(_price.text) ?? 0;
     final costPrice = double.tryParse(_costPrice.text) ?? 0;
+    final pricingEval = _evaluateCurrentPricing();
+    final double parsedManualPrice = double.tryParse(_price.text.trim()) ?? 0.0;
+    final double price = _pricingMode == Product.pricingModeManual
+        ? (parsedManualPrice > 0
+            ? parsedManualPrice
+            : pricingEval.finalSellingPrice)
+        : (pricingEval.hasInvalidCost
+            ? parsedManualPrice
+            : pricingEval.finalSellingPrice);
     final initialQty = int.tryParse(_stock.text) ?? 0;
     final category = _category;
     final unit = _unit.text.trim().isEmpty ? 'pcs' : _unit.text.trim();
@@ -2555,6 +3182,23 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     final authProvider = context.read<AppAuthProvider>();
 
     if (_activeProduct == null) {
+      // Enforce valid supplier when creating initial stock batch
+      if (_variants.isEmpty &&
+          initialQty > 0 &&
+          (_supplierId == null ||
+              _supplierId!.trim().isEmpty ||
+              !inventoryProvider.suppliers.any((s) => s.id == _supplierId))) {
+        setState(() => _showSupplierAlerts = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Please select a valid Supplier under "Supplier & Stock Alerts" before creating an initial stock batch.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
       if (barcode.isNotEmpty) {
         final existingByBarcode = inventoryProvider.products
             .where((p) => p.barcode == barcode)
@@ -2605,6 +3249,18 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     final double calculatedUnitCost = (boxPrice > 0 && itemsPerBox > 0)
         ? (boxPrice / itemsPerBox)
         : costPrice;
+
+    final double? manualMarkupToSave = _pricingMode == Product.pricingModeManual
+        ? (double.tryParse(_manualMarkupCtrl.text.trim()) ??
+            PricingEngine.reverseCalculateMarkupPercent(
+              sellingPrice: price,
+              unitCost: calculatedUnitCost,
+            ))
+        : null;
+    final double computedMarkupToSave =
+        _pricingMode == Product.pricingModeManual && manualMarkupToSave != null
+            ? manualMarkupToSave
+            : pricingEval.computedMarkupPercent;
 
     final List<String> belowCostDetails = [];
     if (price > 0 && calculatedUnitCost > 0 && price < calculatedUnitCost) {
@@ -2681,10 +3337,17 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         costPrice: costPrice,
         stock: initialQty,
         initialStock: calculatedInitial,
+        reservedStock: _activeProduct?.reservedStock ?? 0,
+        wholesalePrice: _activeProduct?.wholesalePrice,
+        wholesaleThreshold: _activeProduct?.wholesaleThreshold,
         unit: unit,
         bulkUnit: bulkUnit,
         packCost: packCostVal,
         itemsPerCase: itemsPerCaseVal,
+        pricingMode: _pricingMode,
+        manualMarkupPercent: manualMarkupToSave,
+        salesVelocityScore: _salesVelocityScore,
+        computedMarkupPercent: computedMarkupToSave,
         barcode: barcode,
         shelfDays: _perishable ? int.tryParse(_shelf.text) : null,
         pickupWindowHours:
@@ -2700,12 +3363,17 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       );
 
       final initialBatch = ProductBatch(
-        id: const Uuid().v4(),
+        batchId: InventoryBatchService.generateBatchId(_dateArrived),
         productId: p.id,
-        quantity: initialQty,
-        unitCost: costPrice,
+        productName: name,
+        supplierId: _supplierId,
+        datePurchased: _datePurchased,
+        dateArrived: _dateArrived,
         expiryDate: _expiryDate,
-        createdAt: DateTime.now(),
+        costPrice: costPrice,
+        initialQty: initialQty,
+        remainingQty: initialQty,
+        status: initialQty > 0 ? BatchStatus.active : BatchStatus.depleted,
         invoiceNumber:
             _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       );
@@ -2739,12 +3407,16 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       final messenger = ScaffoldMessenger.of(context);
       final navigator = Navigator.of(context);
 
-      await inventoryProvider.saveProductWithBatch(
-        product: p,
-        initialBatch: initialBatch,
-        receivedBy: receivedBy,
-        notes: historyNotes,
-      );
+      if (_activeProduct == null) {
+        await inventoryProvider.saveProductWithBatch(
+          product: p,
+          initialBatch: initialBatch,
+          receivedBy: receivedBy,
+          notes: historyNotes,
+        );
+      } else {
+        await inventoryProvider.saveProduct(p);
+      }
 
       if (mounted) {
         navigator.pop();

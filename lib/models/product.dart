@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/format.dart';
+import '../utils/pricing_engine.dart';
 import 'batch.dart';
 export 'batch.dart';
 
@@ -31,8 +31,12 @@ class ProductVariant {
     this.barcode,
   });
 
+  /// Non-negative reserved quantity for pending pre-orders (guards against legacy negative drift).
+  int get effectiveReservedStock => reservedStock > 0 ? reservedStock : 0;
+
   int get availableStock {
-    final avail = stock - reservedStock;
+    final safeStock = stock > 0 ? stock : 0;
+    final avail = safeStock - effectiveReservedStock;
     return avail > 0 ? avail : 0;
   }
 
@@ -51,9 +55,10 @@ class ProductVariant {
   }
 
   factory ProductVariant.fromMap(dynamic m) {
-    if (m is! Map)
+    if (m is! Map) {
       return const ProductVariant(
           id: '', name: 'Invalid Variant', price: 0, stock: 0);
+    }
     final data = Map<String, dynamic>.from(m);
     return ProductVariant(
       id: data['id']?.toString() ?? '',
@@ -102,6 +107,10 @@ class ProductVariant {
 
 /// Core product model representing an inventory item in the sari-sari store database.
 class Product {
+  /// Accepted pricing mode constants.
+  static const String pricingModeAuto = 'auto';
+  static const String pricingModeManual = 'manual';
+
   final String id;
   final String name;
   final String? brand;
@@ -118,6 +127,19 @@ class Product {
   final String bulkUnit; // Bulk unit e.g. 'box', 'case', 'pack'
   final double? packCost; // Wholesale cost for 1 full bulk box/case
   final int? itemsPerCase; // Items per Box/Case (Pack Size)
+
+  // ── DYNAMIC VELOCITY-BASED MARKUP FIELDS (NON-BREAKING OPTIONAL SCHEMA) ──
+  /// `'auto'` (system-calculated velocity + category markup) or `'manual'` (admin-locked override).
+  final String pricingMode;
+
+  /// Admin-defined percentage (e.g., `18.5`) used ONLY when [pricingMode] == `'manual'`.
+  final double? manualMarkupPercent;
+
+  /// Normalized score from `0.0` (slowest-moving) to `1.0` (fastest-moving).
+  final double salesVelocityScore;
+
+  /// Active markup percentage applied to the current active FIFO batch `unitCost`.
+  final double computedMarkupPercent;
 
   final String? barcode;
   final int? shelfDays;
@@ -151,6 +173,10 @@ class Product {
     this.bulkUnit = 'box',
     this.packCost,
     this.itemsPerCase,
+    this.pricingMode = pricingModeAuto,
+    this.manualMarkupPercent,
+    this.salesVelocityScore = 0.5,
+    this.computedMarkupPercent = 20.0,
     this.barcode,
     this.shelfDays,
     this.pickupWindowHours,
@@ -166,9 +192,66 @@ class Product {
     this.batches = const [],
   });
 
+  /// Alias for [price] matching selling price terminology.
+  double get sellingPrice => price;
+
+  /// Whether pricing is controlled by an admin custom override.
+  bool get isManualPricing => pricingMode == pricingModeManual;
+
+  /// Whether pricing is automatically scaled by category & sales velocity.
+  bool get isAutoPricing => pricingMode != pricingModeManual;
+
+  /// Returns the currently active (oldest sellable) FIFO batch, if any.
+  ProductBatch? get activeFifoBatch {
+    final active = batches.where((b) => b.isSellable).toList();
+    if (active.isEmpty) return null;
+    active.sort(ProductBatch.compareFifo);
+    return active.first;
+  }
+
+  /// Active FIFO batch unit cost, falling back to derived/base [effectiveUnitCost].
+  double get activeFifoUnitCost {
+    final batch = activeFifoBatch;
+    if (batch != null && batch.unitCost > 0 && batch.unitCost.isFinite) {
+      return batch.unitCost;
+    }
+    return effectiveUnitCost;
+  }
+
+  /// True when cost is missing, zero, negative, or non-finite (markup math must be skipped).
+  bool get hasInvalidUnitCost =>
+      !activeFifoUnitCost.isFinite || activeFifoUnitCost <= 0;
+
+  /// Non-negative reserved stock count (guards against legacy negative drift from
+  /// unguarded decrements inflating walk-in POS availability above physical stock).
+  int get effectiveReservedStock => reservedStock > 0 ? reservedStock : 0;
+
+  /// Total non-negative reserved stock across variants or base product.
+  int get totalReservedStock => hasVariants
+      ? variants.fold(0, (acc, v) => acc + v.effectiveReservedStock)
+      : effectiveReservedStock;
+
+  /// Authoritative sellable stock derived from active, non-expired FIFO batches
+  /// using the unified [ProductBatch.isSellable] rule.
+  ///
+  /// Falls back to clamped parent `stock` only for variant products or legacy
+  /// products that have not yet been initialized with batch documents.
+  int get sellableStock {
+    if (hasVariants) {
+      return variants.fold(0, (acc, v) => acc + (v.stock > 0 ? v.stock : 0));
+    }
+    if (batches.isNotEmpty) {
+      return ProductBatch.sumSellableStock(batches);
+    }
+    return stock > 0 ? stock : 0;
+  }
+
   /// Stock physically available for sale to walk-in customers (excluding active pre-order reservations).
   int get availableStock {
-    final avail = stock - reservedStock;
+    if (hasVariants) {
+      return variants.fold(0, (acc, v) => acc + v.availableStock);
+    }
+    final avail = sellableStock - effectiveReservedStock;
     return avail > 0 ? avail : 0;
   }
 
@@ -224,12 +307,13 @@ class Product {
   /// Estimated financial loss per unit when selling price is below cost.
   double get unitLoss => isPriceBelowCost ? effectiveUnitCost - price : 0.0;
 
-  /// Expresses current base stock in terms of full bulk boxes + remaining loose pieces.
+  /// Expresses current sellable base stock in terms of full bulk boxes + remaining loose pieces.
   String get formattedBulkStock {
-    if (stock <= 0) return '0 $unit';
-    if (!hasBulkPacking) return '$stock $unit';
-    final int boxes = stock ~/ piecesPerPack;
-    final int remainder = stock % piecesPerPack;
+    final int current = totalStock;
+    if (current <= 0) return '0 $unit';
+    if (!hasBulkPacking) return '$current $unit';
+    final int boxes = current ~/ piecesPerPack;
+    final int remainder = current % piecesPerPack;
     if (boxes == 0) return '$remainder $unit';
     if (remainder == 0) return '$boxes $bulkUnit${boxes > 1 ? 'es' : ''}';
     return '$boxes $bulkUnit${boxes > 1 ? 'es' : ''}, $remainder $unit';
@@ -240,7 +324,7 @@ class Product {
   bool get hasParentGroup => parentId != null && parentId!.trim().isNotEmpty;
 
   int get effectiveInitialStock =>
-      (initialStock != null && initialStock! > 0) ? initialStock! : stock;
+      (initialStock != null && initialStock! > 0) ? initialStock! : totalStock;
 
   bool get isOutOfStockForCustomer {
     if (hasVariants) {
@@ -270,88 +354,129 @@ class Product {
     return suggested > 0 ? suggested : lowStockThreshold;
   }
 
-  /// Returns the total stock (sum of variants if they exist, otherwise base stock).
-  int get totalStock =>
-      hasVariants ? variants.fold(0, (acc, v) => acc + v.stock) : stock;
+  /// Returns authoritative sellable stock (derived from active non-expired FIFO batches
+  /// for standard products, or sum of variant stocks for variant products).
+  int get totalStock => sellableStock;
 
-  /// Returns total available stock across variants or base stock.
+  /// Returns total available stock across variants or base sellable stock minus reservations.
   int get totalAvailableStock => hasVariants
       ? variants.fold(0, (acc, v) => acc + v.availableStock)
       : availableStock;
+
+  /// Factory constructor for parsing a Firestore map with non-breaking legacy fallbacks.
+  factory Product.fromMap(Map<String, dynamic> d, {required String id}) {
+    final String rawName = d['name']?.toString() ?? 'Unnamed Product';
+    final String rawBrand = d['brand']?.toString() ?? '';
+    final String rawParentId = d['parentId']?.toString() ?? '';
+    final String category = d['category']?.toString() ?? 'Others';
+
+    final String rawPricingMode =
+        d['pricingMode']?.toString().trim().toLowerCase() ?? pricingModeAuto;
+    final String normalizedPricingMode = rawPricingMode == pricingModeManual
+        ? pricingModeManual
+        : pricingModeAuto;
+
+    final double? parsedManualMarkup =
+        double.tryParse(d['manualMarkupPercent']?.toString() ?? '');
+    final double? safeManualMarkup =
+        (parsedManualMarkup != null && parsedManualMarkup.isFinite)
+            ? parsedManualMarkup
+            : null;
+
+    final double rawVelocity =
+        double.tryParse(d['salesVelocityScore']?.toString() ?? '') ?? 0.5;
+    final double safeVelocity =
+        rawVelocity.isFinite ? rawVelocity.clamp(0.0, 1.0).toDouble() : 0.5;
+
+    final double parsedPrice =
+        double.tryParse((d['price'] ?? d['sellingPrice'])?.toString() ?? '0') ??
+            0.0;
+
+    final double? parsedComputedMarkup =
+        double.tryParse(d['computedMarkupPercent']?.toString() ?? '');
+
+    final baseProduct = Product(
+      id: id,
+      name: rawName.capitalize(),
+      brand: rawBrand.isEmpty ? null : rawBrand.capitalize(),
+      parentId: rawParentId.isEmpty ? null : rawParentId.trim(),
+      category: category,
+      price: parsedPrice,
+      costPrice: double.tryParse(d['costPrice']?.toString() ?? '0') ?? 0.0,
+      stock: int.tryParse(d['stock']?.toString() ?? '0') ?? 0,
+      reservedStock: int.tryParse(d['reservedStock']?.toString() ?? '0') ?? 0,
+      initialStock: int.tryParse(d['initialStock']?.toString() ?? ''),
+      unit: d['unit']?.toString() ?? 'pcs',
+      bulkUnit: d['bulkUnit']?.toString() ?? 'box',
+      packCost: double.tryParse(d['packCost']?.toString() ?? ''),
+      itemsPerCase: int.tryParse(
+          d['itemsPerCase']?.toString() ?? d['boxQty']?.toString() ?? ''),
+      pricingMode: normalizedPricingMode,
+      manualMarkupPercent: safeManualMarkup,
+      salesVelocityScore: safeVelocity,
+      computedMarkupPercent:
+          (parsedComputedMarkup != null && parsedComputedMarkup.isFinite)
+              ? parsedComputedMarkup
+              : 0.0,
+      barcode: d['barcode']?.toString(),
+      shelfDays: int.tryParse(d['shelfDays']?.toString() ?? ''),
+      pickupWindowHours: int.tryParse(d['pickupWindowHours']?.toString() ?? ''),
+      photoBase64: d['photoBase64']?.toString(),
+      wholesalePrice: double.tryParse(d['wholesalePrice']?.toString() ?? ''),
+      wholesaleThreshold:
+          int.tryParse(d['wholesaleThreshold']?.toString() ?? ''),
+      supplierId: d['supplierId']?.toString(),
+      expiryDate: d['expiryDate'] is Timestamp
+          ? (d['expiryDate'] as Timestamp).toDate()
+          : null,
+      status: ProductStatus.values.firstWhere(
+        (e) => e.name == (d['status'] ?? 'published'),
+        orElse: () => ProductStatus.published,
+      ),
+      lowStockThreshold:
+          (int.tryParse(d['lowStockThreshold']?.toString() ?? '5') ?? 5),
+      isTaxable: d['isTaxable'] ?? true,
+      variants: (d['variants'] is Map)
+          ? (d['variants'] as Map).entries.map((entry) {
+              final mapData = entry.value is Map
+                  ? Map<String, dynamic>.from(entry.value as Map)
+                  : <String, dynamic>{};
+              if (mapData['id'] == null || mapData['id'].toString().isEmpty) {
+                mapData['id'] = entry.key.toString();
+              }
+              return ProductVariant.fromMap(mapData);
+            }).toList()
+          : (d['variants'] is List)
+              ? (d['variants'] as List)
+                  .map((e) => ProductVariant.fromMap(e))
+                  .toList()
+              : [],
+      batches: (d['batches'] is Map)
+          ? (d['batches'] as Map)
+              .values
+              .map((e) => ProductBatch.fromMap(e))
+              .toList()
+          : (d['batches'] is List)
+              ? (d['batches'] as List)
+                  .map((e) => ProductBatch.fromMap(e))
+                  .toList()
+              : [],
+    );
+
+    if (parsedComputedMarkup != null && parsedComputedMarkup.isFinite) {
+      return baseProduct;
+    }
+
+    // Legacy document fallback: compute active markup percentage without mutating price
+    final fallbackComputedMarkup = calculateItemMarkup(baseProduct);
+    return baseProduct.copyWith(computedMarkupPercent: fallbackComputedMarkup);
+  }
 
   /// Factory constructor for parsing Firestore [DocumentSnapshot].
   factory Product.fromFirestore(DocumentSnapshot doc) {
     try {
       final d = doc.data() as Map<String, dynamic>? ?? {};
-      final String rawName = d['name']?.toString() ?? 'Unnamed Product';
-      final String rawBrand = d['brand']?.toString() ?? '';
-      final String rawParentId = d['parentId']?.toString() ?? '';
-
-      return Product(
-        id: doc.id,
-        name: rawName.capitalize(),
-        brand: rawBrand.isEmpty ? null : rawBrand.capitalize(),
-        parentId: rawParentId.isEmpty ? null : rawParentId.trim(),
-        category: d['category']?.toString() ?? 'Others',
-        price: double.tryParse(d['price']?.toString() ?? '0') ?? 0.0,
-        costPrice: double.tryParse(d['costPrice']?.toString() ?? '0') ?? 0.0,
-        stock: int.tryParse(d['stock']?.toString() ?? '0') ?? 0,
-        reservedStock: int.tryParse(d['reservedStock']?.toString() ?? '0') ?? 0,
-        initialStock: int.tryParse(d['initialStock']?.toString() ?? ''),
-        unit: d['unit']?.toString() ?? 'pcs',
-        bulkUnit: d['bulkUnit']?.toString() ?? 'box',
-        packCost: double.tryParse(d['packCost']?.toString() ?? ''),
-        itemsPerCase: int.tryParse(
-            d['itemsPerCase']?.toString() ?? d['boxQty']?.toString() ?? ''),
-        barcode: d['barcode']?.toString(),
-        shelfDays: int.tryParse(d['shelfDays']?.toString() ?? ''),
-        pickupWindowHours:
-            int.tryParse(d['pickupWindowHours']?.toString() ?? ''),
-        photoBase64: d['photoBase64']?.toString(),
-        wholesalePrice: double.tryParse(d['wholesalePrice']?.toString() ?? ''),
-        wholesaleThreshold:
-            int.tryParse(d['wholesaleThreshold']?.toString() ?? ''),
-        supplierId: d['supplierId']?.toString(),
-        expiryDate: d['expiryDate'] is Timestamp
-            ? (d['expiryDate'] as Timestamp).toDate()
-            : null,
-        status: ProductStatus.values.firstWhere(
-          (e) => e.name == (d['status'] ?? 'published'),
-          orElse: () => ProductStatus.published,
-        ),
-        lowStockThreshold:
-            (int.tryParse(d['lowStockThreshold']?.toString() ?? '5') ?? 5),
-        isTaxable: d['isTaxable'] ?? true,
-        variants: (d['variants'] is Map)
-            ? (d['variants'] as Map)
-                .entries
-                .map((entry) {
-                  final mapData = entry.value is Map
-                      ? Map<String, dynamic>.from(entry.value as Map)
-                      : <String, dynamic>{};
-                  if (mapData['id'] == null ||
-                      mapData['id'].toString().isEmpty) {
-                    mapData['id'] = entry.key.toString();
-                  }
-                  return ProductVariant.fromMap(mapData);
-                })
-                .toList()
-            : (d['variants'] is List)
-                ? (d['variants'] as List)
-                    .map((e) => ProductVariant.fromMap(e))
-                    .toList()
-                : [],
-        batches: (d['batches'] is Map)
-            ? (d['batches'] as Map)
-                .values
-                .map((e) => ProductBatch.fromMap(e))
-                .toList()
-            : (d['batches'] is List)
-                ? (d['batches'] as List)
-                    .map((e) => ProductBatch.fromMap(e))
-                    .toList()
-                : [],
-      );
+      return Product.fromMap(d, id: doc.id);
     } catch (e, stack) {
       debugPrint('Error parsing product ${doc.id}: $e');
       debugPrint('Stacktrace: $stack');
@@ -371,6 +496,7 @@ class Product {
         'parentId': parentId,
         'category': category,
         'price': price,
+        'sellingPrice': price,
         'costPrice': costPrice,
         'stock': stock,
         'reservedStock': reservedStock,
@@ -379,6 +505,10 @@ class Product {
         'bulkUnit': bulkUnit,
         'packCost': packCost,
         'itemsPerCase': itemsPerCase,
+        'pricingMode': pricingMode,
+        'manualMarkupPercent': manualMarkupPercent,
+        'salesVelocityScore': salesVelocityScore,
+        'computedMarkupPercent': computedMarkupPercent,
         'barcode': barcode,
         'shelfDays': shelfDays,
         'pickupWindowHours': pickupWindowHours,
@@ -411,6 +541,11 @@ class Product {
     String? bulkUnit,
     double? packCost,
     int? itemsPerCase,
+    String? pricingMode,
+    double? manualMarkupPercent,
+    bool clearManualMarkupPercent = false,
+    double? salesVelocityScore,
+    double? computedMarkupPercent,
     String? barcode,
     String? photoBase64,
     int? pickupWindowHours,
@@ -439,6 +574,13 @@ class Product {
         bulkUnit: bulkUnit ?? this.bulkUnit,
         packCost: packCost ?? this.packCost,
         itemsPerCase: itemsPerCase ?? this.itemsPerCase,
+        pricingMode: pricingMode ?? this.pricingMode,
+        manualMarkupPercent: clearManualMarkupPercent
+            ? null
+            : (manualMarkupPercent ?? this.manualMarkupPercent),
+        salesVelocityScore: salesVelocityScore ?? this.salesVelocityScore,
+        computedMarkupPercent:
+            computedMarkupPercent ?? this.computedMarkupPercent,
         barcode: barcode ?? this.barcode,
         shelfDays: shelfDays,
         pickupWindowHours: pickupWindowHours ?? this.pickupWindowHours,

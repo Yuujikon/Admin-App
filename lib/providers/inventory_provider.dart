@@ -15,7 +15,9 @@ import '../models/customer.dart';
 import '../models/restock_inquiry.dart';
 import '../models/delivery_log.dart';
 import '../services/firestore_service.dart';
+import '../services/inventory_batch_service.dart';
 import '../services/notification_service.dart';
+import '../utils/pricing_engine.dart';
 
 import 'base_provider.dart';
 
@@ -23,7 +25,11 @@ import 'base_provider.dart';
 /// supplier records, customer profiles, and store settings.
 class InventoryProvider extends BaseProvider {
   final _fs = FirestoreService();
+  final _batchService = InventoryBatchService();
 
+  List<Product> _rawProducts = [];
+  Map<String, List<ProductBatch>> _liveBatchesByProductId = {};
+  bool _hasLiveBatchStream = false;
   List<Product> _products = [];
   List<CatalogProduct> _catalog = [];
   List<StoreTransaction> _transactions = [];
@@ -185,6 +191,121 @@ class InventoryProvider extends BaseProvider {
 
   Map<String, int> get recentMovementCounts => _cachedRecentCounts ?? {};
 
+  // ── Dynamic Velocity-Based Markup Engine Helpers ──────────────────────────
+
+  /// Computes normalized velocity scores (`0.0` slowest to `1.0` fastest) across all products
+  /// using the configured rolling window (`7` or `30` days) from [StoreSettings].
+  Map<String, double> get liveVelocityScores =>
+      PricingEngine.computeVelocityScores(
+        products: _products,
+        transactions: _transactions,
+        windowDays: _settings.velocityWindowDays,
+      );
+
+  /// Returns the live normalized sales velocity score (`0.0`–`1.0`) for [product].
+  double getLiveVelocityScore(Product product) {
+    final scores = liveVelocityScores;
+    return scores[product.id] ?? product.salesVelocityScore;
+  }
+
+  /// Products missing a valid unit cost (`activeFifoUnitCost <= 0`) that need admin attention.
+  List<Product> get zeroCostProducts =>
+      _products.where((p) => p.hasInvalidUnitCost).toList();
+
+  /// Syncs rolling sales velocity scores and recalculates selling prices for all
+  /// `'auto'` priced products in Firestore while strictly preserving `'manual'` overrides
+  /// and safely skipping zero-cost items (`unitCost <= 0`).
+  Future<VelocitySyncSummary> syncVelocityBasedPricing({
+    int? windowDays,
+  }) async {
+    final int effectiveWindow = windowDays ?? _settings.velocityWindowDays;
+    final Map<String, double> scores = PricingEngine.computeVelocityScores(
+      products: _products,
+      transactions: _transactions,
+      windowDays: effectiveWindow,
+    );
+
+    final List<Map<String, dynamic>> batchUpdates = [];
+    int updatedAutoCount = 0;
+    int preservedManualCount = 0;
+    int skippedZeroCostCount = 0;
+
+    for (final p in _products) {
+      final double newVelocity = scores[p.id] ?? p.salesVelocityScore;
+
+      // Priority 1: Admin Override — NEVER overwrite manualMarkupPercent or price during velocity syncs.
+      if (p.pricingMode == Product.pricingModeManual &&
+          p.manualMarkupPercent != null) {
+        preservedManualCount++;
+        if ((newVelocity - p.salesVelocityScore).abs() > 0.001) {
+          batchUpdates.add({
+            'id': p.id,
+            'data': {
+              'salesVelocityScore': newVelocity,
+            },
+          });
+        }
+        continue;
+      }
+
+      // Priority 2 & 3: Auto-Scale Markup
+      final updatedCandidate = p.copyWith(salesVelocityScore: newVelocity);
+      final double newMarkup = calculateItemMarkup(
+        updatedCandidate,
+        useGlobalBenchmarkOnly: _settings.useGlobalVelocityBenchmarkOnly,
+      );
+      final double activeCost = p.activeFifoUnitCost;
+
+      if (!activeCost.isFinite || activeCost <= 0) {
+        skippedZeroCostCount++;
+        if ((newVelocity - p.salesVelocityScore).abs() > 0.001 ||
+            (newMarkup - p.computedMarkupPercent).abs() > 0.001) {
+          batchUpdates.add({
+            'id': p.id,
+            'data': {
+              'salesVelocityScore': newVelocity,
+              'computedMarkupPercent': newMarkup,
+            },
+          });
+        }
+        continue;
+      }
+
+      final double newSellingPrice = PricingEngine.calculateFinalSellingPrice(
+        unitCost: activeCost,
+        markupPercent: newMarkup,
+        roundingStep: _settings.priceRoundingStep,
+      );
+
+      final bool changed = (newVelocity - p.salesVelocityScore).abs() > 0.001 ||
+          (newMarkup - p.computedMarkupPercent).abs() > 0.001 ||
+          (newSellingPrice - p.price).abs() > 0.001;
+
+      if (changed && newSellingPrice > 0) {
+        updatedAutoCount++;
+        batchUpdates.add({
+          'id': p.id,
+          'data': {
+            'salesVelocityScore': newVelocity,
+            'computedMarkupPercent': newMarkup,
+            'price': newSellingPrice,
+            'sellingPrice': newSellingPrice,
+          },
+        });
+      }
+    }
+
+    if (batchUpdates.isNotEmpty) {
+      await _fs.batchUpdateProductPricing(batchUpdates);
+    }
+
+    return VelocitySyncSummary(
+      updatedAutoCount: updatedAutoCount,
+      preservedManualCount: preservedManualCount,
+      skippedZeroCostCount: skippedZeroCostCount,
+    );
+  }
+
   /// Get all child products belonging to a parent variant group ID
   List<Product> getProductsByParentId(String parentId) {
     final cleanId = parentId.trim().toLowerCase();
@@ -232,11 +353,30 @@ class InventoryProvider extends BaseProvider {
     );
   }
 
+  void _rebuildProductsWithLiveBatches() {
+    if (!_hasLiveBatchStream) {
+      _products = List<Product>.from(_rawProducts);
+    } else {
+      _products = _rawProducts.map((p) {
+        if (p.hasVariants) return p;
+        final liveBatches = _liveBatchesByProductId[p.id];
+        if (liveBatches != null && liveBatches.isNotEmpty) {
+          return p.copyWith(batches: liveBatches);
+        }
+        return p;
+      }).toList();
+    }
+    _cachedSortedProducts = null;
+  }
+
   void initialize() {
     cancelSubscriptions();
     _statusTransitionTimer?.cancel();
     _cachedSortedProducts = null;
     _cachedRecentCounts = null;
+    _rawProducts = [];
+    _liveBatchesByProductId = {};
+    _hasLiveBatchStream = false;
 
     _isProductsLoading = true;
     _isCatalogLoading = true;
@@ -275,10 +415,25 @@ class InventoryProvider extends BaseProvider {
       _isProductsLoading = false;
       notifyListeners();
     }).listen((list) {
-      _products = list;
-      _cachedSortedProducts = null;
+      _rawProducts = list;
+      _rebuildProductsWithLiveBatches();
       _isProductsLoading = false;
       notifyListeners();
+    }));
+
+    // Live collectionGroup stream of products/{productId}/batches so Inventory,
+    // POS, and View Batches always derive sellable stock from the exact same live batches.
+    // Gracefully falls back to parent document batches mirror if rules aren't deployed yet.
+    registerSubscription(_fs.allBatchesGroupStream().handleError((e) {
+      debugPrint(
+          'Live batches collectionGroup stream unavailable (falling back to product mirror): $e');
+    }).listen((batchesMap) {
+      _liveBatchesByProductId = batchesMap;
+      _hasLiveBatchStream = true;
+      if (_rawProducts.isNotEmpty) {
+        _rebuildProductsWithLiveBatches();
+        notifyListeners();
+      }
     }));
 
     registerSubscription(_fs.catalogStream().handleError((e) {
@@ -442,7 +597,7 @@ class InventoryProvider extends BaseProvider {
     if (product.id.isNotEmpty) {
       try {
         final old = _products.firstWhere((p) => p.id == product.id);
-        if (old.stock <= 0 && product.stock > 0) {
+        if (old.totalStock <= 0 && product.totalStock > 0) {
           _notifyBackInStock(product);
         }
       } catch (_) {}
@@ -472,17 +627,25 @@ class InventoryProvider extends BaseProvider {
   Future<void> saveProductWithBatch({
     required Product product,
     required ProductBatch initialBatch,
+    String? supplierName,
     String? receivedBy,
     String? notes,
   }) async {
-    if (initialBatch.expiryDate == null) {
-      throw ArgumentError(
-          'Batch expiration date is mandatory to maintain strict inventory control.');
+    String? resolvedSupplierName = supplierName ?? initialBatch.supplierName;
+    if ((resolvedSupplierName == null || resolvedSupplierName.isEmpty) &&
+        product.supplierId != null &&
+        product.supplierId!.isNotEmpty) {
+      try {
+        resolvedSupplierName =
+            _suppliers.firstWhere((s) => s.id == product.supplierId).name;
+      } catch (_) {}
     }
+
     await _fs.saveProductWithBatch(
       product: product,
       initialBatch: initialBatch,
-      receivedBy: receivedBy,
+      supplierName: resolvedSupplierName,
+      receivedBy: receivedBy ?? _adminName,
       notes: notes,
     );
     notifyListeners();
@@ -506,41 +669,70 @@ class InventoryProvider extends BaseProvider {
 
   // ── Goods Receiving / Restock Delivery ──────────────────────────────────────
 
-  /// Receives stock delivery with optional Bulk-to-Single UOM conversion.
+  /// Receives stock delivery with optional Bulk-to-Single UOM conversion and FIFO batch tracking.
   Future<void> receiveDeliveryWithUom({
     required Product product,
     required int inputQuantity, // Could be 50 pieces OR 2 boxes
     required double inputCost, // Could be ₱20/pc OR ₱480/box
+    int extraLooseUnits = 0, // Optional loose base units alongside bulk boxes
     bool isBulkDelivery = false,
+    DateTime? datePurchased,
+    DateTime? dateArrived,
     DateTime? batchExpiryDate,
+    String? supplierId,
+    String? supplierName,
     String? invoiceNumber,
     String? notes,
   }) async {
-    if (batchExpiryDate == null) {
-      throw ArgumentError(
-          'Batch expiration date is mandatory to maintain strict inventory control.');
-    }
     final int sanitizedQty = inputQuantity < 0 ? 0 : inputQuantity;
+    final int sanitizedExtra = extraLooseUnits < 0 ? 0 : extraLooseUnits;
     final double sanitizedCost = inputCost < 0 ? 0.0 : inputCost;
 
-    // 1. Convert to Base Units (Pieces)
+    // 1. Convert to Base Units (Pieces), preserving any extra loose units in bulk mode
     final int totalBaseUnits = isBulkDelivery
-        ? product.convertBulkToUnits(sanitizedQty)
+        ? (product.convertBulkToUnits(sanitizedQty) + sanitizedExtra)
         : sanitizedQty;
 
     // 2. Convert to Unit Cost (COGS per piece)
     final double calculatedPieceCost = isBulkDelivery
-        ? product.calculateUnitCostFromPack(sanitizedCost)
+        ? (sanitizedExtra > 0 && totalBaseUnits > 0
+            ? double.parse(
+                ((sanitizedQty * sanitizedCost) / totalBaseUnits)
+                    .toStringAsFixed(2),
+              )
+            : product.calculateUnitCostFromPack(sanitizedCost))
         : sanitizedCost;
 
-    // 3. Create the FIFO Batch
+    final DateTime effectiveArrived = dateArrived ?? DateTime.now();
+    final DateTime effectivePurchased = datePurchased ?? effectiveArrived;
+    final String? effectiveSupplierId =
+        (supplierId != null && supplierId.trim().isNotEmpty)
+            ? supplierId.trim()
+            : product.supplierId?.trim();
+    String? effectiveSupplierName = supplierName;
+    if ((effectiveSupplierName == null || effectiveSupplierName.isEmpty) &&
+        effectiveSupplierId != null &&
+        effectiveSupplierId.isNotEmpty) {
+      try {
+        effectiveSupplierName =
+            _suppliers.firstWhere((s) => s.id == effectiveSupplierId).name;
+      } catch (_) {}
+    }
+
+    // 3. Create the FIFO Batch with human-readable BATCH-YYYYMMDD-XXXX ID
     final newBatch = ProductBatch(
-      id: const Uuid().v4(),
+      batchId: InventoryBatchService.generateBatchId(effectiveArrived),
       productId: product.id,
-      quantity: totalBaseUnits,
-      unitCost: calculatedPieceCost,
+      productName: product.name,
+      supplierId: effectiveSupplierId,
+      supplierName: effectiveSupplierName,
+      datePurchased: effectivePurchased,
+      dateArrived: effectiveArrived,
       expiryDate: batchExpiryDate,
-      createdAt: DateTime.now(),
+      costPrice: calculatedPieceCost,
+      initialQty: totalBaseUnits,
+      remainingQty: totalBaseUnits,
+      status: BatchStatus.active,
       invoiceNumber: invoiceNumber,
     );
 
@@ -549,16 +741,100 @@ class InventoryProvider extends BaseProvider {
       updatedProduct = product.copyWith(packCost: sanitizedCost);
     }
 
-    // 4. Execute atomic batch write
+    // 4. Execute atomic Firestore transaction via InventoryBatchService
     await _fs.processSingleDeliveryAtomic(
       product: updatedProduct,
       newBatch: newBatch,
       receivedBy: _adminName,
+      supplierName: effectiveSupplierName,
       invoiceNumber: invoiceNumber,
       notes: notes,
+      settings: _settings,
     );
 
     notifyListeners();
+  }
+
+  /// Synchronizes a single product's `stock`, `reservedStock`, and batch statuses
+  /// from its authoritative `products/{productId}/batches` subcollection.
+  Future<int> syncProductStockFromBatches(String productId) async {
+    final result = await _batchService.reconcileProductStock(
+      productId,
+      dryRun: false,
+    );
+    notifyListeners();
+    return result.newStock;
+  }
+
+  /// Admin utility to safely reconcile a single product's stock, expired/depleted
+  /// batch statuses, and `reservedStock` from open orders.
+  Future<ProductStockReconciliationResult> reconcileProductStock(
+    String productId, {
+    bool dryRun = false,
+  }) async {
+    final result = await _batchService.reconcileProductStock(
+      productId,
+      dryRun: dryRun,
+    );
+    if (!dryRun) {
+      notifyListeners();
+    }
+    return result;
+  }
+
+  /// Admin utility to safely reconcile ALL products across the store.
+  Future<InventoryReconciliationReport> reconcileAllStock({
+    bool dryRun = false,
+    String? defaultFallbackSupplierId,
+  }) async {
+    final report = await _batchService.reconcileAllStock(
+      dryRun: dryRun,
+      defaultFallbackSupplierId: defaultFallbackSupplierId,
+    );
+    if (!dryRun) {
+      notifyListeners();
+    }
+    return report;
+  }
+
+  /// Atomically reconciles physical shelf counts against `products/{productId}/batches`.
+  Future<int> reconcileProductBatches({
+    required String productId,
+    required Map<String, int> physicalQtyByBatchId,
+  }) async {
+    final synced = await _batchService.reconcileProductBatchesAtomic(
+      productId: productId,
+      physicalQtyByBatchId: physicalQtyByBatchId,
+      performedByName: _adminName,
+      settings: _settings,
+    );
+    notifyListeners();
+    return synced;
+  }
+
+  /// Runs global orphan-supplier and batch-to-stock reconciliation audit.
+  Future<InventoryReconciliationReport> auditAndReconcileInventory({
+    bool dryRun = true,
+    String? defaultFallbackSupplierId,
+  }) async {
+    final report = await _batchService.auditAndReconcileInventory(
+      dryRun: dryRun,
+      defaultFallbackSupplierId: defaultFallbackSupplierId,
+    );
+    if (!dryRun) {
+      notifyListeners();
+    }
+    return report;
+  }
+
+  /// Synchronous lookup of a cached [Supplier] by ID, or null if not found.
+  Supplier? findSupplierById(String? supplierId) {
+    final id = supplierId?.trim() ?? '';
+    if (id.isEmpty) return null;
+    for (final s in _suppliers) {
+      if (s.id == id) return s;
+    }
+    return null;
   }
 
   Future<void> receiveDelivery({
@@ -566,7 +842,11 @@ class InventoryProvider extends BaseProvider {
     required int qtyReceived,
     required double unitCost,
     bool isBulkDelivery = false,
+    DateTime? datePurchased,
+    DateTime? dateArrived,
     DateTime? batchExpiryDate,
+    String? supplierId,
+    String? supplierName,
     String? invoiceNumber,
     String? notes,
   }) async {
@@ -575,7 +855,11 @@ class InventoryProvider extends BaseProvider {
       inputQuantity: qtyReceived,
       inputCost: unitCost,
       isBulkDelivery: isBulkDelivery,
+      datePurchased: datePurchased,
+      dateArrived: dateArrived,
       batchExpiryDate: batchExpiryDate,
+      supplierId: supplierId,
+      supplierName: supplierName,
       invoiceNumber: invoiceNumber,
       notes: notes,
     );
@@ -584,12 +868,16 @@ class InventoryProvider extends BaseProvider {
   Future<void> processInquiryDelivery({
     required RestockInquiry inquiry,
     required List<Map<String, dynamic>> receivedItemData,
+    DateTime? datePurchased,
+    DateTime? dateArrived,
     String? invoiceNumber,
     String? notes,
   }) async {
     bool isShortDelivery = false;
     final List<DeliveryItemPayload> deliveryPayloads = [];
     final List<RestockInquiryItem> updatedInquiryItems = [];
+    final DateTime effectivePurchased = datePurchased ?? inquiry.createdAt;
+    final DateTime effectiveArrived = dateArrived ?? DateTime.now();
 
     for (final expectedItem in inquiry.items) {
       final itemMap = receivedItemData.firstWhere(
@@ -624,12 +912,18 @@ class InventoryProvider extends BaseProvider {
             _products.firstWhere((p) => p.id == expectedItem.productId);
 
         final newBatch = ProductBatch(
-          id: const Uuid().v4(),
+          batchId: InventoryBatchService.generateBatchId(effectiveArrived),
           productId: prod.id,
-          quantity: qtyRec,
-          unitCost: unitCost > 0 ? unitCost : prod.costPrice,
+          productName: prod.name,
+          supplierId: inquiry.supplierId,
+          supplierName: inquiry.supplierName,
+          datePurchased: effectivePurchased,
+          dateArrived: effectiveArrived,
           expiryDate: expDate,
-          createdAt: DateTime.now(),
+          costPrice: unitCost > 0 ? unitCost : prod.costPrice,
+          initialQty: qtyRec,
+          remainingQty: qtyRec,
+          status: BatchStatus.active,
           invoiceNumber: invoiceNumber,
         );
 
@@ -658,9 +952,12 @@ class InventoryProvider extends BaseProvider {
       newStatus: newStatus,
       items: deliveryPayloads,
       receivedBy: _adminName,
+      supplierId: inquiry.supplierId,
+      supplierName: inquiry.supplierName,
       updatedInquiryItems: updatedInquiryItems.map((i) => i.toMap()).toList(),
       invoiceNumber: invoiceNumber,
       notes: notes,
+      settings: _settings,
     );
 
     notifyListeners();
@@ -686,6 +983,17 @@ class InventoryProvider extends BaseProvider {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Hydrates the latest supplier profile directly from Firestore, falling back to cached state on offline error.
+  Future<Supplier?> fetchSupplierFresh(String id) async {
+    try {
+      final fresh = await _fs.fetchSupplierById(id);
+      if (fresh != null) return fresh;
+    } catch (e) {
+      debugPrint('fetchSupplierFresh fallback to cache: $e');
+    }
+    return getSupplierById(id);
   }
 
   Future<void> saveSupplier(Supplier s) {
@@ -721,26 +1029,27 @@ class InventoryProvider extends BaseProvider {
       TransactionType type = TransactionType.inStore}) async {
     if (_isProcessingSale) throw Exception('Transaction in progress');
 
-    // 1. Final stock check against current local state (synced via snapshots)
+    // 1. Final stock check against current local live state (synced via snapshots)
     for (var item in cart) {
       try {
         final p = _products.firstWhere((p) => p.id == item.productId);
         if (item.variantId != null) {
           final v = p.variants.firstWhere((v) => v.id == item.variantId);
-          if (v.stock < item.qty) {
+          if (v.availableStock < item.qty) {
             throw Exception(
-                '${p.name} (${v.name}) is now out of stock or has insufficient quantity (${v.stock} remaining).');
+                '${p.name} (${v.name}) is now out of stock or has insufficient available quantity (${v.availableStock} available).');
           }
         } else {
-          if (p.stock < item.qty) {
+          if (p.availableStock < item.qty) {
             throw Exception(
-                '${p.name} is now out of stock or has insufficient quantity (${p.stock} remaining).');
+                '${p.name} is now out of stock or has insufficient available quantity (${p.availableStock} available).');
           }
         }
       } catch (e) {
-        if (e is StateError)
+        if (e is StateError) {
           throw Exception(
               'Product ${item.name} no longer exists in inventory.');
+        }
         rethrow;
       }
     }
@@ -754,13 +1063,9 @@ class InventoryProvider extends BaseProvider {
       final double change =
           paymentMethod == PaymentMethod.cash ? (cash - total) : 0.0;
 
-      // 1. Apply local optimistic stock deduction & build accurate line items with totalCogs & depletedBatches
-      final List<CartItem> processedItems =
-          _applyLocalOptimisticStockDeductionAndBuildLineItems(cart);
-
-      final tx = StoreTransaction(
+      final txDraft = StoreTransaction(
         id: const Uuid().v4(),
-        items: processedItems,
+        items: cart,
         total: total,
         cashTendered: paymentMethod == PaymentMethod.cash ? cash : 0.0,
         changeGiven: change,
@@ -771,8 +1076,27 @@ class InventoryProvider extends BaseProvider {
         type: type,
       );
 
-      // 2. Commit WriteBatch to local cache (works 100% offline & auto-syncs)
-      await _fs.recordSaleOfflineFirst(tx: tx, cachedProducts: _products);
+      // Atomic Firestore transaction FIFO batch deduction + batchAllocations stamping
+      final checkoutResult = await _batchService.deductStockFIFO(
+        items: cart,
+        transactionToWrite: txDraft,
+        settings: _settings,
+        performedByName: _adminName,
+      );
+
+      final tx = checkoutResult.transaction ??
+          StoreTransaction(
+            id: txDraft.id,
+            items: checkoutResult.processedItems,
+            total: total,
+            cashTendered: paymentMethod == PaymentMethod.cash ? cash : 0.0,
+            changeGiven: change,
+            createdAt: txDraft.createdAt,
+            customerId: customerId,
+            customerEmail: customerEmail,
+            paymentMethod: paymentMethod,
+            type: type,
+          );
 
       // Trigger heads-up payment pop-up alert (catch errors so notification issues never block sale)
       try {
@@ -789,10 +1113,11 @@ class InventoryProvider extends BaseProvider {
         try {
           final p = _products.firstWhere((p) => p.id == item.productId);
           final int remainingStock = item.variantId != null
-              ? p.variants.firstWhere((v) => v.id == item.variantId).stock -
-                  item.qty
-              : p.stock - item.qty;
-          if (remainingStock <= 5) {
+              ? (p.variants.firstWhere((v) => v.id == item.variantId).stock -
+                      item.qty)
+                  .clamp(0, 999999)
+              : (p.totalStock - item.qty).clamp(0, 999999);
+          if (remainingStock <= p.lowStockThreshold) {
             _notifySupplierLowStock(p);
           }
         } catch (_) {}
@@ -803,123 +1128,6 @@ class InventoryProvider extends BaseProvider {
       _isProcessingSale = false;
       notifyListeners();
     }
-  }
-
-  List<CartItem> _applyLocalOptimisticStockDeductionAndBuildLineItems(
-      List<CartItem> cart) {
-    final List<CartItem> processedItems = [];
-
-    for (final item in cart) {
-      final index = _products.indexWhere((p) => p.id == item.productId);
-      if (index >= 0) {
-        final p = _products[index];
-
-        if (item.variantId != null) {
-          final updatedVariants = p.variants.map((v) {
-            if (v.id == item.variantId) {
-              return v.copyWith(stock: (v.stock - item.qty).clamp(0, 999999));
-            }
-            return v;
-          }).toList();
-
-          _products[index] = p.copyWith(
-            stock: (p.stock - item.qty).clamp(0, 999999),
-            variants: updatedVariants,
-          );
-
-          final double lineCogs = item.costPrice * item.qty;
-          processedItems.add(item.copyWith(
-            totalCogs: lineCogs,
-            costPrice: item.costPrice,
-            depletedBatches: [
-              BatchDepletionRecord(
-                  batchId: 'variant-${item.variantId}',
-                  quantity: item.qty,
-                  unitCost: item.costPrice)
-            ],
-          ));
-        } else {
-          int remainingToDeduct = item.qty;
-          final List<ProductBatch> currentBatches = List.from(p.batches);
-
-          currentBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-          final List<ProductBatch> updatedBatches = [];
-          final List<BatchDepletionRecord> depletedBatches = [];
-          double lineItemTotalCogs = 0.0;
-
-          for (final b in currentBatches) {
-            if (remainingToDeduct <= 0) {
-              updatedBatches.add(b);
-              continue;
-            }
-
-            if (b.quantity > remainingToDeduct) {
-              final int deductedQty = remainingToDeduct;
-              lineItemTotalCogs += (deductedQty * b.unitCost);
-              depletedBatches.add(BatchDepletionRecord(
-                batchId: b.id,
-                quantity: deductedQty,
-                unitCost: b.unitCost,
-              ));
-
-              updatedBatches.add(ProductBatch(
-                id: b.id,
-                productId: b.productId,
-                quantity: b.quantity - deductedQty,
-                unitCost: b.unitCost,
-                expiryDate: b.expiryDate,
-                createdAt: b.createdAt,
-                invoiceNumber: b.invoiceNumber,
-              ));
-              remainingToDeduct = 0;
-            } else {
-              final int deductedQty = b.quantity;
-              lineItemTotalCogs += (deductedQty * b.unitCost);
-              depletedBatches.add(BatchDepletionRecord(
-                batchId: b.id,
-                quantity: deductedQty,
-                unitCost: b.unitCost,
-              ));
-              remainingToDeduct -= deductedQty;
-            }
-          }
-
-          if (remainingToDeduct > 0) {
-            final double fallbackCost = p.costPrice;
-            lineItemTotalCogs += (remainingToDeduct * fallbackCost);
-            depletedBatches.add(BatchDepletionRecord(
-              batchId: 'fallback-unbatched',
-              quantity: remainingToDeduct,
-              unitCost: fallbackCost,
-            ));
-          }
-
-          _products[index] = p.copyWith(
-            stock: (p.stock - item.qty).clamp(0, 999999),
-            batches: updatedBatches,
-          );
-
-          final double weightedCostPrice =
-              item.qty > 0 ? (lineItemTotalCogs / item.qty) : item.costPrice;
-
-          final String fallbackBarcode =
-              item.barcode.isNotEmpty ? item.barcode : (p.barcode ?? '');
-
-          processedItems.add(item.copyWith(
-            barcode: fallbackBarcode,
-            costPrice: weightedCostPrice,
-            totalCogs: lineItemTotalCogs,
-            depletedBatches: depletedBatches,
-          ));
-        }
-      } else {
-        processedItems.add(item);
-      }
-    }
-    _cachedSortedProducts = null;
-    notifyListeners();
-    return processedItems;
   }
 
   void _notifySupplierLowStock(Product p) {
@@ -961,21 +1169,13 @@ class InventoryProvider extends BaseProvider {
       notifyListeners();
     }
 
-    await _fs.processApprovedRefund(updatedReq, _adminName);
+    await _fs.processApprovedRefund(
+      updatedReq,
+      _adminName,
+      settings: _settings,
+    );
 
-    // 2. Find and update the original Order status if it exists
-    final orderSnap = await FirebaseFirestore.instance
-        .collection('orders')
-        .where('orderId', isEqualTo: request.transactionId)
-        .limit(1)
-        .get();
-
-    if (orderSnap.docs.isNotEmpty) {
-      await _fs.updateOrderStatus(
-          orderSnap.docs.first.id, OrderStatus.refunded);
-    }
-
-    // 3. Send notification to customer with store response
+    // Send notification to customer with store response
     await NotificationService.sendRefundUpdate(
         request.transactionId, request.customerEmail, true,
         storeResponse: notes);

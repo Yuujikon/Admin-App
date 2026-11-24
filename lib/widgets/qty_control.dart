@@ -101,8 +101,8 @@ class _QtyControlState extends State<QtyControl> {
   }
 
   Widget _buildStepButton(String label, int delta) {
-    final bool isDisabled =
-        (delta > 0 && widget.qty >= _maxVal) || (delta < 0 && widget.qty <= widget.min);
+    final bool isDisabled = (delta > 0 && widget.qty >= _maxVal) ||
+        (delta < 0 && widget.qty <= widget.min);
 
     final isMajorStep = delta == 5 || delta == -5;
     final colorScheme = Theme.of(context).colorScheme;
@@ -135,9 +135,8 @@ class _QtyControlState extends State<QtyControl> {
               style: TextStyle(
                 fontSize: isMajorStep ? 11 : 13,
                 fontWeight: FontWeight.w800,
-                color: isMajorStep
-                    ? colorScheme.primary
-                    : colorScheme.onSurface,
+                color:
+                    isMajorStep ? colorScheme.primary : colorScheme.onSurface,
               ),
             ),
           ),

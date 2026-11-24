@@ -10,6 +10,7 @@ import '../providers/printer_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
+import '../utils/pricing_engine.dart';
 import '../utils/totp.dart';
 import 'user_management_screen.dart';
 import 'supplier_management_screen.dart';
@@ -46,8 +47,6 @@ class MoreManagementScreen extends StatelessWidget {
 
     final bool isAdmin = auth.role == UserRole.admin;
     final bool isTrusted = auth.role == UserRole.trustedPartner;
-
-    final semantic = Theme.of(context).semantic;
 
     return Container(
       color: Theme.of(context).colorScheme.surface,
@@ -257,8 +256,8 @@ class MoreManagementScreen extends StatelessWidget {
                     icon: Icons.inventory_2_outlined,
                     iconBg: const Color(0xFFFFEDD5),
                     iconColor: const Color(0xFFEA580C),
-                    title: 'Categories, Bundles & Groups',
-                    subtitle: 'Master Categories, Meal Sets & Variant Families',
+                    title: 'Product Variant Groups',
+                    subtitle: 'Manage Product Variant Families',
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -315,6 +314,16 @@ class MoreManagementScreen extends StatelessWidget {
                     subtitle:
                         'Set Pickup Time Limits For Perishable, Mixed & Standard Items',
                     onTap: () => _showOrderExpirationModal(context),
+                  ),
+                  _menuItemCard(
+                    context,
+                    icon: Icons.auto_graph_rounded,
+                    iconBg: const Color(0xFFD1FAE5),
+                    iconColor: const Color(0xFF047857),
+                    title: 'Dynamic Pricing & Markup Rules',
+                    subtitle:
+                        'Configure Velocity Scaling, Rounding Step & Sync Auto-Scaled Prices',
+                    onTap: () => _showDynamicPricingModal(context),
                   ),
                   _menuItemCard(
                     context,
@@ -493,14 +502,6 @@ class MoreManagementScreen extends StatelessWidget {
         UserRole.trustedPartner => 'Trusted Partner',
         UserRole.none => 'Guest',
       };
-
-  Color _getRoleColor(UserRole role, BuildContext context) {
-    return switch (role) {
-      UserRole.admin => GdcColors.violetAccent,
-      UserRole.trustedPartner => const Color(0xFFC07038),
-      UserRole.none => Theme.of(context).disabledColor,
-    };
-  }
 }
 
 // ── Account Security (Google Authenticator 2FA) ─────────────────────────────
@@ -988,7 +989,8 @@ class _MyStaffAccountSection extends StatelessWidget {
                       color: Colors.deepPurple.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.history_rounded, color: Colors.deepPurple),
+                    child: const Icon(Icons.history_rounded,
+                        color: Colors.deepPurple),
                   ),
                   title: const Text('System Audit Logs',
                       style:
@@ -998,8 +1000,10 @@ class _MyStaffAccountSection extends StatelessWidget {
                       style: TextStyle(fontSize: 11)),
                   trailing: const Icon(Icons.chevron_right_rounded, size: 20),
                   onTap: () {
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const AuditLogScreen()));
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const AuditLogScreen()));
                   },
                 ),
                 ListTile(
@@ -2288,6 +2292,320 @@ class _ExpirationCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+void _showDynamicPricingModal(BuildContext context) {
+  final auth = context.read<AppAuthProvider>();
+  if (auth.role != UserRole.admin) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+            'Access Denied: Store Admin privileges required to configure dynamic pricing rules.'),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+
+  showDialog(
+    context: context,
+    builder: (ctx) => const _DynamicPricingSettingsDialog(),
+  );
+}
+
+class _DynamicPricingSettingsDialog extends StatefulWidget {
+  const _DynamicPricingSettingsDialog();
+
+  @override
+  State<_DynamicPricingSettingsDialog> createState() =>
+      _DynamicPricingSettingsDialogState();
+}
+
+class _DynamicPricingSettingsDialogState
+    extends State<_DynamicPricingSettingsDialog> {
+  late bool _useGlobalBenchmarkOnly;
+  late double _priceRoundingStep;
+  late int _velocityWindowDays;
+  bool _initialized = false;
+  bool _isSaving = false;
+  bool _isSyncing = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final settings = context.read<InventoryProvider>().settings;
+      _useGlobalBenchmarkOnly = settings.useGlobalVelocityBenchmarkOnly;
+      _priceRoundingStep = settings.priceRoundingStep;
+      _velocityWindowDays = settings.velocityWindowDays;
+      _initialized = true;
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    setState(() => _isSaving = true);
+    try {
+      final inventory = context.read<InventoryProvider>();
+      final updated = inventory.settings.copyWith(
+        useGlobalVelocityBenchmarkOnly: _useGlobalBenchmarkOnly,
+        priceRoundingStep: _priceRoundingStep,
+        velocityWindowDays: _velocityWindowDays,
+      );
+      await inventory.saveStoreSettings(updated);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Dynamic pricing settings updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save dynamic pricing settings: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _saveAndSyncPrices() async {
+    setState(() => _isSyncing = true);
+    try {
+      final inventory = context.read<InventoryProvider>();
+      final updated = inventory.settings.copyWith(
+        useGlobalVelocityBenchmarkOnly: _useGlobalBenchmarkOnly,
+        priceRoundingStep: _priceRoundingStep,
+        velocityWindowDays: _velocityWindowDays,
+      );
+      await inventory.saveStoreSettings(updated);
+      final summary = await inventory.syncVelocityBasedPricing(
+        windowDays: _velocityWindowDays,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        final warningSuffix = summary.skippedZeroCostCount > 0
+            ? ' • ${summary.skippedZeroCostCount} zero-cost skipped'
+            : '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Synced ${summary.updatedAutoCount} auto-scaled items • ${summary.preservedManualCount} manual overrides preserved$warningSuffix.',
+            ),
+            backgroundColor: summary.skippedZeroCostCount > 0
+                ? Colors.amber.shade900
+                : Colors.green.shade700,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Velocity pricing sync failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final zeroCostCount =
+        context.watch<InventoryProvider>().zeroCostProducts.length;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.auto_graph_rounded, color: cs.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Dynamic Pricing & Markup',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Configure velocity-based auto-markup scaling and Philippine sari-sari price rounding. Products locked in Custom Admin Markup mode are never overwritten during syncs.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Toggle: Category Bounds vs Pure 15%–25% Global Benchmark
+              SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                title: const Text(
+                  'Use Pure 15%–25% Across All Categories',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                ),
+                subtitle: Text(
+                  _useGlobalBenchmarkOnly
+                      ? 'Applies 15.0% (Slow) – 25.0% (Fast) uniformly to every category.'
+                      : 'Default: Uses category-sensitive bounds (e.g. Staples 5–15%, Personal Care 20–30%) and 15–25% for Others.',
+                  style: const TextStyle(fontSize: 11.5),
+                ),
+                value: _useGlobalBenchmarkOnly,
+                onChanged: (v) => setState(() => _useGlobalBenchmarkOnly = v),
+              ),
+              const Divider(height: 20),
+
+              // Philippine Sari-Sari Store Rounding Step
+              Text(
+                'Philippine Selling Price Rounding Step',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<double>(
+                segments: PricingEngine.supportedRoundingSteps
+                    .map(
+                      (step) => ButtonSegment<double>(
+                        value: step,
+                        label: Text('₱${step.toStringAsFixed(2)}'),
+                      ),
+                    )
+                    .toList(),
+                selected: {_priceRoundingStep},
+                onSelectionChanged: (s) {
+                  if (s.isNotEmpty) {
+                    setState(() => _priceRoundingStep = s.first);
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Rolling Sales Velocity Window
+              Text(
+                'Sales Velocity Rolling Window',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment<int>(value: 7, label: Text('Last 7 Days')),
+                  ButtonSegment<int>(value: 30, label: Text('Last 30 Days')),
+                ],
+                selected: {_velocityWindowDays},
+                onSelectionChanged: (s) {
+                  if (s.isNotEmpty) {
+                    setState(() => _velocityWindowDays = s.first);
+                  }
+                },
+              ),
+
+              if (zeroCostCount > 0) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade500.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.shade700),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 18, color: Colors.amber.shade900),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$zeroCostCount product(s) currently have zero/missing unit cost and will be safely skipped during auto-pricing sync.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.amber.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Sync Auto-Scaled Prices Action
+              OutlinedButton.icon(
+                onPressed:
+                    (_isSaving || _isSyncing) ? null : _saveAndSyncPrices,
+                icon: _isSyncing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync_rounded, size: 18),
+                label: Text(_isSyncing
+                    ? 'Syncing Velocity Prices...'
+                    : 'Save & Sync Auto-Scaled Prices Now'),
+              ),
+              const SizedBox(height: 10),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: (_isSaving || _isSyncing)
+                        ? null
+                        : () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: (_isSaving || _isSyncing) ? null : _saveSettings,
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save Settings'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

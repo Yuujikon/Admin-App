@@ -89,8 +89,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
     setState(() => _saving = true);
     try {
       final updatedItems = _getUpdatedItems();
-      final bool fullyQuoted = updatedItems.every(
-          (i) => i.quotedUnitPrice != null && i.quotedUnitPrice! > 0);
+      final bool fullyQuoted = updatedItems
+          .every((i) => i.quotedUnitPrice != null && i.quotedUnitPrice! > 0);
 
       final updatedRfq = widget.rfq.copyWith(
         items: updatedItems,
@@ -102,7 +102,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Quoted unit prices updated successfully.')),
+          const SnackBar(
+              content: Text('Quoted unit prices updated successfully.')),
         );
         Navigator.of(context).pop();
       }
@@ -121,7 +122,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
     if (!_isFullyQuoted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('All items must have a valid unit price before converting to PO.')),
+            content: Text(
+                'All items must have a valid unit price before converting to PO.')),
       );
       return;
     }
@@ -157,6 +159,7 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
 
     setState(() => _saving = true);
 
@@ -177,7 +180,7 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
 
       final procurement = context.read<ProcurementProvider>();
       await procurement.updateRfq(updatedRfq);
-      final poId = await procurement.convertRfqToPurchaseOrder(updatedRfq, poNumber);
+      await procurement.convertRfqToPurchaseOrder(updatedRfq, poNumber);
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -253,9 +256,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
                         'Supplier: ${widget.rfq.supplierName} • Created ${DateFormat('MMM d, yyyy').format(widget.rfq.createdAt)}',
                         style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant),
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -359,13 +361,12 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
                 itemBuilder: (context, index) {
                   final item = _items[index];
                   final ctrl = _priceControllers[item.productId];
-                  final double price =
-                      double.tryParse(ctrl?.text ?? '') ?? 0.0;
+                  final double price = double.tryParse(ctrl?.text ?? '') ?? 0.0;
                   final double lineTotal = item.requestedQty * price;
 
                   return Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 8, horizontal: 4),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                     child: Row(
                       children: [
                         Expanded(
@@ -459,7 +460,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
             // Live Grand Total Card
             PremiumCard(
               padding: const EdgeInsets.all(14),
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHigh,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -477,9 +479,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
                         '${widget.rfq.totalRequestedQty} total items requested',
                         style: TextStyle(
                             fontSize: 11,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant),
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -522,7 +523,8 @@ class _RfqDetailDialogState extends State<RfqDetailDialog> {
                       icon: const Icon(Icons.shopping_cart_checkout_rounded,
                           size: 18),
                       label: const Text('CONVERT TO PO'),
-                      onPressed: _isFullyQuoted ? _convertToPurchaseOrder : null,
+                      onPressed:
+                          _isFullyQuoted ? _convertToPurchaseOrder : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal.shade800,
                         foregroundColor: Colors.white,

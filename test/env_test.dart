@@ -7,7 +7,8 @@ void main() {
 
   test('environment variables load and parse successfully', () {
     final envFile = File('assets/.env');
-    expect(envFile.existsSync(), isTrue, reason: 'assets/.env file should exist');
+    expect(envFile.existsSync(), isTrue,
+        reason: 'assets/.env file should exist');
 
     final content = envFile.readAsStringSync();
     dotenv.testLoad(fileInput: content);

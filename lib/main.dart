@@ -541,8 +541,8 @@ class _EmailVerificationRequiredViewState
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer
-                            .withValues(alpha: 0.4),
+                        color:
+                            colorScheme.primaryContainer.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -582,10 +582,9 @@ class _EmailVerificationRequiredViewState
                     const SizedBox(height: 16),
                     Text.rich(
                       TextSpan(
-                        style:
-                            Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  height: 1.4,
-                                ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              height: 1.4,
+                            ),
                         children: [
                           const TextSpan(
                               text: 'A verification link was sent to:\n'),

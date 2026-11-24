@@ -240,7 +240,7 @@ class ExpensesScreen extends StatelessWidget {
                   Expanded(
                       child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: [
+                          initialValue: [
                             'Operations',
                             'Supplies',
                             'Utilities',

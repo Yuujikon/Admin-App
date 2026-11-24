@@ -306,8 +306,11 @@ class _RefundCard extends StatelessWidget {
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          Image.memory(base64Decode(req.photoBase64!),
-                              fit: BoxFit.cover, width: 100, height: 100),
+                          Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Image.memory(base64Decode(req.photoBase64!),
+                                fit: BoxFit.contain, width: 100, height: 100),
+                          ),
                           Container(
                             color: Colors.black.withValues(alpha: 0.2),
                             child: const Icon(Icons.zoom_in_rounded,
@@ -467,26 +470,46 @@ class _RefundCard extends StatelessWidget {
                           style: TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 6),
-                      RadioListTile<RefundCondition>(
-                        title: const Text('Restockable / Return to Shelf',
-                            style: TextStyle(fontSize: 13)),
-                        value: RefundCondition.restockable,
+                      RadioGroup<RefundCondition>(
                         groupValue: condition,
                         onChanged: (v) => setSt(() => condition = v),
-                      ),
-                      RadioListTile<RefundCondition>(
-                        title: const Text('Damaged Item',
-                            style: TextStyle(fontSize: 13)),
-                        value: RefundCondition.damaged,
-                        groupValue: condition,
-                        onChanged: (v) => setSt(() => condition = v),
-                      ),
-                      RadioListTile<RefundCondition>(
-                        title: const Text('Expired Item',
-                            style: TextStyle(fontSize: 13)),
-                        value: RefundCondition.expired,
-                        groupValue: condition,
-                        onChanged: (v) => setSt(() => condition = v),
+                        child: const Column(
+                          children: [
+                            RadioListTile<RefundCondition>(
+                              title: Text(
+                                  'Option A — Good Condition (Restock to Original Batch)',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              subtitle: Text(
+                                  'Restores qty to original FIFO batch and increments stock.',
+                                  style: TextStyle(fontSize: 11)),
+                              value: RefundCondition.restockable,
+                            ),
+                            RadioListTile<RefundCondition>(
+                              title: Text(
+                                  'Option B — Damaged / Defective (Write-Off)',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              subtitle: Text(
+                                  'Logs write-off against original batch without restocking.',
+                                  style: TextStyle(fontSize: 11)),
+                              value: RefundCondition.damaged,
+                            ),
+                            RadioListTile<RefundCondition>(
+                              title: Text(
+                                  'Option B — Expired / Spoilage (Write-Off)',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              subtitle: Text(
+                                  'Logs expiration write-off against original batch without restocking.',
+                                  style: TextStyle(fontSize: 11)),
+                              value: RefundCondition.expired,
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       const Text('2. Store Response to Customer (Mandatory *):',

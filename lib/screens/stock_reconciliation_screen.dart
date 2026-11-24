@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../models/product.dart';
-import '../models/loss_record.dart';
 import '../providers/inventory_provider.dart';
-import '../services/firestore_service.dart';
+import '../providers/procurement_provider.dart';
+import '../services/inventory_batch_service.dart';
 import '../utils/format.dart';
-import '../widgets/premium_components.dart';
 import '../widgets/action_warning_dialog.dart';
+import '../widgets/premium_components.dart';
 
 class StockReconciliationScreen extends StatefulWidget {
   final Product? initialProduct;
@@ -22,42 +22,59 @@ class StockReconciliationScreen extends StatefulWidget {
 }
 
 class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
+  final InventoryBatchService _batchService = InventoryBatchService();
   Product? _selectedProduct;
   final Map<String, TextEditingController> _batchCountControllers = {};
+  List<ProductBatch> _latestLiveBatches = const [];
   bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
     _selectedProduct = widget.initialProduct;
-    if (_selectedProduct != null) {
-      _initControllersForProduct(_selectedProduct!);
-    }
   }
 
-  void _initControllersForProduct(Product product) {
-    for (var controller in _batchCountControllers.values) {
+  void _clearControllers() {
+    for (final controller in _batchCountControllers.values) {
       controller.dispose();
     }
     _batchCountControllers.clear();
+  }
 
-    for (var b in product.batches) {
-      _batchCountControllers[b.id] =
-          TextEditingController(text: b.quantity.toString());
+  void _resetControllersToLiveBatches(List<ProductBatch> batches) {
+    _clearControllers();
+    for (final b in batches) {
+      _batchCountControllers[b.batchId] =
+          TextEditingController(text: b.remainingQty.toString());
+    }
+  }
+
+  void _ensureControllersForBatches(List<ProductBatch> batches) {
+    final activeIds = batches.map((b) => b.batchId).toSet();
+    final staleIds = _batchCountControllers.keys
+        .where((id) => !activeIds.contains(id))
+        .toList();
+    for (final id in staleIds) {
+      _batchCountControllers.remove(id)?.dispose();
+    }
+    for (final b in batches) {
+      _batchCountControllers.putIfAbsent(
+        b.batchId,
+        () => TextEditingController(text: b.remainingQty.toString()),
+      );
     }
   }
 
   @override
   void dispose() {
-    for (var controller in _batchCountControllers.values) {
-      controller.dispose();
-    }
+    _clearControllers();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
+    final procurement = context.watch<ProcurementProvider>();
     final products = inventory.products;
 
     if (_selectedProduct != null) {
@@ -71,12 +88,18 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
       appBar: AppBar(
         title: const Text('Inventory Audit & Reconciliation'),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.sync_problem_rounded, size: 18),
+            label: const Text('Sync & Orphan Audit'),
+            onPressed: () => _showGlobalAuditDialog(context, inventory),
+          ),
           if (_selectedProduct != null)
             IconButton(
               icon: const Icon(Icons.refresh_rounded),
               tooltip: 'Reset Physical Counts',
-              onPressed: () =>
-                  setState(() => _initControllersForProduct(_selectedProduct!)),
+              onPressed: () => setState(
+                () => _resetControllersToLiveBatches(_latestLiveBatches),
+              ),
             ),
         ],
       ),
@@ -129,7 +152,8 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                             onSelected: (Product p) {
                               setState(() {
                                 _selectedProduct = p;
-                                _initControllersForProduct(p);
+                                _latestLiveBatches = const [];
+                                _clearControllers();
                               });
                             },
                             fieldViewBuilder: (context, textController,
@@ -157,6 +181,8 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                                             textController.clear();
                                             setState(() {
                                               _selectedProduct = null;
+                                              _latestLiveBatches = const [];
+                                              _clearControllers();
                                             });
                                           },
                                         )
@@ -167,6 +193,8 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                                       val != _selectedProduct!.name) {
                                     setState(() {
                                       _selectedProduct = null;
+                                      _latestLiveBatches = const [];
+                                      _clearControllers();
                                     });
                                   }
                                 },
@@ -265,19 +293,56 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                         'Choose a product above to inspect expected batches and reconcile physical counts.',
                   ),
                 )
-              else ...[
+              else
                 Expanded(
-                  child: ListView(
-                    children: [
-                      _buildProductSummaryHeader(_selectedProduct!),
-                      const SizedBox(height: 16),
-                      _buildBatchesAuditList(_selectedProduct!),
-                    ],
+                  child: StreamBuilder<List<ProductBatch>>(
+                    stream: _batchService.batchesStream(_selectedProduct!.id),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting &&
+                          !snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final liveBatches = List<ProductBatch>.from(
+                        snapshot.hasData
+                            ? snapshot.data!
+                            : _selectedProduct!.batches,
+                      )..sort(ProductBatch.compareFifo);
+
+                      _latestLiveBatches = liveBatches;
+                      _ensureControllersForBatches(liveBatches);
+
+                      return Column(
+                        children: [
+                          Expanded(
+                            child: ListView(
+                              children: [
+                                _buildProductSummaryHeader(
+                                  _selectedProduct!,
+                                  liveBatches,
+                                  inventory,
+                                ),
+                                const SizedBox(height: 16),
+                                _buildBatchesAuditList(
+                                  _selectedProduct!,
+                                  liveBatches,
+                                  inventory,
+                                  procurement,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildActionFooter(
+                            _selectedProduct!,
+                            liveBatches,
+                            inventory,
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(height: 12),
-                _buildActionFooter(_selectedProduct!, inventory),
-              ],
             ],
           ),
         ),
@@ -285,13 +350,17 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
     );
   }
 
-  Widget _buildProductSummaryHeader(Product p) {
-    final int systemTotal = p.batches.fold(0, (s, b) => s + b.quantity);
+  Widget _buildProductSummaryHeader(
+    Product p,
+    List<ProductBatch> batches,
+    InventoryProvider inventory,
+  ) {
+    final int systemTotal = InventoryBatchService.sumActiveBatchStock(batches);
     int physicalTotal = 0;
 
-    for (var b in p.batches) {
-      final ctrl = _batchCountControllers[b.id];
-      final val = int.tryParse(ctrl?.text ?? '') ?? b.quantity;
+    for (final b in batches) {
+      final ctrl = _batchCountControllers[b.batchId];
+      final val = int.tryParse(ctrl?.text ?? '') ?? b.remainingQty;
       physicalTotal += val;
     }
 
@@ -301,37 +370,105 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
         : (discrepancy < 0
             ? Theme.of(context).colorScheme.error
             : Colors.orange.shade800);
+    final bool hasParentDrift = p.variants.isEmpty &&
+        (p.stock != systemTotal ||
+            p.reservedStock < 0 ||
+            batches.any((b) => b.isExpired && b.status == BatchStatus.active));
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-            color: Theme.of(context)
-                .colorScheme
-                .outlineVariant
-                .withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _summaryColumn('Expected System Qty', '$systemTotal ${p.unit}',
-              Colors.blue.shade800),
+    return Column(
+      children: [
+        if (hasParentDrift)
           Container(
-              width: 1,
-              height: 36,
-              color: Theme.of(context).colorScheme.outlineVariant),
-          _summaryColumn('Actual Physical Qty', '$physicalTotal ${p.unit}',
-              Colors.black87),
-          Container(
-              width: 1,
-              height: 36,
-              color: Theme.of(context).colorScheme.outlineVariant),
-          _summaryColumn('Discrepancy Variance',
-              '${discrepancy > 0 ? '+' : ''}$discrepancy ${p.unit}', discColor),
-        ],
-      ),
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.amber.shade400),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.sync_problem_rounded,
+                    color: Colors.amber.shade900, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Parent stock (${p.stock} ${p.unit}, reserved ${p.reservedStock}) is out of sync with valid sellable batches ($systemTotal ${p.unit}).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.amber.shade900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: _isProcessing
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          try {
+                            final res =
+                                await inventory.reconcileProductStock(p.id);
+                            if (mounted) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Reconciled "${p.name}": ${res.newStock} ${p.unit} sellable, ${res.newReservedStock} reserved (${res.expiredBatchesMarked} expired marked).'),
+                                  backgroundColor: Colors.green.shade700,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text('Sync failed: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  child: const Text('Sync Now'),
+                ),
+              ],
+            ),
+          ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _summaryColumn('Expected Batch Qty', '$systemTotal ${p.unit}',
+                  Colors.blue.shade800),
+              Container(
+                  width: 1,
+                  height: 36,
+                  color: Theme.of(context).colorScheme.outlineVariant),
+              _summaryColumn('Actual Physical Qty', '$physicalTotal ${p.unit}',
+                  Theme.of(context).colorScheme.onSurface),
+              Container(
+                  width: 1,
+                  height: 36,
+                  color: Theme.of(context).colorScheme.outlineVariant),
+              _summaryColumn(
+                  'Discrepancy Variance',
+                  '${discrepancy > 0 ? '+' : ''}$discrepancy ${p.unit}',
+                  discColor),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -349,15 +486,17 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
     );
   }
 
-  Widget _buildBatchesAuditList(Product p) {
-    final batches = List<ProductBatch>.from(p.batches);
-    batches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
+  Widget _buildBatchesAuditList(
+    Product p,
+    List<ProductBatch> batches,
+    InventoryProvider inventory,
+    ProcurementProvider procurement,
+  ) {
     if (batches.isEmpty) {
       return const PremiumEmptyState(
         icon: Icons.assignment_late_outlined,
         title: 'No Batches Found',
-        subtitle: 'This product has no active delivery batches recorded.',
+        subtitle: 'This product has no delivery batches recorded.',
       );
     }
 
@@ -365,7 +504,7 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Active Batches (FIFO Sorted)',
+          'Live Batches (FIFO Sorted • ${batches.length} total)',
           style: Theme.of(context)
               .textTheme
               .titleMedium
@@ -378,16 +517,24 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
           itemCount: batches.length,
           itemBuilder: (context, index) {
             final b = batches[index];
-            final ctrl = _batchCountControllers[b.id] ??=
-                TextEditingController(text: b.quantity.toString());
-            final int physicalVal = int.tryParse(ctrl.text) ?? b.quantity;
-            final int batchDiff = physicalVal - b.quantity;
+            final ctrl = _batchCountControllers[b.batchId] ??=
+                TextEditingController(text: b.remainingQty.toString());
+            final int physicalVal = int.tryParse(ctrl.text) ?? b.remainingQty;
+            final int batchDiff = physicalVal - b.remainingQty;
 
             final now = DateTime.now();
             final bool isExpired =
                 b.expiryDate != null && b.expiryDate!.isBefore(now);
             final int daysRemaining =
                 b.expiryDate?.difference(now).inDays ?? 999;
+            final resolvedPo = procurement.resolvePoNumberForBatch(b);
+            final supplierName = procurement.resolveSupplierNameForBatch(
+                  b,
+                  suppliers: inventory.suppliers,
+                  fallbackProductSupplierId: p.supplierId,
+                ) ??
+                'Unlinked Supplier';
+            final bool isUnlinkedSupplier = !b.hasValidSupplier;
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
@@ -410,7 +557,9 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: (isExpired ? Colors.red : Colors.green)
+                        color: (isExpired
+                                ? Colors.red
+                                : (b.isDepleted ? Colors.grey : Colors.green))
                             .withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -418,7 +567,11 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                         isExpired
                             ? Icons.event_busy_rounded
                             : Icons.inventory_2_rounded,
-                        color: isExpired ? Colors.red : Colors.green.shade700,
+                        color: isExpired
+                            ? Colors.red
+                            : (b.isDepleted
+                                ? Colors.grey.shade600
+                                : Colors.green.shade700),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -426,14 +579,54 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Batch #${b.id.length >= 8 ? b.id.substring(0, 8) : b.id}',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 13),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  b.primaryReference(
+                                      resolvedPoNumber: resolvedPo),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isUnlinkedSupplier) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.shade100,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'UNLINKED',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Received: ${DateFormat('MMM d, yyyy').format(b.createdAt)} • Cost: ${formatPeso(b.unitCost)}',
+                            'Supplier: $supplierName • System: ${b.remainingQty} ${p.unit}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isUnlinkedSupplier
+                                  ? Colors.orange.shade900
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            'Received: ${DateFormat('MMM d, yyyy').format(b.dateArrived)} • Cost: ${formatPeso(b.costPrice)}',
                             style: const TextStyle(
                                 fontSize: 11, color: Colors.grey),
                           ),
@@ -485,19 +678,23 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
     );
   }
 
-  Widget _buildActionFooter(Product p, InventoryProvider inventory) {
+  Widget _buildActionFooter(
+    Product p,
+    List<ProductBatch> batches,
+    InventoryProvider inventory,
+  ) {
     int totalDiff = 0;
-    for (var b in p.batches) {
-      final ctrl = _batchCountControllers[b.id];
-      final val = int.tryParse(ctrl?.text ?? '') ?? b.quantity;
-      totalDiff += (val - b.quantity);
+    for (final b in batches) {
+      final ctrl = _batchCountControllers[b.batchId];
+      final val = int.tryParse(ctrl?.text ?? '') ?? b.remainingQty;
+      totalDiff += (val - b.remainingQty);
     }
 
     return Center(
       child: PrimaryButton(
         onPressed: (_isProcessing || totalDiff == 0)
             ? null
-            : () => _reconcileStock(p, inventory),
+            : () => _reconcileStock(p, batches, inventory),
         isLoading: _isProcessing,
         icon: Icons.check_circle_rounded,
         backgroundColor: totalDiff < 0
@@ -516,19 +713,27 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
   }
 
   Future<void> _reconcileStock(
-      Product product, InventoryProvider inventory) async {
+    Product product,
+    List<ProductBatch> liveBatches,
+    InventoryProvider inventory,
+  ) async {
+    final Map<String, int> physicalQtyByBatchId = {};
+    final int systemTotal =
+        InventoryBatchService.sumActiveBatchStock(liveBatches);
     int previewNetAdj = 0;
-    for (var b in product.batches) {
-      final ctrl = _batchCountControllers[b.id];
-      final newQty = int.tryParse(ctrl?.text ?? '') ?? b.quantity;
-      previewNetAdj += (newQty - b.quantity);
+
+    for (final b in liveBatches) {
+      final ctrl = _batchCountControllers[b.batchId];
+      final newQty = int.tryParse(ctrl?.text ?? '') ?? b.remainingQty;
+      physicalQtyByBatchId[b.batchId] = newQty;
+      previewNetAdj += (newQty - b.remainingQty);
     }
 
     final confirm = await ActionWarningDialog.show(
       context,
       title: 'Confirm Stock Reconciliation?',
       message:
-          'You are about to adjust stock for "${product.name}" by ${previewNetAdj > 0 ? '+' : ''}$previewNetAdj ${product.unit}.',
+          'You are about to atomically reconcile batches for "${product.name}" by ${previewNetAdj > 0 ? '+' : ''}$previewNetAdj ${product.unit}.',
       confirmLabel: 'Reconcile Stock',
       cancelLabel: 'Cancel',
       severity: previewNetAdj < 0
@@ -537,83 +742,30 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
       icon: Icons.inventory_2_rounded,
       details: [
         'Product: ${product.name}',
-        'Current Total Stock: ${product.stock} ${product.unit}',
-        'New Stock Level: ${product.stock + previewNetAdj} ${product.unit}',
+        'Current Active Batch Total: $systemTotal ${product.unit}',
+        'New Reconciled Total: ${(systemTotal + previewNetAdj).clamp(0, 999999)} ${product.unit}',
+        'All supplier & PO metadata on every batch will be preserved.',
         if (previewNetAdj < 0)
-          'Discrepancy shortage of ${previewNetAdj.abs()} will be logged as inventory loss.',
+          'Shortage of ${previewNetAdj.abs()} ${product.unit} will be logged atomically as inventory loss.',
       ],
     );
 
-    if (!confirm) return;
+    if (!confirm || !mounted) return;
 
     setState(() => _isProcessing = true);
 
     try {
-      final List<ProductBatch> updatedBatches = [];
-      int netAdjustment = 0;
-
-      for (var b in product.batches) {
-        final ctrl = _batchCountControllers[b.id];
-        final newQty = int.tryParse(ctrl?.text ?? '') ?? b.quantity;
-        final diff = newQty - b.quantity;
-
-        if (diff != 0) {
-          netAdjustment += diff;
-
-          // If discrepancy (shortage/loss), log a LossRecord
-          if (diff < 0) {
-            final int lostQty = diff.abs();
-            await inventory.logLoss(LossRecord(
-              id: '',
-              productId: product.id,
-              productName: product.name,
-              qty: lostQty,
-              unitPrice: b.unitCost > 0 ? b.unitCost : product.costPrice,
-              type: LossType.damaged,
-              notes:
-                  'Audit Discrepancy Reconciliation on Batch #${b.id.length >= 8 ? b.id.substring(0, 8) : b.id}',
-              createdAt: DateTime.now(),
-            ));
-          } else if (diff > 0) {
-            // If discrepancy (overage/surplus), log a DeliveryLog / Stock arrival record
-            await FirestoreService().logStockArrival(
-              productId: product.id,
-              productName: product.name,
-              qtyReceived: diff,
-              unitCost: b.unitCost > 0 ? b.unitCost : product.costPrice,
-              expiryDate: b.expiryDate,
-              invoiceNumber: b.invoiceNumber,
-              receivedBy: 'Shelf Audit (Overage)',
-              notes:
-                  'Audit Discrepancy Overage Adjustment on Batch #${b.id.length >= 8 ? b.id.substring(0, 8) : b.id}',
-            );
-          }
-        }
-
-        updatedBatches.add(ProductBatch(
-          id: b.id,
-          productId: b.productId,
-          quantity: newQty,
-          unitCost: b.unitCost,
-          expiryDate: b.expiryDate,
-          createdAt: b.createdAt,
-          invoiceNumber: b.invoiceNumber,
-        ));
-      }
-
-      final int newTotalStock =
-          (product.stock + netAdjustment).clamp(0, 999999);
-      final updatedProduct = product.copyWith(
-        stock: newTotalStock,
-        batches: updatedBatches,
+      final syncedTotal = await inventory.reconcileProductBatches(
+        productId: product.id,
+        physicalQtyByBatchId: physicalQtyByBatchId,
       );
-
-      await inventory.saveProduct(updatedProduct);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Reconciliation Complete for "${product.name}" ✅'),
+            content: Text(
+              'Reconciled "${product.name}" atomically (Stock: $syncedTotal ${product.unit}).',
+            ),
             backgroundColor: Colors.green.shade700,
           ),
         );
@@ -631,5 +783,273 @@ class _StockReconciliationScreenState extends State<StockReconciliationScreen> {
         setState(() => _isProcessing = false);
       }
     }
+  }
+
+  Future<void> _showGlobalAuditDialog(
+    BuildContext context,
+    InventoryProvider inventory,
+  ) async {
+    InventoryReconciliationReport? report;
+    String? error;
+    bool loading = true;
+    bool applying = false;
+    String? fallbackSupplierId;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            if (loading && report == null && error == null) {
+              inventory.auditAndReconcileInventory(dryRun: true).then((r) {
+                if (ctx.mounted) {
+                  setDialogState(() {
+                    report = r;
+                    loading = false;
+                  });
+                }
+              }).catchError((Object e) {
+                if (ctx.mounted) {
+                  setDialogState(() {
+                    error = e.toString();
+                    loading = false;
+                  });
+                }
+              });
+            }
+
+            final currentReport = report;
+            final suppliers = inventory.suppliers;
+
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.sync_problem_rounded, color: Colors.orange),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text('Global Batch & Supplier Audit'),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 560,
+                child: loading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 14),
+                            Text(
+                                'Scanning suppliers, batches, and inventory stock...'),
+                          ],
+                        ),
+                      )
+                    : error != null
+                        ? Text('Audit failed: $error',
+                            style: const TextStyle(color: Colors.red))
+                        : currentReport == null
+                            ? const SizedBox.shrink()
+                            : SingleChildScrollView(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Scanned ${currentReport.productsScanned} products and ${currentReport.batchesScanned} batches.',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (!currentReport.hasIssues)
+                                      Container(
+                                        padding: const EdgeInsets.all(14),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade50,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                              color: Colors.green.shade300),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.check_circle_rounded,
+                                                color: Colors.green.shade700),
+                                            const SizedBox(width: 10),
+                                            const Expanded(
+                                              child: Text(
+                                                'All batches have valid supplier links and all inventory stock counts match active batch totals.',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    else ...[
+                                      Text(
+                                        'Out-of-Sync Products (${currentReport.stockDrifts.length})',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      if (currentReport.stockDrifts.isEmpty)
+                                        const Text(
+                                          'No stock count mismatches found.',
+                                          style: TextStyle(
+                                              fontSize: 12, color: Colors.grey),
+                                        )
+                                      else
+                                        ...currentReport.stockDrifts
+                                            .take(20)
+                                            .map(
+                                              (d) => Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 3),
+                                                child: Text(
+                                                  '• ${d.productName}: stock ${d.storedStock} → ${d.activeBatchSum} (${d.delta >= 0 ? '+' : ''}${d.delta})'
+                                                  '${d.hasReservedDrift ? ', reserved ${d.storedReservedStock} → ${d.expectedReservedStock}' : ''}'
+                                                  '${d.expiredBatchesDetected > 0 ? ', ${d.expiredBatchesDetected} expired' : ''}'
+                                                  '${d.embeddedMirrorOutOfSync ? ' [mirror stale]' : ''}',
+                                                  style: const TextStyle(
+                                                      fontSize: 12),
+                                                ),
+                                              ),
+                                            ),
+                                      const SizedBox(height: 14),
+                                      Text(
+                                        'Orphan / Unlinked Batches (${currentReport.orphanBatches.length})',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      if (currentReport.orphanBatches.isEmpty)
+                                        const Text(
+                                          'All batches are linked to valid suppliers.',
+                                          style: TextStyle(
+                                              fontSize: 12, color: Colors.grey),
+                                        )
+                                      else ...[
+                                        ...currentReport.orphanBatches
+                                            .take(20)
+                                            .map(
+                                              (o) => Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 3),
+                                                child: Text(
+                                                  '• ${o.productName} [${o.batchId}] (qty ${o.remainingQty}): ${o.reason}'
+                                                  '${o.suggestedSupplierName != null ? ' → Auto-link: ${o.suggestedSupplierName}' : ''}',
+                                                  style: const TextStyle(
+                                                      fontSize: 12),
+                                                ),
+                                              ),
+                                            ),
+                                        if (suppliers.isNotEmpty) ...[
+                                          const SizedBox(height: 12),
+                                          DropdownButtonFormField<String?>(
+                                            initialValue: fallbackSupplierId,
+                                            isExpanded: true,
+                                            decoration: const InputDecoration(
+                                              labelText:
+                                                  'Optional Fallback Supplier (for unresolvable orphans)',
+                                              isDense: true,
+                                              border: OutlineInputBorder(),
+                                            ),
+                                            items: [
+                                              const DropdownMenuItem<String?>(
+                                                value: null,
+                                                child: Text(
+                                                    'None (only auto-link via PO/Product)'),
+                                              ),
+                                              ...suppliers.map(
+                                                (s) =>
+                                                    DropdownMenuItem<String?>(
+                                                  value: s.id,
+                                                  child: Text(s.name),
+                                                ),
+                                              ),
+                                            ],
+                                            onChanged: applying
+                                                ? null
+                                                : (val) => setDialogState(() {
+                                                      fallbackSupplierId = val;
+                                                    }),
+                                          ),
+                                        ],
+                                      ],
+                                    ],
+                                    if (!currentReport.dryRun) ...[
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Applied fixes: ${currentReport.productsStockFixed} stock resynced, ${currentReport.reservedStockFixed} reserved repaired, ${currentReport.expiredBatchesMarked} expired marked, ${currentReport.batchesSupplierFixed} suppliers linked.',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: Colors.green.shade800,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: applying ? null : () => Navigator.pop(dialogCtx),
+                  child: const Text('Close'),
+                ),
+                if (currentReport != null &&
+                    currentReport.hasIssues &&
+                    currentReport.dryRun)
+                  FilledButton.icon(
+                    icon: applying
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.auto_fix_high_rounded, size: 18),
+                    label: Text(
+                        applying ? 'Applying...' : 'Apply Fixes Atomically'),
+                    onPressed: applying
+                        ? null
+                        : () async {
+                            setDialogState(() => applying = true);
+                            try {
+                              final applied =
+                                  await inventory.auditAndReconcileInventory(
+                                dryRun: false,
+                                defaultFallbackSupplierId: fallbackSupplierId,
+                              );
+                              if (ctx.mounted) {
+                                setDialogState(() {
+                                  report = applied;
+                                  applying = false;
+                                });
+                              }
+                            } catch (e) {
+                              if (ctx.mounted) {
+                                setDialogState(() {
+                                  error = e.toString();
+                                  applying = false;
+                                });
+                              }
+                            }
+                          },
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 }

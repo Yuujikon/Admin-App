@@ -52,8 +52,7 @@ class _FifoReceivingQueueViewState extends State<FifoReceivingQueueView> {
       return const PremiumEmptyState(
         icon: Icons.local_shipping_outlined,
         title: 'No Pending Supplier Deliveries in FIFO Queue',
-        subtitle:
-            'All purchase orders have been fully received or reconciled.',
+        subtitle: 'All purchase orders have been fully received or reconciled.',
       );
     }
 
@@ -183,9 +182,8 @@ class _FifoReceivingQueueViewState extends State<FifoReceivingQueueView> {
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
                                     ),
                                   ),
                                 ),
@@ -326,9 +324,8 @@ class _FifoReceivingQueueViewState extends State<FifoReceivingQueueView> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
-                                      color: isDone
-                                          ? Colors.green.shade900
-                                          : null,
+                                      color:
+                                          isDone ? Colors.green.shade900 : null,
                                     ),
                                   ),
                                 );

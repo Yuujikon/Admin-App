@@ -7,6 +7,7 @@ import '../models/loss_record.dart';
 import '../models/transaction.dart';
 import '../models/store_settings.dart';
 import '../services/firestore_service.dart';
+import '../services/inventory_batch_service.dart';
 import '../services/notification_service.dart';
 import '../shared/services/admin_messaging_service.dart';
 import '../shared/services/time_service.dart';
@@ -18,6 +19,7 @@ import 'base_provider.dart';
 /// Provider for managing online customer pre-orders, order fulfillment workflow, and notification dispatching.
 class OrderProvider extends BaseProvider {
   final _fs = FirestoreService();
+  final _batchService = InventoryBatchService();
 
   List<PreOrder> _orders = [];
   final List<CartItem> _preCart = [];
@@ -84,9 +86,11 @@ class OrderProvider extends BaseProvider {
 
         for (final newOrder in list) {
           final prevStatus = prevStatuses[newOrder.id];
+          final bool wasOpenOrder = prevStatus == OrderStatus.pending ||
+              prevStatus == OrderStatus.staging ||
+              prevStatus == OrderStatus.ready;
           if (newOrder.status == OrderStatus.cancelled &&
-              prevStatus != null &&
-              prevStatus != OrderStatus.cancelled &&
+              wasOpenOrder &&
               !_processedCancelledOrderIds.contains(newOrder.id)) {
             _processOrderRestockAndLoss(
               newOrder,
@@ -170,7 +174,8 @@ class OrderProvider extends BaseProvider {
 
   void addToPreCart(Product p, {int qty = 1}) {
     final idx = _preCart.indexWhere((i) => i.productId == p.id);
-    final maxStock = p.stock > 0 ? p.stock : 9999;
+    final avail = p.totalAvailableStock;
+    final maxStock = avail > 0 ? avail : 9999;
     if (idx >= 0) {
       _preCart[idx] = _preCart[idx]
           .copyWith(qty: (_preCart[idx].qty + qty).clamp(1, maxStock));
@@ -179,7 +184,9 @@ class OrderProvider extends BaseProvider {
         productId: p.id,
         name: p.name,
         price: p.price,
-        costPrice: p.costPrice,
+        unitPriceAtSale: p.price,
+        costPrice:
+            p.activeFifoUnitCost > 0 ? p.activeFifoUnitCost : p.costPrice,
         qty: qty.clamp(1, maxStock),
         isPerishable: p.category.toLowerCase().contains('perishable'),
       ));
@@ -244,12 +251,16 @@ class OrderProvider extends BaseProvider {
       allProducts: allProducts,
     );
 
+    final lockedItems = _preCart
+        .map((i) => i.copyWith(unitPriceAtSale: i.unitPriceAtSale))
+        .toList();
+
     final order = PreOrder(
       id: const Uuid().v4(),
       orderId: 'GDC-${orderCount.toString().padLeft(4, '0')}',
       customerName: customerName,
       customerEmail: customerEmail,
-      items: List.from(_preCart),
+      items: lockedItems,
       subtotal: breakdown.subtotal,
       tax: breakdown.vAtAmount,
       total: breakdown.total,
@@ -262,7 +273,10 @@ class OrderProvider extends BaseProvider {
       statusTimeline: {OrderStatus.pending.name: TimeService.now},
     );
 
-    await _fs.addOrder(order);
+    await _batchService.reserveStockAtomic(
+      order: order,
+      performedByName: _adminName,
+    );
 
     // Schedule perishable auto-cancel via Firebase Cloud Functions
     // (see Cloud Functions section below)
@@ -296,20 +310,16 @@ class OrderProvider extends BaseProvider {
   Future<void> _completePickupInternal(String orderId) async {
     final order = _orders.firstWhere((o) => o.id == orderId);
     if (order.status == OrderStatus.collected ||
-        order.status == OrderStatus.cancelled) return;
+        order.status == OrderStatus.cancelled) {
+      return;
+    }
 
-    // 1. Deduct main stock and clear the reservation when an order is completed.
-    await _fs.fulfillOrderStockBatch(order.items);
-
-    // 2. Set final status
     final updatedOrder = order.copyWith(
       status: OrderStatus.collected,
       processedBy: _adminName,
     );
-    await _fs.updateOrder(updatedOrder);
 
-    // 3. Record as transaction
-    final tx = StoreTransaction(
+    final txDraft = StoreTransaction(
       id: const Uuid().v4(),
       orderId: order.orderId,
       items: order.items,
@@ -320,9 +330,20 @@ class OrderProvider extends BaseProvider {
       customerEmail: order.customerEmail,
       type: TransactionType.pickup,
     );
-    await _fs.addTransaction(tx);
 
-    // 4. Notify customer and automatically send digital purchase receipt email
+    // Atomically deduct FIFO batches, release reservedStock, stamp batchAllocations on order & tx
+    final checkoutResult = await _batchService.deductStockFIFO(
+      items: order.items,
+      transactionToWrite: txDraft,
+      preOrderDocId: order.id,
+      preOrderToComplete: updatedOrder,
+      preOrderItemsForReservationRelease: order.items,
+      performedByName: _adminName,
+    );
+
+    final tx = checkoutResult.transaction ?? txDraft;
+
+    // Notify customer and automatically send digital purchase receipt email
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -332,7 +353,8 @@ class OrderProvider extends BaseProvider {
       newStatus: OrderStatus.collected.name,
     );
     if (order.customerEmail.isNotEmpty) {
-      AdminMessagingService().sendDigitalReceiptEmail(
+      AdminMessagingService()
+          .sendDigitalReceiptEmail(
         customerEmail: order.customerEmail,
         customerName: order.customerName,
         orderId: order.orderId,
@@ -342,14 +364,15 @@ class OrderProvider extends BaseProvider {
         cashTendered: tx.cashTendered,
         changeGiven: tx.changeGiven,
         completedAt: tx.createdAt,
-      ).catchError((e) {
+      )
+          .catchError((e) {
         debugPrint('Error sending digital receipt email: $e');
         return false;
       });
     }
   }
 
-  /// Fast-checkout protocol for Click & Collect with strict cash tracking
+  /// Fast-checkout protocol for Click & Collect with strict cash tracking and atomic FIFO deduction
   Future<StoreTransaction> completePickupWithCash({
     required String orderId,
     required double cashTendered,
@@ -358,27 +381,16 @@ class OrderProvider extends BaseProvider {
   }) async {
     final order = _orders.firstWhere((o) => o.id == orderId);
 
-    // 1. Deduct main stock and clear the reservation for pre-order items
-    await _fs.fulfillOrderStockBatch(order.items);
-
-    // 2. Deduct main stock ONLY for additional walk-in items
-    if (walkInItems.isNotEmpty) {
-      await _fs.decrementStockBatch(walkInItems);
-    }
-
     final allItems = [...order.items, ...walkInItems];
     final grandTotal =
-        allItems.fold<double>(0.0, (s, i) => s + (i.price * i.qty));
+        allItems.fold<double>(0.0, (s, i) => s + (i.unitPriceAtSale * i.qty));
 
-    // 3. Update Order status to collected
     final updatedOrder = order.copyWith(
       status: OrderStatus.collected,
       processedBy: _adminName,
     );
-    await _fs.updateOrder(updatedOrder);
 
-    // 4. Record StoreTransaction with exact cashTendered and changeGiven
-    final tx = StoreTransaction(
+    final txDraft = StoreTransaction(
       id: const Uuid().v4(),
       orderId: order.orderId,
       items: allItems,
@@ -390,9 +402,19 @@ class OrderProvider extends BaseProvider {
       paymentMethod: PaymentMethod.cash,
       type: TransactionType.pickup,
     );
-    await _fs.addTransaction(tx);
 
-    // 5. Notify customer and automatically send digital purchase receipt email
+    final checkoutResult = await _batchService.deductStockFIFO(
+      items: allItems,
+      transactionToWrite: txDraft,
+      preOrderDocId: order.id,
+      preOrderToComplete: updatedOrder,
+      preOrderItemsForReservationRelease: order.items,
+      performedByName: _adminName,
+    );
+
+    final tx = checkoutResult.transaction ?? txDraft;
+
+    // Notify customer and automatically send digital purchase receipt email
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -402,7 +424,8 @@ class OrderProvider extends BaseProvider {
       newStatus: OrderStatus.collected.name,
     );
     if (order.customerEmail.isNotEmpty) {
-      AdminMessagingService().sendDigitalReceiptEmail(
+      AdminMessagingService()
+          .sendDigitalReceiptEmail(
         customerEmail: order.customerEmail,
         customerName: order.customerName,
         orderId: order.orderId,
@@ -412,7 +435,8 @@ class OrderProvider extends BaseProvider {
         cashTendered: tx.cashTendered,
         changeGiven: tx.changeGiven,
         completedAt: tx.createdAt,
-      ).catchError((e) {
+      )
+          .catchError((e) {
         debugPrint('Error sending digital receipt email: $e');
         return false;
       });
@@ -420,24 +444,16 @@ class OrderProvider extends BaseProvider {
     return tx;
   }
 
-  /// Completes a pre-paid/cashless pickup order directly without requiring manual cash input
+  /// Completes a pre-paid/cashless pickup order atomically with FIFO batch deduction
   Future<StoreTransaction> completePrePaidPickup({
     required String orderId,
     List<CartItem> walkInItems = const [],
   }) async {
     final order = _orders.firstWhere((o) => o.id == orderId);
 
-    // 1. Deduct main stock and clear reservation for pre-order items
-    await _fs.fulfillOrderStockBatch(order.items);
-
-    // 2. Deduct main stock for walk-in items if any
-    if (walkInItems.isNotEmpty) {
-      await _fs.decrementStockBatch(walkInItems);
-    }
-
     final allItems = [...order.items, ...walkInItems];
     final grandTotal =
-        allItems.fold<double>(0.0, (s, i) => s + (i.price * i.qty));
+        allItems.fold<double>(0.0, (s, i) => s + (i.unitPriceAtSale * i.qty));
 
     final String pm = order.paymentMethod.toLowerCase();
     PaymentMethod pMethod = PaymentMethod.cashless;
@@ -451,17 +467,14 @@ class OrderProvider extends BaseProvider {
       pMethod = PaymentMethod.online;
     }
 
-    // 3. Update Order status to collected & paid
     final updatedOrder = order.copyWith(
       status: OrderStatus.collected,
       paymentStatus: 'paid',
       isPaid: true,
       processedBy: _adminName,
     );
-    await _fs.updateOrder(updatedOrder);
 
-    // 4. Record StoreTransaction for prepaid cashless pickup
-    final tx = StoreTransaction(
+    final txDraft = StoreTransaction(
       id: const Uuid().v4(),
       orderId: order.orderId,
       items: allItems,
@@ -473,9 +486,19 @@ class OrderProvider extends BaseProvider {
       paymentMethod: pMethod,
       type: TransactionType.pickup,
     );
-    await _fs.addTransaction(tx);
 
-    // 5. Notify customer and automatically send digital purchase receipt email
+    final checkoutResult = await _batchService.deductStockFIFO(
+      items: allItems,
+      transactionToWrite: txDraft,
+      preOrderDocId: order.id,
+      preOrderToComplete: updatedOrder,
+      preOrderItemsForReservationRelease: order.items,
+      performedByName: _adminName,
+    );
+
+    final tx = checkoutResult.transaction ?? txDraft;
+
+    // Notify customer and automatically send digital purchase receipt email
     await NotificationService.sendOrderCollected(
         order.orderId, order.customerEmail);
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -485,7 +508,8 @@ class OrderProvider extends BaseProvider {
       newStatus: OrderStatus.collected.name,
     );
     if (order.customerEmail.isNotEmpty) {
-      AdminMessagingService().sendDigitalReceiptEmail(
+      AdminMessagingService()
+          .sendDigitalReceiptEmail(
         customerEmail: order.customerEmail,
         customerName: order.customerName,
         orderId: order.orderId,
@@ -495,7 +519,8 @@ class OrderProvider extends BaseProvider {
         cashTendered: tx.cashTendered,
         changeGiven: tx.changeGiven,
         completedAt: tx.createdAt,
-      ).catchError((e) {
+      )
+          .catchError((e) {
         debugPrint('Error sending digital receipt email: $e');
         return false;
       });
@@ -573,22 +598,27 @@ class OrderProvider extends BaseProvider {
     final order = _orders.firstWhere((o) => o.id == orderId);
     if (order.status == OrderStatus.cancelled) return;
 
-    // Process smart restocking and loss write-off determination automatically
-    if (order.status == OrderStatus.pending ||
-        order.status == OrderStatus.staging ||
-        order.status == OrderStatus.ready ||
-        order.status == OrderStatus.collected) {
-      await _processOrderRestockAndLoss(order,
-          reason: reason, processedBy: isAuto ? 'System' : _adminName);
-    }
-
     final updatedOrder = order.copyWith(
       status: OrderStatus.cancelled,
       processedBy: isAuto ? 'System' : _adminName,
       rejectionReason: reason,
     );
 
-    await _fs.updateOrder(updatedOrder);
+    // Only release reservations for open orders (pending/staging/ready).
+    // Already-collected orders had their reservation released during pickup fulfillment,
+    // so releasing them again would underflow reservedStock below 0!
+    if (order.status == OrderStatus.pending ||
+        order.status == OrderStatus.staging ||
+        order.status == OrderStatus.ready) {
+      await _processOrderRestockAndLoss(
+        order,
+        updatedOrder: updatedOrder,
+        reason: reason,
+        processedBy: isAuto ? 'System' : _adminName,
+      );
+    } else {
+      await _fs.updateOrder(updatedOrder);
+    }
 
     // Send Brevo Email & Traccar SMS Notification
     await AdminMessagingService().sendCustomerOrderStatusNotification(
@@ -605,9 +635,11 @@ class OrderProvider extends BaseProvider {
   }
 
   /// Automatically evaluates whether items in a cancelled order are fit to be restocked into inventory,
-  /// or should be logged as an Inventory Loss/Spoilage write-off.
+  /// or should be logged as an Inventory Loss/Spoilage write-off, and atomically releases
+  /// `reservedStock` inside `runTransaction` (idempotent & clamped >= 0).
   Future<void> _processOrderRestockAndLoss(
     PreOrder order, {
+    PreOrder? updatedOrder,
     String? reason,
     String? processedBy,
   }) async {
@@ -654,7 +686,7 @@ class OrderProvider extends BaseProvider {
 
         if (!isFitToRestock) {
           // Unfit for restock: log as an Inventory Loss / Spoilage Record
-          // (This will also deduct it from main stock in FirestoreService)
+          // (Atomically FIFO-deducts from batches inside InventoryBatchService)
           final lossRecord = LossRecord(
             id: const Uuid().v4(),
             productId: item.productId,
@@ -674,11 +706,18 @@ class OrderProvider extends BaseProvider {
         }
       }
 
-      // 3. For any cancellation on Admin side, ALWAYS clear the reservedStock for all items.
-      // We do not touch main stock unless it was logged as a LossRecord above.
-      await _fs.clearReservedStockBatch(order.items);
+      // Atomically release reservedStock (clamped >= 0, idempotent via order.reservationReleased)
+      // and update order status in the same transaction when cancelling from Admin.
+      await _batchService.releaseReservedStockAtomic(
+        items: order.items,
+        orderDocId: order.id,
+        updatedOrder: updatedOrder,
+      );
     } catch (e) {
       debugPrint('Error processing restock/loss for order ${order.id}: $e');
+      if (updatedOrder != null) {
+        await _fs.updateOrder(updatedOrder);
+      }
     }
   }
 

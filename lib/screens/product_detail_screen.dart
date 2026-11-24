@@ -8,8 +8,11 @@ import '../models/product.dart';
 import '../models/supplier.dart';
 import '../models/restock_inquiry.dart';
 import '../providers/inventory_provider.dart';
+import '../providers/procurement_provider.dart';
 import '../providers/restock_provider.dart';
+import '../services/inventory_batch_service.dart';
 import '../utils/format.dart';
+import '../utils/pricing_engine.dart';
 import '../widgets/batch_audit_sheet.dart';
 import '../widgets/product_edit_sheet.dart';
 import '../widgets/receive_delivery_sheet.dart';
@@ -137,8 +140,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final isWide = constraints.maxWidth >= 640;
-
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -269,11 +270,14 @@ class _IdentityHeaderCard extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               child:
                   product.photoBase64 != null && product.photoBase64!.isNotEmpty
-                      ? Image.memory(
-                          base64Decode(product.photoBase64!),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildPlaceholderImage(colorScheme),
+                      ? Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Image.memory(
+                            base64Decode(product.photoBase64!),
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) =>
+                                _buildPlaceholderImage(colorScheme),
+                          ),
                         )
                       : _buildPlaceholderImage(colorScheme),
             );
@@ -576,7 +580,15 @@ class _PricingUomCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final semantic = theme.semantic;
 
-    final profit = product.price - product.costPrice;
+    final inventory = context.watch<InventoryProvider>();
+    final liveVelocity = inventory.getLiveVelocityScore(product);
+    final eval = PricingEngine.evaluateProductPricing(
+      product.copyWith(salesVelocityScore: liveVelocity),
+      settings: inventory.settings,
+    );
+
+    final activeUnitCost = product.activeFifoUnitCost;
+    final profit = product.price - activeUnitCost;
     final marginPct = product.price > 0 ? (profit / product.price * 100) : 0.0;
     final isProfitable = profit >= 0;
 
@@ -708,11 +720,81 @@ class _PricingUomCard extends StatelessWidget {
 
             const SizedBox(height: 12),
 
-            // Base Unit COGS
+            // Dynamic Velocity-Based Markup Metadata
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _FeatureChip(
+                  icon: product.isManualPricing
+                      ? Icons.lock_outline_rounded
+                      : Icons.auto_awesome_rounded,
+                  label: product.isManualPricing
+                      ? 'Custom Admin Markup (${eval.computedMarkupPercent.toStringAsFixed(1)}%)'
+                      : 'Auto-Scaled (${eval.computedMarkupPercent.toStringAsFixed(1)}%)',
+                  color: product.isManualPricing
+                      ? Colors.deepOrange.shade700
+                      : colorScheme.primary,
+                ),
+                _FeatureChip(
+                  icon: Icons.speed_rounded,
+                  label:
+                      '${eval.speedTag} (${eval.velocityScore.toStringAsFixed(2)})',
+                  color: eval.speedTag == 'Fast Moving'
+                      ? semantic.success
+                      : (eval.speedTag == 'Slow Moving'
+                          ? semantic.warning
+                          : semantic.info),
+                ),
+              ],
+            ),
+
+            if (eval.hasInvalidCost) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.errorContainer.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: colorScheme.error.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        size: 16, color: colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Zero or missing unit cost — dynamic markup calculation is paused until a valid cost is set.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 12),
+
+            // Active FIFO Unit Cost
             _DetailRow(
-              label: 'Unit Cost (COGS)',
-              value: '${formatPeso(product.costPrice)} / ${product.unit}',
+              label: product.activeFifoBatch != null
+                  ? 'Active FIFO Unit Cost'
+                  : 'Unit Cost (COGS)',
+              value: '${formatPeso(activeUnitCost)} / ${product.unit}',
               isBoldValue: true,
+            ),
+            const SizedBox(height: 6),
+            _DetailRow(
+              label: 'Category Markup Range',
+              value: eval.usedGlobalBenchmarkOnly
+                  ? '15.0% – 25.0% (Global)'
+                  : '${eval.categoryRange.formattedRange} (${eval.categoryRange.canonicalCategory})',
             ),
 
             const Divider(height: 16),
@@ -813,8 +895,8 @@ class _LiveInventoryHealthCard extends StatelessWidget {
                 Icons.check_circle_outline_rounded,
               );
 
-    final availableStock = product.maxPurchasableStock;
-    final reservedBuffer = (totalStock - availableStock).clamp(0, totalStock);
+    final availableStock = product.totalAvailableStock;
+    final reservedStock = product.totalReservedStock;
     final suggestedRestock = product.calculateSuggestedRestock();
 
     return Card(
@@ -945,16 +1027,16 @@ class _LiveInventoryHealthCard extends StatelessWidget {
             ),
 
             _DetailRow(
-              label: 'Available Stock',
+              label: 'Available for POS / Storefront',
               value: '$availableStock ${product.unit}',
               isBoldValue: true,
               valueColor: semantic.success,
             ),
 
             _DetailRow(
-              label: 'Reserved Stock Buffer',
-              value: '$reservedBuffer ${product.unit}',
-              valueColor: reservedBuffer > 0 ? semantic.warning : null,
+              label: 'Reserved (Pending Pickups)',
+              value: '$reservedStock ${product.unit}',
+              valueColor: reservedStock > 0 ? semantic.warning : null,
             ),
 
             _DetailRow(
@@ -1020,7 +1102,7 @@ class _LiveInventoryHealthCard extends StatelessWidget {
 // 4. AUDIT & FIFO BATCH HISTORY CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AuditBatchCard extends StatelessWidget {
+class _AuditBatchCard extends StatefulWidget {
   final Product product;
   final Supplier? supplier;
 
@@ -1030,13 +1112,38 @@ class _AuditBatchCard extends StatelessWidget {
   });
 
   @override
+  State<_AuditBatchCard> createState() => _AuditBatchCardState();
+}
+
+class _AuditBatchCardState extends State<_AuditBatchCard> {
+  final InventoryBatchService _batchService = InventoryBatchService();
+  bool _showDepleted = false;
+  bool _ensuredLegacy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLegacyFallback();
+  }
+
+  Future<void> _initLegacyFallback() async {
+    if (_ensuredLegacy) return;
+    _ensuredLegacy = true;
+    if (widget.product.stock > 0 && !widget.product.hasVariants) {
+      try {
+        await _batchService.ensureLegacyBatchIfNeeded(widget.product.id);
+      } catch (_) {}
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
-    // FIFO Sort: Oldest created/received first
-    final List<ProductBatch> sortedBatches = List.from(product.batches);
-    sortedBatches.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final inventory = context.watch<InventoryProvider>();
+    final procurement = context.watch<ProcurementProvider>();
+    final product = widget.product;
+    final supplier = widget.supplier;
 
     return Card(
       elevation: 0,
@@ -1047,157 +1154,202 @@ class _AuditBatchCard extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title
-            Row(
+        child: StreamBuilder<List<ProductBatch>>(
+          stream: _batchService.batchesStream(product.id),
+          builder: (context, snapshot) {
+            final List<ProductBatch> allBatches = snapshot.hasData
+                ? List<ProductBatch>.from(snapshot.data!)
+                : List<ProductBatch>.from(product.batches);
+            allBatches.sort(ProductBatch.compareFifo);
+
+            final activeBatches = allBatches.where((b) => b.isActive).toList();
+            final depletedBatches =
+                allBatches.where((b) => !b.isActive).toList();
+            final visibleBatches = _showDepleted
+                ? [...activeBatches, ...depletedBatches]
+                : activeBatches;
+            final String? oldestActiveId =
+                activeBatches.isNotEmpty ? activeBatches.first.batchId : null;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.history_outlined,
-                    size: 18,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Audit & FIFO Batches',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Product Meta Audit Grid
-            _DetailRow(
-              label: 'Supplier',
-              value: supplier?.name ??
-                  (product.supplierId != null && product.supplierId!.isNotEmpty
-                      ? 'ID: ${product.supplierId}'
-                      : 'Unassigned / Direct'),
-              isBoldValue: supplier != null,
-            ),
-
-            _DetailRow(
-              label: 'Shelf Life',
-              value: product.shelfDays != null
-                  ? '${product.shelfDays} Days'
-                  : 'Non-Perishable / Unset',
-            ),
-
-            _DetailRow(
-              label: 'Pickup Window',
-              value: product.pickupWindowHours != null
-                  ? '${product.pickupWindowHours} Hours'
-                  : 'Standard',
-            ),
-
-            if (product.expiryDate != null)
-              _DetailRow(
-                label: 'Primary Product Expiry',
-                value: formatDate(product.expiryDate!),
-                isBoldValue: true,
-                valueColor: product.expiryDate!.isBefore(DateTime.now())
-                    ? colorScheme.error
-                    : null,
-              ),
-
-            const Divider(height: 20),
-
-            // Batches Sub-header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Active Inventory Batches (${sortedBatches.length})',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                if (sortedBatches.isNotEmpty)
-                  Text(
-                    'FIFO Order',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            if (sortedBatches.isEmpty)
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Column(
+                // Title
+                Row(
                   children: [
-                    Icon(
-                      Icons.inventory_outlined,
-                      size: 36,
-                      color:
-                          colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'No Active FIFO Batches Registered',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.onSurface,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.history_outlined,
+                        size: 18,
+                        color: colorScheme.primary,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Stock balance is managed as a bulk pool.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: colorScheme.onSurfaceVariant,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Audit & FIFO Batches',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: colorScheme.onSurface,
+                        ),
                       ),
                     ),
+                    if (depletedBatches.isNotEmpty)
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => _showDepleted = !_showDepleted),
+                        child: Text(
+                          _showDepleted
+                              ? 'Hide Depleted'
+                              : 'Depleted (${depletedBatches.length})',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
                   ],
                 ),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: sortedBatches.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final batch = sortedBatches[index];
-                  return _BatchTile(
-                    batch: batch,
-                    productUnit: product.unit,
-                  );
-                },
-              ),
-          ],
+
+                const SizedBox(height: 16),
+
+                // Product Meta Audit Grid
+                _DetailRow(
+                  label: 'Supplier',
+                  value: supplier?.name ??
+                      (product.supplierId != null &&
+                              product.supplierId!.isNotEmpty
+                          ? 'ID: ${product.supplierId}'
+                          : 'Unassigned / Direct'),
+                  isBoldValue: supplier != null,
+                ),
+
+                _DetailRow(
+                  label: 'Shelf Life',
+                  value: product.shelfDays != null
+                      ? '${product.shelfDays} Days'
+                      : 'Non-Perishable / Unset',
+                ),
+
+                _DetailRow(
+                  label: 'Pickup Window',
+                  value: product.pickupWindowHours != null
+                      ? '${product.pickupWindowHours} Hours'
+                      : 'Standard',
+                ),
+
+                if (product.expiryDate != null)
+                  _DetailRow(
+                    label: 'Primary Product Expiry',
+                    value: formatDate(product.expiryDate!),
+                    isBoldValue: true,
+                    valueColor: product.expiryDate!.isBefore(DateTime.now())
+                        ? colorScheme.error
+                        : null,
+                  ),
+
+                const Divider(height: 20),
+
+                // Batches Sub-header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Active FIFO Batches (${activeBatches.length})',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    if (allBatches.isNotEmpty)
+                      Text(
+                        'Sorted by Date Arrived (Oldest First)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                if (visibleBatches.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 20, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: colorScheme.outline.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.inventory_outlined,
+                          size: 36,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          activeBatches.isEmpty && depletedBatches.isNotEmpty
+                              ? 'All Batches Depleted'
+                              : 'No Active FIFO Batches Registered',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          activeBatches.isEmpty && depletedBatches.isNotEmpty
+                              ? 'Tap "Depleted" above to inspect historical batches.'
+                              : 'Receive stock to create tracked FIFO batches.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: visibleBatches.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final batch = visibleBatches[index];
+                      return _BatchTile(
+                        batch: batch,
+                        productUnit: product.unit,
+                        isOldestActive:
+                            batch.isActive && batch.batchId == oldestActiveId,
+                        resolvedPoNumber:
+                            procurement.resolvePoNumberForBatch(batch),
+                        resolvedSupplierName:
+                            procurement.resolveSupplierNameForBatch(
+                          batch,
+                          suppliers: inventory.suppliers,
+                          fallbackProductSupplierId: product.supplierId,
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1207,10 +1359,16 @@ class _AuditBatchCard extends StatelessWidget {
 class _BatchTile extends StatelessWidget {
   final ProductBatch batch;
   final String productUnit;
+  final bool isOldestActive;
+  final String? resolvedPoNumber;
+  final String? resolvedSupplierName;
 
   const _BatchTile({
     required this.batch,
     required this.productUnit,
+    this.isOldestActive = false,
+    this.resolvedPoNumber,
+    this.resolvedSupplierName,
   });
 
   @override
@@ -1219,13 +1377,39 @@ class _BatchTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final semantic = theme.semantic;
 
+    final bool isDepleted = !batch.isActive;
     final days = batch.daysUntilExpiration;
     final isExpired = batch.isExpired;
     final isNearExpiry = batch.isNearExpiration;
 
+    final Color fifoColor = isDepleted
+        ? Colors.grey.shade600
+        : (isOldestActive ? Colors.green.shade700 : Colors.blue.shade700);
+    final String fifoBadge = isDepleted
+        ? 'DEPLETED'
+        : (isOldestActive ? 'SELLING NOW (OLDEST)' : 'QUEUED (NEWER)');
+
+    final String? formattedPo =
+        (resolvedPoNumber != null && resolvedPoNumber!.trim().isNotEmpty)
+            ? ProductBatch.formatPoNumber(resolvedPoNumber!)
+            : null;
+    final String primaryRef =
+        batch.primaryReference(resolvedPoNumber: resolvedPoNumber);
+    final String displayCode = batch.displayBatchId;
+    final bool hasSeparateBatchCode =
+        formattedPo != null && displayCode != formattedPo;
+    final String supplierLabel = (resolvedSupplierName != null &&
+            resolvedSupplierName!.trim().isNotEmpty)
+        ? resolvedSupplierName!.trim()
+        : 'Direct';
+
+    final int denomInitial = batch.initialQty >= batch.remainingQty
+        ? batch.initialQty
+        : batch.remainingQty;
+
     final (expiryText, expiryBg, expiryFg) = batch.expirationDate == null
         ? (
-            'No Expiry Set',
+            'No Expiry',
             theme.disabledColor.withValues(alpha: 0.1),
             theme.disabledColor,
           )
@@ -1237,12 +1421,12 @@ class _BatchTile extends StatelessWidget {
               )
             : isNearExpiry
                 ? (
-                    'Expires in ${days}d',
+                    'Exp ${days}d',
                     semantic.warning.withValues(alpha: 0.15),
                     semantic.warning,
                   )
                 : (
-                    '${days}d remaining',
+                    '${days}d left',
                     semantic.success.withValues(alpha: 0.12),
                     semantic.success,
                   );
@@ -1250,38 +1434,75 @@ class _BatchTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colorScheme.surface,
+        color: isOldestActive
+            ? Colors.green.withValues(alpha: 0.05)
+            : colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isExpired
-              ? colorScheme.error.withValues(alpha: 0.4)
-              : colorScheme.outline.withValues(alpha: 0.2),
+          color: isOldestActive
+              ? Colors.green.shade600.withValues(alpha: 0.5)
+              : (isExpired
+                  ? colorScheme.error.withValues(alpha: 0.4)
+                  : colorScheme.outline.withValues(alpha: 0.25)),
+          width: isOldestActive ? 1.4 : 1.0,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Batch Identifier
               Expanded(
-                child: Text(
-                  batch.invoiceNumber != null && batch.invoiceNumber!.isNotEmpty
-                      ? 'Invoice #${batch.invoiceNumber}'
-                      : (batch.id.isNotEmpty
-                          ? 'Lot #${batch.id.length > 8 ? batch.id.substring(0, 8) : batch.id}'
-                          : 'Standard Delivery Lot'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (formattedPo != null) ...[
+                          Icon(
+                            Icons.receipt_long_rounded,
+                            size: 13,
+                            color: isDepleted
+                                ? colorScheme.onSurfaceVariant
+                                : colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(
+                          primaryRef,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: isDepleted
+                                ? colorScheme.onSurfaceVariant
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: fifoColor.withValues(alpha: 0.13),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        fifoBadge,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          color: fifoColor,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
-              // Expiry Chip
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -1299,31 +1520,71 @@ class _BatchTile extends StatelessWidget {
               ),
             ],
           ),
+          if (hasSeparateBatchCode || formattedPo == null) ...[
+            const SizedBox(height: 3),
+            Text(
+              hasSeparateBatchCode
+                  ? 'Batch ID: $displayCode'
+                  : (batch.isLegacyUuidId
+                      ? 'Legacy Initial / Direct Stock (No PO)'
+                      : 'Direct / Manual Stock (No PO)'),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Qty: ${batch.quantityRemaining} $productUnit',
+                'Qty: ${batch.remainingQty} / $denomInitial $productUnit',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: colorScheme.primary,
+                  color: isDepleted ? Colors.grey : colorScheme.primary,
                 ),
               ),
               Text(
-                'Cost: ${formatPeso(batch.unitCost)} / $productUnit',
+                'Cost: ${formatPeso(batch.costPrice)} / $productUnit',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 12,
+            runSpacing: 2,
+            children: [
               Text(
-                formatDate(batch.dateReceived),
+                'Supplier: $supplierLabel',
                 style: TextStyle(
-                  fontSize: 11,
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  fontSize: 10.5,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                'Purchased: ${formatDate(batch.datePurchased)}',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                'Arrived: ${formatDate(batch.dateArrived)}',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight:
+                      isOldestActive ? FontWeight.w700 : FontWeight.normal,
+                  color: isOldestActive
+                      ? Colors.green.shade800
+                      : colorScheme.onSurfaceVariant,
                 ),
               ),
             ],

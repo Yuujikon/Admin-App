@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
@@ -61,7 +60,8 @@ class QuickSelectGrid extends StatelessWidget {
       itemCount: pluProducts.length,
       itemBuilder: (context, index) {
         final product = pluProducts[index];
-        final bool isOutOfStock = product.totalStock <= 0;
+        final int available = product.totalAvailableStock;
+        final bool isOutOfStock = available <= 0;
 
         return Card(
           elevation: 1,
@@ -93,8 +93,11 @@ class QuickSelectGrid extends StatelessWidget {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: product.imageBytes != null
-                          ? Image.memory(product.imageBytes!,
-                              fit: BoxFit.cover, gaplessPlayback: true)
+                          ? Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Image.memory(product.imageBytes!,
+                                  fit: BoxFit.contain, gaplessPlayback: true),
+                            )
                           : Center(
                               child: Icon(
                                 Icons.shopping_basket_outlined,
@@ -125,7 +128,7 @@ class QuickSelectGrid extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${product.totalStock} ${product.unit}',
+                        '$available ${product.unit}',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,

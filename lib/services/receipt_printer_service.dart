@@ -99,8 +99,9 @@ class ReceiptPrinterService {
 
     for (final item in items) {
       String name = item.name;
-      if (name.length > widthChars)
+      if (name.length > widthChars) {
         name = '${name.substring(0, widthChars - 3)}...';
+      }
       bytes.addAll(generator.text(name));
 
       final qtyPricePart = "${item.qty} x ${cleanPeso(formatPeso(item.price))}";
@@ -341,7 +342,8 @@ class ReceiptPrinterService {
 
     for (final item in order.items) {
       final lineStr = '[  ] ${item.qty}x ${item.name}';
-      bytes.addAll(generator.text(lineStr, styles: const PosStyles(bold: true)));
+      bytes
+          .addAll(generator.text(lineStr, styles: const PosStyles(bold: true)));
     }
 
     bytes.addAll(generator.text('=' * widthChars,

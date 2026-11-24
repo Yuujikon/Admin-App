@@ -114,8 +114,8 @@ class Rfq {
 
   bool get isFullyQuoted =>
       items.isNotEmpty &&
-      items.every((item) =>
-          item.quotedUnitPrice != null && item.quotedUnitPrice! > 0);
+      items.every(
+          (item) => item.quotedUnitPrice != null && item.quotedUnitPrice! > 0);
 
   factory Rfq.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};

@@ -214,9 +214,8 @@ class PendingDeliveriesList extends StatelessWidget {
                         '${inquiry.items.length} item${inquiry.items.length != 1 ? 's' : ''} (${inquiry.totalRequestedQty} total pcs)',
                         style: TextStyle(
                             fontSize: 11,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.bold),
                       ),
                       Text(
@@ -242,14 +241,12 @@ class PendingDeliveriesList extends StatelessWidget {
                           size: 18),
                       label: const Text('VERIFY & RECEIVE DELIVERY',
                           style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5)),
+                              fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green.shade800,
                         foregroundColor: Colors.white,
                         elevation: 1,
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),

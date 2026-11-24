@@ -155,7 +155,9 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                             'INQUIRY ITEMS',
                             style: TextStyle(
                               fontWeight: FontWeight.w900,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                               fontSize: 12,
                               letterSpacing: 1.2,
                             ),
@@ -165,7 +167,9 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -173,7 +177,9 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -251,17 +257,19 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                   children: [
                     Text(
                       'Edit Request for Quotation (RFQ)',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.3,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.3,
+                              ),
                     ),
                     const SizedBox(height: 4),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                        color:
+                            colorScheme.primaryContainer.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -414,7 +422,6 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
             ],
           ),
           const SizedBox(height: 12),
-
           if (hasBulk) ...[
             SegmentedButton<bool>(
               style: SegmentedButton.styleFrom(
@@ -433,7 +440,8 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                   value: false,
                   label: Text(
                     'Single (${prod.unit})',
-                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w600),
                   ),
                   icon: const Icon(Icons.inventory_2_outlined, size: 15),
                 ),
@@ -469,7 +477,6 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
             ),
             const SizedBox(height: 12),
           ],
-
           if (hasBulk && isBulk) ...[
             Container(
               padding: const EdgeInsets.all(14),
@@ -565,7 +572,8 @@ class _RestockInquirySheetState extends State<RestockInquirySheet> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 8),
                         decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                          color: colorScheme.primaryContainer
+                              .withValues(alpha: 0.4),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: colorScheme.primary.withValues(alpha: 0.3),

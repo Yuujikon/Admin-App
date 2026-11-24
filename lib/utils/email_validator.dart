@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 /// Email validation utility for enforcing valid format and filtering out fake or disposable email addresses.
 class EmailValidator {
   static final RegExp _emailRegex = RegExp(
@@ -72,7 +70,7 @@ class EmailValidator {
     final tld = domainParts.last;
 
     if (tld.length < 2 || !RegExp(r'^[a-zA-Z]+$').hasMatch(tld)) {
-      return 'Invalid email domain extension (.${tld}).';
+      return 'Invalid email domain extension (.$tld).';
     }
 
     return null; // Valid

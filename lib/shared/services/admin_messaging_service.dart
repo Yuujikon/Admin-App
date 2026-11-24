@@ -1,11 +1,109 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import '../../models/order.dart';
+import '../../models/purchase_order.dart';
+import '../../models/receiving_record.dart';
+import '../../models/supplier.dart';
+import '../../utils/notice_pdf_printer.dart';
+import '../../utils/po_pdf_printer.dart';
+import '../../services/audit_log_service.dart';
+
+/// Step-by-step lifecycle stages for PO / Backorder PDF generation and dual-email dispatch.
+enum DispatchStage {
+  validating,
+  generatingPdf,
+  sendingEmails,
+  completed,
+  failed,
+}
+
+extension DispatchStageExtension on DispatchStage {
+  String get label {
+    switch (this) {
+      case DispatchStage.validating:
+        return 'Validating Data';
+      case DispatchStage.generatingPdf:
+        return 'Generating PDF';
+      case DispatchStage.sendingEmails:
+        return 'Sending to Supplier & Store';
+      case DispatchStage.completed:
+        return 'Dispatched Successfully';
+      case DispatchStage.failed:
+        return 'Dispatch Attention Needed';
+    }
+  }
+}
+
+/// Structured outcome returned by unified PO / Backorder dual-email dispatch pipelines.
+class DocumentDispatchResult {
+  final bool validationPassed;
+  final SupplierValidationResult? validationResult;
+  final bool pdfGenerated;
+  final String? pdfError;
+  final Uint8List? pdfBytes;
+  final String? pdfFileName;
+  final String supplierEmail;
+  final String storeEmail;
+  final bool supplierEmailSent;
+  final bool storeCopyEmailSent;
+  final String? supplierError;
+  final String? storeError;
+
+  const DocumentDispatchResult({
+    required this.validationPassed,
+    this.validationResult,
+    required this.pdfGenerated,
+    this.pdfError,
+    this.pdfBytes,
+    this.pdfFileName,
+    required this.supplierEmail,
+    required this.storeEmail,
+    required this.supplierEmailSent,
+    required this.storeCopyEmailSent,
+    this.supplierError,
+    this.storeError,
+  });
+
+  /// True only when validation passed, PDF generated, and BOTH recipients received delivery.
+  bool get isFullSuccess =>
+      validationPassed &&
+      pdfGenerated &&
+      supplierEmailSent &&
+      storeCopyEmailSent;
+
+  /// True when PDF generated and one of the two recipients succeeded while the other failed.
+  bool get isPartialSuccess =>
+      validationPassed &&
+      pdfGenerated &&
+      (supplierEmailSent != storeCopyEmailSent);
+
+  String get summaryMessage {
+    if (!validationPassed) {
+      return validationResult?.summaryMessage ??
+          'Supplier validation failed prior to dispatch.';
+    }
+    if (!pdfGenerated) {
+      return 'PDF generation failed: ${pdfError ?? "Unknown error"}';
+    }
+    if (isFullSuccess) {
+      return 'Document delivered to both Supplier ($supplierEmail) and Store ($storeEmail).';
+    }
+    if (isPartialSuccess) {
+      final succeeded = supplierEmailSent ? 'Supplier' : 'Store Copy';
+      final failed = supplierEmailSent ? 'Store Copy' : 'Supplier';
+      final err = supplierEmailSent ? storeError : supplierError;
+      return '$succeeded delivered, but $failed failed${err != null ? ": $err" : ""}.';
+    }
+    return 'Delivery failed for both recipients. ${supplierError ?? storeError ?? ""}';
+  }
+}
 
 /// Messaging service handling Brevo transactional email, Traccar/ngrok SMS OTP,
 /// and automated customer order status notifications.
@@ -19,6 +117,15 @@ class AdminMessagingService {
       AdminMessagingService._internal();
   factory AdminMessagingService() => _instance;
   AdminMessagingService._internal();
+
+  /// Returns the configured store/admin copy email address (loading `.env` if needed).
+  Future<String> resolveStoreEmail() async {
+    await _ensureEnvLoaded();
+    return _brevoSenderEmail.trim();
+  }
+
+  /// Synchronous getter for the store/admin copy email address.
+  String get storeEmailSync => _brevoSenderEmail.trim();
 
   /// Environment key getters with safe auto-initialization & fallbacks
   Future<void> _ensureEnvLoaded() async {
@@ -67,6 +174,8 @@ class AdminMessagingService {
     required String subject,
     required String htmlContent,
     String? recipientName,
+    String? ccEmail,
+    String? replyToEmail,
   }) async {
     await _ensureEnvLoaded();
     final apiKey = _brevoApiKey;
@@ -86,7 +195,10 @@ class AdminMessagingService {
         'content-type': 'application/json',
       };
 
-      final body = jsonEncode({
+      final effectiveCc = (ccEmail ?? senderEmail).trim();
+      final effectiveReplyTo = (replyToEmail ?? senderEmail).trim();
+
+      final Map<String, dynamic> bodyMap = {
         'sender': {
           'name': 'GDC Store',
           'email': senderEmail,
@@ -100,7 +212,25 @@ class AdminMessagingService {
         ],
         'subject': subject,
         'htmlContent': htmlContent,
-      });
+      };
+
+      if (effectiveCc.isNotEmpty) {
+        bodyMap['cc'] = [
+          {
+            'email': effectiveCc,
+            'name': 'GDC Store',
+          }
+        ];
+      }
+
+      if (effectiveReplyTo.isNotEmpty) {
+        bodyMap['replyTo'] = {
+          'email': effectiveReplyTo,
+          'name': 'GDC Store',
+        };
+      }
+
+      final body = jsonEncode(bodyMap);
 
       final response = await http.post(url, headers: headers, body: body);
 
@@ -627,5 +757,953 @@ class AdminMessagingService {
       htmlContent: htmlContent,
       recipientName: customerName,
     );
+  }
+
+  /// Escapes HTML special characters so user-entered supplier metadata renders safely in email clients.
+  static String _escapeHtml(String value) {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+  }
+
+  /// Renders the standardized, Single-Source-of-Truth Supplier Details HTML card
+  /// embedded identically in BOTH the Supplier email and the Store/Admin Copy email.
+  static String buildValidatedSupplierHtmlSection(SupplierSnapshot snapshot) {
+    final name = _escapeHtml(snapshot.supplierName.trim());
+    final contact = _escapeHtml(snapshot.contactPerson.trim());
+    final email = _escapeHtml(snapshot.email.trim());
+    final phone = _escapeHtml(snapshot.phone.trim());
+    final address = _escapeHtml(snapshot.address.trim());
+    final tin = _escapeHtml(snapshot.tin.trim());
+    final paymentTerms = _escapeHtml(snapshot.paymentTerms.trim());
+
+    String row(String label, String value) {
+      if (value.isEmpty) return '';
+      return '''
+<tr>
+  <td style="padding: 3px 0; width: 34%; color: #64748b; font-size: 12.5px; vertical-align: top;"><strong>$label:</strong></td>
+  <td style="padding: 3px 0; color: #0f172a; font-size: 12.5px; vertical-align: top;">$value</td>
+</tr>
+''';
+    }
+
+    return '''
+<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin: 16px 0;">
+  <p style="margin: 0 0 8px 0; font-size: 11px; font-weight: bold; letter-spacing: 0.6px; text-transform: uppercase; color: #0f766e;">
+    Vendor / Supplier Details
+  </p>
+  <p style="margin: 0 0 8px 0; font-size: 15px; font-weight: bold; color: #0f172a;">$name</p>
+  <table style="width: 100%; border-collapse: collapse;">
+    ${row('Contact Person', contact)}
+    ${row('Email', email)}
+    ${row('Phone', phone)}
+    ${row('Address', address)}
+    ${row('TIN / Business ID', tin)}
+    ${row('Payment Terms', paymentTerms)}
+  </table>
+</div>
+''';
+  }
+
+  /// Internal single-recipient Brevo transactional email sender with PDF attachment
+  /// returning explicit success status and error diagnostics.
+  Future<({bool sent, String? error})> _sendSingleBrevoPdfEmail({
+    required String toEmail,
+    required String subject,
+    required String htmlContent,
+    required String pdfFileName,
+    required Uint8List pdfBytes,
+    String? recipientName,
+    String? ccEmail,
+    String? replyToEmail,
+  }) async {
+    await _ensureEnvLoaded();
+    final apiKey = _brevoApiKey;
+    final senderEmail = _brevoSenderEmail.trim();
+
+    if (apiKey.isEmpty) {
+      const msg = 'BREVO_API_KEY is missing from environment.';
+      _lastBrevoError = msg;
+      debugPrint('[AdminMessagingService] $msg');
+      return (sent: false, error: msg);
+    }
+
+    final cleanTo = toEmail.trim();
+    if (cleanTo.isEmpty) {
+      const msg = 'Recipient email address is empty.';
+      return (sent: false, error: msg);
+    }
+
+    try {
+      final url = Uri.parse('https://api.brevo.com/v3/smtp/email');
+      final headers = {
+        'accept': 'application/json',
+        'api-key': apiKey,
+        'content-type': 'application/json',
+      };
+
+      final base64Pdf = base64Encode(pdfBytes);
+      final cleanCc = (ccEmail ?? '').trim();
+      final cleanReplyTo = (replyToEmail ?? senderEmail).trim();
+
+      final Map<String, dynamic> bodyMap = {
+        'sender': {
+          'name': 'GDC Store Procurement',
+          'email': senderEmail,
+        },
+        'to': [
+          {
+            'email': cleanTo,
+            if (recipientName != null && recipientName.trim().isNotEmpty)
+              'name': recipientName.trim(),
+          }
+        ],
+        'subject': subject,
+        'htmlContent': htmlContent,
+        'attachment': [
+          {
+            'name': pdfFileName,
+            'content': base64Pdf,
+          }
+        ],
+      };
+
+      // Guard against Brevo HTTP 400 when cc duplicates the primary recipient
+      if (cleanCc.isNotEmpty &&
+          cleanCc.toLowerCase() != cleanTo.toLowerCase()) {
+        bodyMap['cc'] = [
+          {
+            'email': cleanCc,
+            'name': 'GDC Store Procurement',
+          }
+        ];
+      }
+
+      if (cleanReplyTo.isNotEmpty) {
+        bodyMap['replyTo'] = {
+          'email': cleanReplyTo,
+          'name': 'GDC Store Procurement',
+        };
+      }
+
+      final response = await http
+          .post(url, headers: headers, body: jsonEncode(bodyMap))
+          .timeout(const Duration(seconds: 25));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        _lastBrevoError = null;
+        debugPrint(
+            '[AdminMessagingService] Brevo Email with PDF sent to $cleanTo [${response.statusCode}]');
+        return (sent: true, error: null);
+      } else {
+        final err = 'Brevo [${response.statusCode}]: ${response.body}';
+        _lastBrevoError = err;
+        debugPrint('[AdminMessagingService] Brevo Email with PDF failed: $err');
+        return (sent: false, error: err);
+      }
+    } catch (e) {
+      final err = 'Network/Dispatch error: $e';
+      _lastBrevoError = err;
+      debugPrint(
+          '[AdminMessagingService] Exception sending Brevo email with PDF: $e');
+      return (sent: false, error: err);
+    }
+  }
+
+  /// Sends a transactional email with a PDF attachment using Brevo HTTP API (v3/smtp/email).
+  Future<bool> sendSupplierEmailWithPdf({
+    required String toEmail,
+    required String subject,
+    required String htmlContent,
+    required String pdfFileName,
+    required Uint8List pdfBytes,
+    String? recipientName,
+    String? ccEmail,
+    String? replyToEmail,
+  }) async {
+    final result = await _sendSingleBrevoPdfEmail(
+      toEmail: toEmail,
+      subject: subject,
+      htmlContent: htmlContent,
+      pdfFileName: pdfFileName,
+      pdfBytes: pdfBytes,
+      recipientName: recipientName,
+      ccEmail: ccEmail ?? _brevoSenderEmail,
+      replyToEmail: replyToEmail ?? _brevoSenderEmail,
+    );
+    return result.sent;
+  }
+
+  /// Dispatches the exact same validated HTML payload & PDF attachment independently
+  /// to BOTH the Supplier Email and the Store/Admin Copy Email so both recipients receive
+  /// 100% identical supplier metadata, identical PDF bytes, and individual delivery tracking.
+  Future<DocumentDispatchResult> _dispatchDualEmailWithPdf({
+    required SupplierSnapshot snapshot,
+    required String subject,
+    required String htmlContent,
+    required String pdfFileName,
+    required Uint8List pdfBytes,
+    String? storeEmailOverride,
+  }) async {
+    final String supplierEmail = snapshot.email.trim();
+    final String storeEmail =
+        ((storeEmailOverride != null && storeEmailOverride.trim().isNotEmpty)
+                ? storeEmailOverride
+                : await resolveStoreEmail())
+            .trim();
+
+    // 1. Dispatch to Supplier (replyTo routed to Store Email)
+    final supplierOutcome = await _sendSingleBrevoPdfEmail(
+      toEmail: supplierEmail,
+      recipientName: snapshot.supplierName,
+      subject: subject,
+      htmlContent: htmlContent,
+      pdfFileName: pdfFileName,
+      pdfBytes: pdfBytes,
+      replyToEmail: storeEmail,
+    );
+
+    // 2. Dispatch identical metadata & identical PDF bytes to Store/Admin Copy
+    final storeOutcome = storeEmail.isNotEmpty
+        ? await _sendSingleBrevoPdfEmail(
+            toEmail: storeEmail,
+            recipientName: 'GDC Store Procurement (Admin Copy)',
+            subject: '[STORE COPY] $subject',
+            htmlContent: htmlContent,
+            pdfFileName: pdfFileName,
+            pdfBytes: pdfBytes,
+            replyToEmail: supplierEmail,
+          )
+        : (sent: false, error: 'Store/Admin email is not configured.');
+
+    return DocumentDispatchResult(
+      validationPassed: true,
+      validationResult: const SupplierValidationResult(blockingIssues: []),
+      pdfGenerated: true,
+      pdfBytes: pdfBytes,
+      pdfFileName: pdfFileName,
+      supplierEmail: supplierEmail,
+      storeEmail: storeEmail,
+      supplierEmailSent: supplierOutcome.sent,
+      storeCopyEmailSent: storeOutcome.sent,
+      supplierError: supplierOutcome.error,
+      storeError: storeOutcome.error,
+    );
+  }
+
+  /// Persists lightweight dual-recipient dispatch log onto `purchase_orders/{po.id}`
+  /// and creates a matching Procurement audit trail entry.
+  Future<void> _recordDispatchAudit({
+    required PurchaseOrder po,
+    required SupplierSnapshot snapshot,
+    required String noticeTypeKey,
+    required String auditAction,
+    required String summaryPrefix,
+    required DocumentDispatchResult result,
+  }) async {
+    final metadata = {
+      'timestamp': Timestamp.now(),
+      'noticeType': noticeTypeKey,
+      'poNumber': po.poNumber,
+      'supplierEmail': result.supplierEmail,
+      'storeEmail': result.storeEmail,
+      'supplierEmailSent': result.supplierEmailSent,
+      'storeCopyEmailSent': result.storeCopyEmailSent,
+      'method': 'brevo_dual_dispatch',
+      'status': result.isFullSuccess
+          ? 'SUCCESS'
+          : (result.isPartialSuccess ? 'PARTIAL' : 'FAILED'),
+      if (result.supplierError != null) 'supplierError': result.supplierError,
+      if (result.storeError != null) 'storeError': result.storeError,
+    };
+
+    try {
+      if (po.id.trim().isNotEmpty) {
+        await _db.collection('purchase_orders').doc(po.id).set({
+          'notificationLogs': FieldValue.arrayUnion([metadata]),
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('[AdminMessagingService] Error saving notificationLog: $e');
+    }
+
+    try {
+      await AuditLogService().logAction(
+        module: 'Procurement',
+        action: auditAction,
+        targetId: po.id,
+        targetName: 'PO #${po.poNumber}',
+        summary:
+            '$summaryPrefix for ${snapshot.supplierName}. Supplier (${result.supplierEmail}): ${result.supplierEmailSent ? "SENT" : "FAILED"}; Store Copy (${result.storeEmail}): ${result.storeCopyEmailSent ? "SENT" : "FAILED"}.',
+      );
+    } catch (e) {
+      debugPrint('[AdminMessagingService] Error saving audit log: $e');
+    }
+  }
+
+  /// Unified 4-stage pipeline for validating, generating, and dual-dispatching a Purchase Order PDF
+  /// to BOTH the Supplier Email and the Store/Admin Copy Email.
+  Future<DocumentDispatchResult> dispatchPurchaseOrderWithPdf({
+    required PurchaseOrder po,
+    Supplier? supplier,
+    SupplierSnapshot? supplierSnapshot,
+    String? storeEmailOverride,
+    void Function(DispatchStage stage)? onStageChanged,
+  }) async {
+    onStageChanged?.call(DispatchStage.validating);
+    final SupplierSnapshot snapshot =
+        supplierSnapshot ?? po.resolveSupplierSnapshot(supplier);
+    final String storeEmail =
+        ((storeEmailOverride != null && storeEmailOverride.trim().isNotEmpty)
+                ? storeEmailOverride
+                : await resolveStoreEmail())
+            .trim();
+
+    final validation = snapshot.validateForDispatch();
+    if (!validation.isValid) {
+      onStageChanged?.call(DispatchStage.failed);
+      return DocumentDispatchResult(
+        validationPassed: false,
+        validationResult: validation,
+        pdfGenerated: false,
+        supplierEmail: snapshot.email.trim(),
+        storeEmail: storeEmail,
+        supplierEmailSent: false,
+        storeCopyEmailSent: false,
+        supplierError: validation.summaryMessage,
+      );
+    }
+
+    onStageChanged?.call(DispatchStage.generatingPdf);
+    final Uint8List pdfBytes;
+    final String pdfFileName = 'Purchase_Order_${po.poNumber}.pdf';
+    try {
+      pdfBytes = await PoPdfPrinter.generatePoPdf(
+        po,
+        supplier,
+        supplierSnapshot: snapshot,
+        enforceValidation: true,
+      );
+    } catch (e) {
+      onStageChanged?.call(DispatchStage.failed);
+      return DocumentDispatchResult(
+        validationPassed: true,
+        validationResult: validation,
+        pdfGenerated: false,
+        pdfError: e.toString(),
+        supplierEmail: snapshot.email.trim(),
+        storeEmail: storeEmail,
+        supplierEmailSent: false,
+        storeCopyEmailSent: false,
+      );
+    }
+
+    onStageChanged?.call(DispatchStage.sendingEmails);
+    final currencyFormat = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
+    final dateStr = DateFormat('MMM dd, yyyy').format(po.orderDate);
+    final reqDateStr = po.requestedDeliveryDate != null
+        ? DateFormat('MMM dd, yyyy').format(po.requestedDeliveryDate!)
+        : 'As soon as possible';
+
+    final StringBuffer itemsHtml = StringBuffer();
+    for (int i = 0; i < po.items.length; i++) {
+      final item = po.items[i];
+      final itemTotal = item.orderedQty * item.unitCost;
+      itemsHtml.write('''
+<tr style="border-bottom: 1px solid #e2e8f0;">
+  <td style="padding: 10px; font-size: 13px; color: #1e293b;">${i + 1}</td>
+  <td style="padding: 10px; font-size: 13px; color: #1e293b;"><strong>${_escapeHtml(item.productName)}</strong><br/><span style="font-size: 11px; color: #64748b;">SKU: ${_escapeHtml(item.sku.isNotEmpty ? item.sku : 'N/A')}</span></td>
+  <td style="padding: 10px; font-size: 13px; color: #1e293b; text-align: center;"><strong>${item.orderedQty}</strong></td>
+  <td style="padding: 10px; font-size: 13px; color: #1e293b; text-align: right;">${currencyFormat.format(item.unitCost)}</td>
+  <td style="padding: 10px; font-size: 13px; color: #0f172a; font-weight: bold; text-align: right;">${currencyFormat.format(itemTotal)}</td>
+</tr>
+''');
+    }
+
+    final supplierBlockHtml = buildValidatedSupplierHtmlSection(snapshot);
+    final greetingName = snapshot.contactPerson.trim().isNotEmpty
+        ? '${_escapeHtml(snapshot.contactPerson.trim())} (${_escapeHtml(snapshot.supplierName)})'
+        : _escapeHtml(snapshot.supplierName);
+
+    final htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #0d9488; margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">GDC SARI-SARI STORE</h2>
+      <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Official Purchase Order</p>
+    </div>
+
+    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;">
+      <p style="margin: 0; color: #166534; font-size: 14px; font-weight: bold; text-align: center;">
+        ${po.isBackOrder ? 'BACK-ORDER' : 'PURCHASE ORDER'} #${_escapeHtml(po.poNumber)} SUBMITTED
+      </p>
+    </div>
+
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      Dear <strong>$greetingName</strong>,
+    </p>
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      Please find below our official Purchase Order details. The matching PDF document (<strong>${_escapeHtml(pdfFileName)}</strong>) is attached for your records.
+    </p>
+
+    $supplierBlockHtml
+
+    <table style="width: 100%; margin: 16px 0; font-size: 13px; color: #475569;">
+      <tr>
+        <td style="padding: 4px 0;"><strong>PO Number:</strong> #${_escapeHtml(po.poNumber)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Order Date:</strong> $dateStr</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Req. Delivery:</strong> $reqDateStr</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Total Items:</strong> ${po.items.length} (${po.totalOrderedQty} units)</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Store Copy:</strong> ${_escapeHtml(storeEmail)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Status:</strong> ${_escapeHtml(po.status.displayName)}</td>
+      </tr>
+    </table>
+
+    <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+      <thead>
+        <tr style="background-color: #0d9488; color: #ffffff; text-align: left; font-size: 12px; text-transform: uppercase;">
+          <th style="padding: 10px; width: 8%;">#</th>
+          <th style="padding: 10px; width: 42%;">Product</th>
+          <th style="padding: 10px; width: 15%; text-align: center;">Qty</th>
+          <th style="padding: 10px; width: 17%; text-align: right;">Unit Cost</th>
+          <th style="padding: 10px; width: 18%; text-align: right;">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        $itemsHtml
+      </tbody>
+    </table>
+
+    <div style="background-color: #f8fafc; border-radius: 10px; padding: 16px; margin-top: 20px; border: 1px solid #e2e8f0;">
+      <table style="width: 100%; font-size: 14px;">
+        <tr>
+          <td style="color: #64748b; font-weight: bold;">Grand Total Estimated Value:</td>
+          <td style="color: #0d9488; font-weight: 900; font-size: 18px; text-align: right;">${currencyFormat.format(po.totalOrderedValue)}</td>
+        </tr>
+      </table>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;" />
+    <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+      Thank you for your partnership.<br/>GDC Sari-Sari Store Procurement Team
+    </p>
+  </div>
+</div>
+''';
+
+    final result = await _dispatchDualEmailWithPdf(
+      snapshot: snapshot,
+      subject: '[GDC SARI-SARI STORE] Purchase Order #${po.poNumber}',
+      htmlContent: htmlContent,
+      pdfFileName: pdfFileName,
+      pdfBytes: pdfBytes,
+      storeEmailOverride: storeEmail,
+    );
+
+    await _recordDispatchAudit(
+      po: po,
+      snapshot: snapshot,
+      noticeTypeKey: 'purchase_order',
+      auditAction: 'SEND_PO_PDF_EMAIL',
+      summaryPrefix: 'Purchase Order #${po.poNumber} PDF dual-dispatch',
+      result: result,
+    );
+
+    onStageChanged?.call(
+      result.isFullSuccess ? DispatchStage.completed : DispatchStage.failed,
+    );
+    return result;
+  }
+
+  /// Unified 4-stage pipeline for validating, generating, and dual-dispatching
+  /// Backorder Notices, Delivery Confirmations, and Cancellation Notices
+  /// to BOTH the Supplier Email and the Store/Admin Copy Email.
+  Future<DocumentDispatchResult> dispatchSupplierNoticeWithPdf({
+    required PurchaseOrder po,
+    Supplier? supplier,
+    SupplierSnapshot? supplierSnapshot,
+    required NoticeType noticeType,
+    String? cancellationReason,
+    String? deliveryReceiptNo,
+    List<ReceivingItem>? itemsReceived,
+    String? storeEmailOverride,
+    String actorEmail = 'Admin',
+    void Function(DispatchStage stage)? onStageChanged,
+  }) async {
+    onStageChanged?.call(DispatchStage.validating);
+    final SupplierSnapshot snapshot =
+        supplierSnapshot ?? po.resolveSupplierSnapshot(supplier);
+    final String storeEmail =
+        ((storeEmailOverride != null && storeEmailOverride.trim().isNotEmpty)
+                ? storeEmailOverride
+                : await resolveStoreEmail())
+            .trim();
+
+    final validation = snapshot.validateForDispatch();
+    if (!validation.isValid) {
+      onStageChanged?.call(DispatchStage.failed);
+      return DocumentDispatchResult(
+        validationPassed: false,
+        validationResult: validation,
+        pdfGenerated: false,
+        supplierEmail: snapshot.email.trim(),
+        storeEmail: storeEmail,
+        supplierEmailSent: false,
+        storeCopyEmailSent: false,
+        supplierError: validation.summaryMessage,
+      );
+    }
+
+    onStageChanged?.call(DispatchStage.generatingPdf);
+    final Uint8List pdfBytes;
+    final String pdfFileName = '${noticeType.shortCode}_PO_${po.poNumber}.pdf';
+    try {
+      pdfBytes = await NoticePdfPrinter.generateSupplierNoticePdf(
+        po: po,
+        supplier: supplier,
+        supplierSnapshot: snapshot,
+        noticeType: noticeType,
+        cancellationReason: cancellationReason,
+        itemsReceived: itemsReceived,
+        enforceValidation: true,
+      );
+    } catch (e) {
+      onStageChanged?.call(DispatchStage.failed);
+      return DocumentDispatchResult(
+        validationPassed: true,
+        validationResult: validation,
+        pdfGenerated: false,
+        pdfError: e.toString(),
+        supplierEmail: snapshot.email.trim(),
+        storeEmail: storeEmail,
+        supplierEmailSent: false,
+        storeCopyEmailSent: false,
+      );
+    }
+
+    onStageChanged?.call(DispatchStage.sendingEmails);
+    final currencyFormat = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
+    final dateFormat = DateFormat('MMM dd, yyyy');
+    final supplierBlockHtml = buildValidatedSupplierHtmlSection(snapshot);
+    final greetingName = snapshot.contactPerson.trim().isNotEmpty
+        ? '${_escapeHtml(snapshot.contactPerson.trim())} (${_escapeHtml(snapshot.supplierName)})'
+        : _escapeHtml(snapshot.supplierName);
+
+    final String backorderId =
+        (po.childPoId != null && po.childPoId!.trim().isNotEmpty)
+            ? po.childPoId!.trim()
+            : 'BO-${po.poNumber}';
+
+    late final String subject;
+    late final String htmlContent;
+    late final String auditAction;
+
+    if (noticeType == NoticeType.backorder) {
+      auditAction = 'SEND_BACKORDER_NOTICE_EMAIL';
+      subject =
+          '[GDC SARI-SARI STORE] Backorder Notice ($backorderId) - PO #${po.poNumber}';
+
+      final StringBuffer confirmedRowsHtml = StringBuffer();
+      final StringBuffer backorderedRowsHtml = StringBuffer();
+
+      for (final item in po.items) {
+        if (item.receivedQty > 0) {
+          final double acceptedTotal =
+              item.receivedQty * item.effectiveUnitCost;
+          confirmedRowsHtml.write('''
+<tr style="border-bottom: 1px solid #f1f5f9;">
+  <td style="padding: 8px 0; color: #1e293b; font-size: 13px;"><strong>${_escapeHtml(item.productName)}</strong><br/><span style="font-size: 11px; color: #64748b;">SKU: ${_escapeHtml(item.sku.isNotEmpty ? item.sku : "N/A")}</span></td>
+  <td style="padding: 8px 0; color: #047857; font-size: 13px; font-weight: bold; text-align: center;">${item.receivedQty}</td>
+  <td style="padding: 8px 0; color: #0f172a; font-size: 13px; text-align: right;">${currencyFormat.format(acceptedTotal)}</td>
+</tr>
+''');
+        }
+
+        if (item.remainingQty > 0) {
+          backorderedRowsHtml.write('''
+<tr style="border-bottom: 1px solid #fff7ed;">
+  <td style="padding: 8px 0; color: #9a3412; font-size: 13px;"><strong>${_escapeHtml(item.productName)}</strong><br/><span style="font-size: 11px; color: #64748b;">SKU: ${_escapeHtml(item.sku.isNotEmpty ? item.sku : "N/A")}</span></td>
+  <td style="padding: 8px 0; color: #c2410c; font-size: 13px; text-align: center;">Ordered: ${item.orderedQty} | Rec: ${item.receivedQty}${item.rejectedQty > 0 ? " | Rej: ${item.rejectedQty}" : ""}</td>
+  <td style="padding: 8px 0; color: #dc2626; font-size: 13px; font-weight: bold; text-align: right;">Backordered: ${item.remainingQty} units</td>
+</tr>
+''');
+        }
+      }
+
+      htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #c2410c; margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">GDC SARI-SARI STORE</h2>
+      <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Official Partial Delivery &amp; Back-Order Notification</p>
+    </div>
+
+    <div style="background-color: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;">
+      <p style="margin: 0; color: #c2410c; font-size: 14px; font-weight: bold; text-align: center;">
+        PARTIAL DELIVERY RECEIVED — ACTIVE BACK-ORDER ($backorderId)
+      </p>
+    </div>
+
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      Dear <strong>$greetingName</strong>,
+    </p>
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      This notification summarizes verified received items and remaining back-ordered items for Purchase Order <strong>#${_escapeHtml(po.poNumber)}</strong>. The official Back-Order PDF (<strong>${_escapeHtml(pdfFileName)}</strong>) is attached.
+    </p>
+
+    $supplierBlockHtml
+
+    <table style="width: 100%; margin: 16px 0; font-size: 13px; color: #475569; border-collapse: collapse;">
+      <tr>
+        <td style="padding: 4px 0;"><strong>Original PO #:</strong> #${_escapeHtml(po.poNumber)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Backorder ID:</strong> ${_escapeHtml(backorderId)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Order Date:</strong> ${dateFormat.format(po.orderDate)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Notice Date:</strong> ${dateFormat.format(DateTime.now())}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Status:</strong> ${_escapeHtml(po.status.displayName)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Store Copy:</strong> ${_escapeHtml(storeEmail)}</td>
+      </tr>
+    </table>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+
+    ${confirmedRowsHtml.isNotEmpty ? '''
+    <h4 style="color: #047857; margin: 16px 0 12px 0; font-size: 14px;">CONFIRMED &amp; ACCEPTED ITEMS:</h4>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b; font-size: 11px; text-transform: uppercase;">
+          <th style="padding: 6px 0; width: 55%;">Item Description</th>
+          <th style="padding: 6px 0; width: 20%; text-align: center;">Confirmed Qty</th>
+          <th style="padding: 6px 0; width: 25%; text-align: right;">Total Accepted</th>
+        </tr>
+      </thead>
+      <tbody>
+        $confirmedRowsHtml
+      </tbody>
+    </table>
+    ''' : ''}
+
+    ${backorderedRowsHtml.isNotEmpty ? '''
+    <h4 style="color: #c2410c; margin: 16px 0 12px 0; font-size: 14px;">BACKORDERED ITEMS (UNFULFILLED):</h4>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #ffedd5; text-align: left; color: #9a3412; font-size: 11px; text-transform: uppercase;">
+          <th style="padding: 6px 0; width: 45%;">Item Description</th>
+          <th style="padding: 6px 0; width: 30%; text-align: center;">Status</th>
+          <th style="padding: 6px 0; width: 25%; text-align: right;">Backordered Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        $backorderedRowsHtml
+      </tbody>
+    </table>
+    ''' : ''}
+
+    <div style="background-color: #fefce8; border: 1px solid #fef08a; border-radius: 10px; padding: 16px; margin-top: 20px;">
+      <h4 style="color: #854d0e; margin: 0 0 6px 0; font-size: 13.5px; font-weight: bold;">DELIVERY UPDATE &amp; THREADING NOTICE:</h4>
+      <p style="color: #713f12; margin: 0; font-size: 13px; line-height: 1.5;">
+        Kindly confirm the expected delivery schedule for the remaining back-ordered units above. Replies to this email route directly to ${_escapeHtml(storeEmail)}.
+      </p>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;" />
+    <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+      GDC Sari-Sari Store Management System
+    </p>
+  </div>
+</div>
+''';
+    } else if (noticeType == NoticeType.fullDelivery) {
+      auditAction = 'DELIVERY_CONFIRMATION_EMAIL';
+      subject =
+          '[GDC SARI-SARI STORE] Delivery Confirmation Successful - PO #${po.poNumber}';
+
+      final StringBuffer receivedRowsHtml = StringBuffer();
+      for (final item in po.items) {
+        if (item.receivedQty > 0) {
+          final double acceptedTotal =
+              item.receivedQty * item.effectiveUnitCost;
+          receivedRowsHtml.write('''
+<tr style="border-bottom: 1px solid #f1f5f9;">
+  <td style="padding: 8px 0; color: #1e293b; font-size: 13px;"><strong>${_escapeHtml(item.productName)}</strong> (SKU: ${_escapeHtml(item.sku.isNotEmpty ? item.sku : "N/A")})</td>
+  <td style="padding: 8px 0; color: #047857; font-size: 13px; font-weight: bold; text-align: center;">${item.receivedQty}</td>
+  <td style="padding: 8px 0; color: #0f172a; font-size: 13px; text-align: right;">${currencyFormat.format(acceptedTotal)}</td>
+</tr>
+''');
+        }
+      }
+
+      final drDisplay =
+          (deliveryReceiptNo != null && deliveryReceiptNo.trim().isNotEmpty)
+              ? 'DR #${_escapeHtml(deliveryReceiptNo.trim())}'
+              : 'Verified';
+
+      htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #047857; margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">GDC SARI-SARI STORE</h2>
+      <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Official Delivery Verification Notice</p>
+    </div>
+
+    <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;">
+      <p style="margin: 0; color: #047857; font-size: 14px; font-weight: bold; text-align: center;">
+        DELIVERY FULFILLMENT SUCCESSFUL &amp; CONFIRMED
+      </p>
+    </div>
+
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      Dear <strong>$greetingName</strong>,
+    </p>
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      We confirm that delivery receipt <strong>$drDisplay</strong> for Purchase Order <strong>#${_escapeHtml(po.poNumber)}</strong> has been fully received and verified.
+    </p>
+
+    $supplierBlockHtml
+
+    <table style="width: 100%; margin: 16px 0; font-size: 13px; color: #475569;">
+      <tr>
+        <td style="padding: 4px 0;"><strong>PO Reference:</strong> #${_escapeHtml(po.poNumber)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Delivery Receipt:</strong> $drDisplay</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Order Date:</strong> ${dateFormat.format(po.orderDate)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Updated Payable:</strong> ${currencyFormat.format(po.totalReceivedValue)}</td>
+      </tr>
+    </table>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+
+    <h4 style="color: #047857; margin: 0 0 12px 0; font-size: 14px;">ITEMS RECEIVED &amp; ACCEPTED:</h4>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b; font-size: 11px; text-transform: uppercase;">
+          <th style="padding: 6px 0; width: 60%;">Item</th>
+          <th style="padding: 6px 0; width: 20%; text-align: center;">Accepted Qty</th>
+          <th style="padding: 6px 0; width: 20%; text-align: right;">Accepted Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        $receivedRowsHtml
+      </tbody>
+    </table>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;" />
+    <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+      GDC Sari-Sari Store Management System
+    </p>
+  </div>
+</div>
+''';
+    } else {
+      auditAction = 'CANCEL_ORDER_EMAIL';
+      final reasonText =
+          (cancellationReason != null && cancellationReason.trim().isNotEmpty)
+              ? cancellationReason.trim()
+              : (po.cancelledReason ?? 'Remaining order closed short');
+      subject =
+          '[GDC SARI-SARI STORE] Order Cancellation / Close Short Notice - PO #${po.poNumber}';
+
+      final StringBuffer cancelledRowsHtml = StringBuffer();
+      for (final item in po.items) {
+        if (item.remainingQty > 0) {
+          cancelledRowsHtml.write('''
+<tr style="border-bottom: 1px solid #fee2e2;">
+  <td style="padding: 8px 0; color: #991b1b; font-size: 13px;"><strong>${_escapeHtml(item.productName)}</strong> (SKU: ${_escapeHtml(item.sku.isNotEmpty ? item.sku : "N/A")})</td>
+  <td style="padding: 8px 0; color: #b91c1c; font-size: 13px; text-align: center;">Ordered: ${item.orderedQty} | Received: ${item.receivedQty}</td>
+  <td style="padding: 8px 0; color: #dc2626; font-size: 13px; font-weight: bold; text-align: right;">Cancelled: ${item.remainingQty} units</td>
+</tr>
+''');
+        }
+      }
+
+      htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #dc2626; margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">GDC SARI-SARI STORE</h2>
+      <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Official Order Cancellation / Close Short Notice</p>
+    </div>
+
+    <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;">
+      <p style="margin: 0; color: #991b1b; font-size: 14px; font-weight: bold; text-align: center;">
+        REMAINING UNFULFILLED ORDER BALANCE CANCELLED
+      </p>
+    </div>
+
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      Dear <strong>$greetingName</strong>,
+    </p>
+    <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+      This email serves as formal notification that the remaining unfulfilled balance for Purchase Order <strong>#${_escapeHtml(po.poNumber)}</strong> has been closed short / cancelled.
+    </p>
+
+    $supplierBlockHtml
+
+    <div style="background-color: #f8fafc; border-left: 4px solid #dc2626; padding: 12px 16px; margin: 16px 0;">
+      <p style="margin: 0; font-size: 13px; color: #475569;"><strong>Cancellation Reason:</strong> ${_escapeHtml(reasonText)}</p>
+    </div>
+
+    <table style="width: 100%; margin: 16px 0; font-size: 13px; color: #475569;">
+      <tr>
+        <td style="padding: 4px 0;"><strong>PO Reference:</strong> #${_escapeHtml(po.poNumber)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Original Order Date:</strong> ${dateFormat.format(po.orderDate)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0;"><strong>Total Received Value:</strong> ${currencyFormat.format(po.totalReceivedValue)}</td>
+        <td style="padding: 4px 0; text-align: right;"><strong>Status:</strong> CLOSED SHORT</td>
+      </tr>
+    </table>
+
+    <h4 style="color: #991b1b; margin: 16px 0 12px 0; font-size: 14px;">CANCELLED ITEMS BREAKDOWN:</h4>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #fecaca; text-align: left; color: #991b1b; font-size: 11px; text-transform: uppercase;">
+          <th style="padding: 6px 0; width: 45%;">Item</th>
+          <th style="padding: 6px 0; width: 30%; text-align: center;">Delivery History</th>
+          <th style="padding: 6px 0; width: 25%; text-align: right;">Cancelled Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        $cancelledRowsHtml
+      </tbody>
+    </table>
+
+    <p style="color: #64748b; font-size: 13px; line-height: 1.5;">
+      Please adjust your billing records accordingly to reflect only physical accepted deliveries. The official cancellation notice PDF is attached.
+    </p>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;" />
+    <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+      GDC Sari-Sari Store Management System
+    </p>
+  </div>
+</div>
+''';
+    }
+
+    final result = await _dispatchDualEmailWithPdf(
+      snapshot: snapshot,
+      subject: subject,
+      htmlContent: htmlContent,
+      pdfFileName: pdfFileName,
+      pdfBytes: pdfBytes,
+      storeEmailOverride: storeEmail,
+    );
+
+    await _recordDispatchAudit(
+      po: po,
+      snapshot: snapshot,
+      noticeTypeKey: noticeType.name,
+      auditAction: auditAction,
+      summaryPrefix: '${noticeType.title} (PO #${po.poNumber}) dual-dispatch',
+      result: result,
+    );
+
+    onStageChanged?.call(
+      result.isFullSuccess ? DispatchStage.completed : DispatchStage.failed,
+    );
+    return result;
+  }
+
+  /// Legacy wrapper preserved for backwards compatibility; routes through [dispatchSupplierNoticeWithPdf].
+  Future<bool> sendSupplierNoticeNotification({
+    required BuildContext context,
+    required PurchaseOrder po,
+    Supplier? supplier,
+    SupplierSnapshot? supplierSnapshot,
+    required NoticeType noticeType,
+    String? cancellationReason,
+    List<ReceivingItem>? itemsReceived,
+    required String actorEmail,
+  }) async {
+    final result = await dispatchSupplierNoticeWithPdf(
+      po: po,
+      supplier: supplier,
+      supplierSnapshot: supplierSnapshot,
+      noticeType: noticeType,
+      cancellationReason: cancellationReason,
+      itemsReceived: itemsReceived,
+      actorEmail: actorEmail,
+    );
+
+    if (!result.isFullSuccess &&
+        result.pdfBytes != null &&
+        result.pdfFileName != null &&
+        context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.summaryMessage),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      if (!result.supplierEmailSent) {
+        await Printing.sharePdf(
+          bytes: result.pdfBytes!,
+          filename: result.pdfFileName!,
+        );
+      }
+    }
+
+    return result.isFullSuccess;
+  }
+
+  /// Legacy wrapper preserved for backwards compatibility; routes through [dispatchPurchaseOrderWithPdf].
+  Future<bool> sendPoSubmissionEmailWithPdf({
+    required PurchaseOrder po,
+    Supplier? supplier,
+    SupplierSnapshot? supplierSnapshot,
+  }) async {
+    final result = await dispatchPurchaseOrderWithPdf(
+      po: po,
+      supplier: supplier,
+      supplierSnapshot: supplierSnapshot,
+    );
+    return result.isFullSuccess;
+  }
+
+  /// Legacy wrapper preserved for backwards compatibility; routes through [dispatchSupplierNoticeWithPdf].
+  Future<bool> sendDeliveryConfirmationEmailWithPdf({
+    required PurchaseOrder po,
+    Supplier? supplier,
+    SupplierSnapshot? supplierSnapshot,
+    required bool isComplete,
+    required String deliveryReceiptNo,
+  }) async {
+    final result = await dispatchSupplierNoticeWithPdf(
+      po: po,
+      supplier: supplier,
+      supplierSnapshot: supplierSnapshot,
+      noticeType: isComplete ? NoticeType.fullDelivery : NoticeType.backorder,
+      deliveryReceiptNo: deliveryReceiptNo,
+    );
+    return result.isFullSuccess;
+  }
+
+  /// Legacy wrapper preserved for backwards compatibility; routes through [dispatchSupplierNoticeWithPdf].
+  Future<bool> sendOrderCancellationEmailWithPdf({
+    required PurchaseOrder po,
+    Supplier? supplier,
+    SupplierSnapshot? supplierSnapshot,
+    required String reason,
+  }) async {
+    final result = await dispatchSupplierNoticeWithPdf(
+      po: po,
+      supplier: supplier,
+      supplierSnapshot: supplierSnapshot,
+      noticeType: NoticeType.cancellation,
+      cancellationReason: reason,
+    );
+    return result.isFullSuccess;
   }
 }

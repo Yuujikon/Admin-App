@@ -16,6 +16,8 @@ class FullProductScannerResult {
   final String? category;
   final String? barcode;
   final String? catalogId;
+  final String? photoBase64;
+  final String? unit;
 
   FullProductScannerResult({
     this.name,
@@ -23,6 +25,8 @@ class FullProductScannerResult {
     this.category,
     this.barcode,
     this.catalogId,
+    this.photoBase64,
+    this.unit,
   });
 }
 
@@ -38,6 +42,8 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
     with SingleTickerProviderStateMixin {
   final MobileScannerController _scannerController = MobileScannerController();
   String? _detectedBarcode;
+  String? _detectedPhotoBase64;
+  String? _detectedUnit;
   bool _isTorchOn = false;
 
   late AnimationController _animationController;
@@ -98,6 +104,8 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
         _brandController.text = p.brand ?? '';
         _selectedCategory = p.category;
         _selectedCatalogId = p.id;
+        _detectedPhotoBase64 = p.photoBase64;
+        _detectedUnit = null;
         _infoSource = 'Local Catalog Match';
         _showReview = true;
       });
@@ -114,6 +122,8 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
         _brandController.text = p.brand ?? '';
         _selectedCategory = p.category;
         _selectedCatalogId = null;
+        _detectedPhotoBase64 = p.photoBase64;
+        _detectedUnit = p.unit;
         _infoSource = 'Local Inventory Match';
         _showReview = true;
       });
@@ -128,6 +138,8 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
       _brandController.clear();
       _selectedCategory = null;
       _selectedCatalogId = null;
+      _detectedPhotoBase64 = null;
+      _detectedUnit = null;
       _infoSource = 'Searching Global DB...';
       _showReview = true;
     });
@@ -139,6 +151,18 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
         setState(() {
           _nameController.text = extInfo.name;
           if (extInfo.brand != null) _brandController.text = extInfo.brand!;
+          if (extInfo.photoBase64 != null) {
+            _detectedPhotoBase64 = extInfo.photoBase64;
+          }
+          if (extInfo.unit != null) {
+            _detectedUnit = extInfo.unit;
+          }
+          if (extInfo.category != null && extInfo.category!.isNotEmpty) {
+            _selectedCategory = extInfo.category!;
+            if (!_categories.contains(_selectedCategory)) {
+              _categories.add(_selectedCategory!);
+            }
+          }
           _infoSource = 'Global DB (${extInfo.source})';
         });
         HapticFeedback.mediumImpact();
@@ -163,6 +187,8 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
         _brandController.text = result.brand ?? '';
         _selectedCategory = result.category;
         _selectedCatalogId = result.id;
+        _detectedPhotoBase64 = result.photoBase64;
+        _detectedUnit = null;
         _infoSource = 'Catalog Selected';
       });
     }
@@ -177,6 +203,8 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
         category: _selectedCategory,
         barcode: _detectedBarcode,
         catalogId: _selectedCatalogId,
+        photoBase64: _detectedPhotoBase64,
+        unit: _detectedUnit,
       ),
     );
   }
@@ -398,7 +426,7 @@ class _FullProductScannerDialogState extends State<FullProductScannerDialog>
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _categories.contains(_selectedCategory)
+                      initialValue: _categories.contains(_selectedCategory)
                           ? _selectedCategory
                           : (_categories.isNotEmpty ? _categories.first : null),
                       decoration: const InputDecoration(

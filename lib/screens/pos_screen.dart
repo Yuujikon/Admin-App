@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,7 +11,6 @@ import '../widgets/qty_control.dart';
 import '../widgets/scanner_dialog.dart';
 import '../utils/barcode_routing.dart';
 import '../utils/format.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../models/customer.dart';
 import '../providers/printer_provider.dart';
 import '../providers/order_provider.dart';
@@ -64,23 +62,32 @@ class _PosScreenState extends State<PosScreen> {
     super.dispose();
   }
 
+  double _resolveUnitPrice(Product p, CartItem item) {
+    if (item.variantId != null) {
+      try {
+        final v = p.variants.firstWhere((v) => v.id == item.variantId);
+        return v.price;
+      } catch (_) {}
+    }
+    final bool isWholesale =
+        p.wholesalePrice != null && item.qty >= (p.wholesaleThreshold ?? 999);
+    return isWholesale ? p.wholesalePrice! : p.price;
+  }
+
   PricingBreakdown get _breakdown {
     final products = context.read<InventoryProvider>().products;
 
-    // Apply wholesale prices to items before calculating
-    final itemsWithWholesale = _cart.map((item) {
+    final itemsWithResolvedPrice = _cart.map((item) {
       try {
         final p = products.firstWhere((p) => p.id == item.productId);
-        final bool isWholesale = p.wholesalePrice != null &&
-            item.qty >= (p.wholesaleThreshold ?? 999);
-        return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
+        return item.copyWith(price: _resolveUnitPrice(p, item));
       } catch (_) {
         return item;
       }
     }).toList();
 
     return PricingEngine.calculate(
-      items: itemsWithWholesale,
+      items: itemsWithResolvedPrice,
       allProducts: products,
     );
   }
@@ -107,11 +114,12 @@ class _PosScreenState extends State<PosScreen> {
       final idx =
           _cart.indexWhere((c) => c.productId == p.id && c.variantId == vid);
 
-      final stock = variant?.availableStock ?? p.availableStock;
+      final stock = variant?.availableStock ?? p.totalAvailableStock;
       final price = variant?.price ?? p.price;
       final cost = variant?.costPrice ?? p.costPrice;
       final name = variant != null ? '${p.name} (${variant.name})' : p.name;
-      final reservedCount = variant?.reservedStock ?? p.reservedStock;
+      final reservedCount =
+          variant?.effectiveReservedStock ?? p.totalReservedStock;
 
       if (idx >= 0) {
         if (_cart[idx].qty < stock) {
@@ -163,8 +171,9 @@ class _PosScreenState extends State<PosScreen> {
               final v = p.variants[i];
               return ListTile(
                 title: Text(v.name),
-                subtitle: Text('${formatPeso(v.price)} • Stock: ${v.stock}'),
-                enabled: v.stock > 0,
+                subtitle:
+                    Text('${formatPeso(v.price)} • Stock: ${v.availableStock}'),
+                enabled: v.availableStock > 0,
                 onTap: () => Navigator.pop(ctx, v),
               );
             },
@@ -183,6 +192,7 @@ class _PosScreenState extends State<PosScreen> {
         for (final pid in b.productIds) {
           try {
             final p = products.firstWhere((p) => p.id == pid);
+            if (p.availableStock <= 0) continue;
             final idx = _cart.indexWhere((c) => c.productId == p.id);
             if (idx < 0) {
               _cart.insert(
@@ -196,7 +206,7 @@ class _PosScreenState extends State<PosScreen> {
                       qty: 1,
                       isPerishable: p.isPerishable));
             } else {
-              if (_cart[idx].qty < p.stock) {
+              if (_cart[idx].qty < p.availableStock) {
                 _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty + 1);
               }
             }
@@ -257,13 +267,33 @@ class _PosScreenState extends State<PosScreen> {
         if (idx < 0) return;
 
         int stock = 9999;
+        int reserved = 0;
         final products = context.read<InventoryProvider>().products;
         try {
           final p = products.firstWhere((p) => p.id == id);
-          stock = variantId != null
-              ? p.variants.firstWhere((v) => v.id == variantId).availableStock
-              : p.availableStock;
+          if (variantId != null) {
+            final v = p.variants.firstWhere((v) => v.id == variantId);
+            stock = v.availableStock;
+            reserved = v.effectiveReservedStock;
+          } else {
+            stock = p.totalAvailableStock;
+            reserved = p.totalReservedStock;
+          }
         } catch (_) {}
+
+        if (targetQty > stock) {
+          final reservedNote =
+              reserved > 0 ? ' ($reserved reserved for pre-orders)' : '';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Requested quantity for ${_cart[idx].name} exceeds available stock ($stock available$reservedNote).',
+              ),
+              backgroundColor: Colors.amber.shade900,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
 
         final int maxStock = stock < 1 ? 1 : stock;
         _cart[idx] = _cart[idx].copyWith(qty: targetQty.clamp(1, maxStock));
@@ -283,7 +313,9 @@ class _PosScreenState extends State<PosScreen> {
     if (_cart.isEmpty ||
         _cashNum < _total ||
         _saving ||
-        inventory.isProcessingSale) return;
+        inventory.isProcessingSale) {
+      return;
+    }
 
     // Pre-flight check: Ensure no items in cart exceed available stock
     final products = inventory.products;
@@ -297,8 +329,8 @@ class _PosScreenState extends State<PosScreen> {
             : p.availableStock;
 
         if (currentAvailable < item.qty) {
-          final reservedNote = p.reservedStock > 0
-              ? ' (${p.reservedStock} reserved for pre-orders)'
+          final reservedNote = p.totalReservedStock > 0
+              ? ' (${p.totalReservedStock} reserved for pre-orders)'
               : '';
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(
@@ -337,11 +369,8 @@ class _PosScreenState extends State<PosScreen> {
         }
       }
 
-      final bool isWholesale = p != null &&
-          p.wholesalePrice != null &&
-          item.qty >= (p.wholesaleThreshold ?? 999);
       final double effectiveSellingPrice =
-          isWholesale ? p!.wholesalePrice! : item.price;
+          p != null ? _resolveUnitPrice(p, item) : item.price;
 
       if (effectiveSellingPrice > 0 &&
           cost > 0 &&
@@ -381,18 +410,21 @@ class _PosScreenState extends State<PosScreen> {
       final products = inventory.products;
       final breakdown = _breakdown;
 
-      // Items for the transaction (with wholesale prices)
+      // Items for the transaction (with resolved & locked unitPriceAtSale)
       final items = _cart.map((item) {
-        final p = products.firstWhere((p) => p.id == item.productId);
-        final bool isWholesale = p.wholesalePrice != null &&
-            item.qty >= (p.wholesaleThreshold ?? 999);
-        return item.copyWith(price: isWholesale ? p.wholesalePrice! : p.price);
+        try {
+          final p = products.firstWhere((p) => p.id == item.productId);
+          final resolved = _resolveUnitPrice(p, item);
+          return item.copyWith(price: resolved, unitPriceAtSale: resolved);
+        } catch (_) {
+          return item.copyWith(unitPriceAtSale: item.price);
+        }
       }).toList();
 
       final total = breakdown.total;
       final cash = _cashNum;
       final change = _change;
-      final itemsCount = items.fold<int>(0, (sum, i) => sum + i.qty);
+      final itemsCount = items.fold<int>(0, (acc, i) => acc + i.qty);
 
       final tx = await inventory.completeSale(
         items,
@@ -403,16 +435,20 @@ class _PosScreenState extends State<PosScreen> {
       );
 
       // Automatically record sale metrics into active register shift session
-      final shiftProvider = context.read<ShiftProvider>();
-      if (shiftProvider.hasActiveShift) {
-        await shiftProvider.updateShiftSales(
-          cashAmount: total,
-          gcashAmount: 0.0,
-          itemsSold: itemsCount,
-          cashReceived: cash,
-          changeGiven: change,
-        );
+      if (mounted) {
+        final shiftProvider = context.read<ShiftProvider>();
+        if (shiftProvider.hasActiveShift) {
+          await shiftProvider.updateShiftSales(
+            cashAmount: total,
+            gcashAmount: 0.0,
+            itemsSold: itemsCount,
+            cashReceived: cash,
+            changeGiven: change,
+          );
+        }
       }
+
+      final String? customerName = _selectedCustomer?.name;
 
       // 1. Immediately transition POS UI to completed success state
       if (mounted) {
@@ -443,16 +479,18 @@ class _PosScreenState extends State<PosScreen> {
 
       // 2. Asynchronously trigger Bluetooth thermal printing in background
       if (printer.connected || printer.device != null) {
-        printer.printReceipt(
+        printer
+            .printReceipt(
           items: items,
           total: total,
           cash: cash,
           change: change,
           orderId: tx.id,
-          customerName: _selectedCustomer?.name,
+          customerName: customerName,
           orderType: "In-store",
           breakdown: breakdown,
-        ).catchError((e) {
+        )
+            .catchError((e) {
           debugPrint("Background thermal printing error: $e");
           return false;
         });
@@ -560,7 +598,7 @@ class _PosScreenState extends State<PosScreen> {
                   _PosViewSwitcher(
                     showCart: _showCart,
                     totalCartItems:
-                        _cart.fold<int>(0, (sum, item) => sum + item.qty),
+                        _cart.fold<int>(0, (acc, item) => acc + item.qty),
                     onViewChanged: (showCart) =>
                         setState(() => _showCart = showCart),
                   ),
@@ -629,7 +667,7 @@ class _PosScreenState extends State<PosScreen> {
                             child: SafeArea(
                               child: _FloatingCartButton(
                                 totalQty: _cart.fold<int>(
-                                    0, (sum, item) => sum + item.qty),
+                                    0, (acc, item) => acc + item.qty),
                                 totalPrice: _total,
                                 onPressed: () =>
                                     setState(() => _showCart = true),
@@ -713,7 +751,7 @@ class _ProductGridState extends State<_ProductGrid> {
                     final p = pluProducts[i];
                     final cartQty = widget.cart
                         .where((c) => c.productId == p.id)
-                        .fold<int>(0, (sum, c) => sum + c.qty);
+                        .fold<int>(0, (acc, c) => acc + c.qty);
                     return _PosProductTile(
                         p: p,
                         cartQty: cartQty,
@@ -791,7 +829,7 @@ class _ProductGridState extends State<_ProductGrid> {
                   final p = filteredProducts[i - matchingBundles.length];
                   final cartQty = widget.cart
                       .where((c) => c.productId == p.id)
-                      .fold<int>(0, (sum, c) => sum + c.qty);
+                      .fold<int>(0, (acc, c) => acc + c.qty);
                   return _PosProductTile(
                       p: p,
                       cartQty: cartQty,
@@ -833,8 +871,11 @@ class _BundleTile extends StatelessWidget {
                 width: double.infinity,
                 color: Colors.white,
                 child: bundle.imageBytes != null
-                    ? Image.memory(bundle.imageBytes!,
-                        fit: BoxFit.cover, gaplessPlayback: true)
+                    ? Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Image.memory(bundle.imageBytes!,
+                            fit: BoxFit.contain, gaplessPlayback: true),
+                      )
                     : const Icon(Icons.auto_awesome_motion_rounded,
                         size: 32, color: Colors.grey),
               ),
@@ -874,7 +915,8 @@ class _PosProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool inCart = cartQty > 0;
-    final int available = p.availableStock;
+    final int available = p.totalAvailableStock;
+    final int reserved = p.totalReservedStock;
     final bool isOutOfStock = available <= 0;
     final bool isMaxStock = available > 0 && cartQty >= available;
     final bool isLow = available > 0 && available <= p.lowStockThreshold;
@@ -913,8 +955,11 @@ class _PosProductTile extends StatelessWidget {
                     width: double.infinity,
                     color: Colors.white,
                     child: p.imageBytes != null
-                        ? Image.memory(p.imageBytes!,
-                            fit: BoxFit.cover, gaplessPlayback: true)
+                        ? Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Image.memory(p.imageBytes!,
+                                fit: BoxFit.contain, gaplessPlayback: true),
+                          )
                         : const Icon(Icons.inventory_2_outlined, size: 32),
                   ),
                 ),
@@ -952,8 +997,8 @@ class _PosProductTile extends StatelessWidget {
                                 ? 'Out of Stock'
                                 : isMaxStock
                                     ? 'Max Stock'
-                                    : p.reservedStock > 0
-                                        ? '$available (${p.reservedStock} res)'
+                                    : reserved > 0
+                                        ? '$available ($reserved res)'
                                         : 'Stock: $available',
                             style: TextStyle(
                               fontSize: 10,
@@ -980,8 +1025,8 @@ class _PosProductTile extends StatelessWidget {
                 top: 6,
                 right: 6,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
                     borderRadius: BorderRadius.circular(12),
@@ -1043,14 +1088,13 @@ class _CartPanel extends StatelessWidget {
     required this.onSelectCustomer,
     required this.saving,
     required this.cashFocus,
-    this.scrollController,
     this.onBackToProducts,
-  });
+  }) : scrollController = null;
 
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final int totalUnits = cart.fold<int>(0, (sum, item) => sum + item.qty);
+    final int totalUnits = cart.fold<int>(0, (acc, item) => acc + item.qty);
     final double? nextBill = _getNextBill(breakdown.total);
 
     return Container(
@@ -1197,11 +1241,11 @@ class _CartPanel extends StatelessWidget {
                           final v = product.variants
                               .firstWhere((v) => v.id == item.variantId);
                           stock = v.availableStock;
-                          reserved = v.reservedStock;
+                          reserved = v.effectiveReservedStock;
                         } catch (_) {}
                       } else {
-                        stock = product.availableStock;
-                        reserved = product.reservedStock;
+                        stock = product.totalAvailableStock;
+                        reserved = product.totalReservedStock;
                       }
                     }
 
@@ -1270,9 +1314,8 @@ class _CartPanel extends StatelessWidget {
                                         decoration: isOutOfStock
                                             ? TextDecoration.lineThrough
                                             : null,
-                                        color: isOutOfStock
-                                            ? Colors.grey
-                                            : null,
+                                        color:
+                                            isOutOfStock ? Colors.grey : null,
                                       ),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
@@ -1298,8 +1341,8 @@ class _CartPanel extends StatelessWidget {
                                     'qty_${item.productId}_${item.variantId ?? 'base'}'),
                                 qty: item.qty,
                                 max: stock,
-                                onChanged: (n) => onSetQty(
-                                    item.productId, item.variantId, n),
+                                onChanged: (n) =>
+                                    onSetQty(item.productId, item.variantId, n),
                               ),
                               const SizedBox(width: 8),
                               SizedBox(
@@ -1506,7 +1549,8 @@ class _CartPanel extends StatelessWidget {
                                           fontSize: 11)),
                                   avatar: const Icon(Icons.check, size: 14),
                                   backgroundColor: Colors.green.shade50,
-                                  side: BorderSide(color: Colors.green.shade300),
+                                  side:
+                                      BorderSide(color: Colors.green.shade300),
                                   onPressed: () {
                                     cashCtrl.text = breakdown.total % 1 == 0
                                         ? breakdown.total.toStringAsFixed(0)
@@ -1514,7 +1558,8 @@ class _CartPanel extends StatelessWidget {
                                   },
                                 ),
                                 const SizedBox(width: 6),
-                                ...[50.0, 100.0, 200.0, 500.0, 1000.0].map((bill) {
+                                ...[50.0, 100.0, 200.0, 500.0, 1000.0]
+                                    .map((bill) {
                                   return Padding(
                                     padding: const EdgeInsets.only(right: 6),
                                     child: ChoiceChip(
@@ -1545,7 +1590,8 @@ class _CartPanel extends StatelessWidget {
                                             fontWeight: FontWeight.bold,
                                             fontSize: 11)),
                                     backgroundColor: Colors.blue.shade50,
-                                    side: BorderSide(color: Colors.blue.shade300),
+                                    side:
+                                        BorderSide(color: Colors.blue.shade300),
                                     onPressed: () {
                                       cashCtrl.text =
                                           nextBill.toStringAsFixed(0);
@@ -1659,7 +1705,8 @@ class _CartPanel extends StatelessWidget {
                                       color: Colors.red.shade900)),
                             ],
                           ),
-                          Text('Short: ${formatPeso(breakdown.total - cashNum)}',
+                          Text(
+                              'Short: ${formatPeso(breakdown.total - cashNum)}',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
@@ -1755,7 +1802,7 @@ class _SuccessView extends StatelessWidget {
     final theme = Theme.of(context);
     final tx = transaction;
     final int totalUnits =
-        tx != null ? tx.items.fold(0, (sum, i) => sum + i.qty) : 0;
+        tx != null ? tx.items.fold(0, (acc, i) => acc + i.qty) : 0;
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -1786,8 +1833,8 @@ class _SuccessView extends StatelessWidget {
                 const SizedBox(height: 6),
                 if (tx != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer
                           .withValues(alpha: 0.6),
@@ -1992,11 +2039,13 @@ class _SuccessView extends StatelessWidget {
                             orderType: "In-store",
                           )
                               .catchError((e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Printer error: $e'),
-                                  backgroundColor: Colors.red),
-                            );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text('Printer error: $e'),
+                                    backgroundColor: Colors.red),
+                              );
+                            }
                             return false;
                           });
                         },
@@ -2045,8 +2094,8 @@ class _OfflineStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('store_settings')
-          .doc('master')
+          .collection('settings')
+          .doc('store_settings')
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
         final bool isFromCache =
