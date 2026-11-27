@@ -11,6 +11,7 @@ import '../models/product.dart';
 import '../utils/format.dart';
 import '../config/theme.dart';
 import '../shared/services/time_service.dart';
+import '../widgets/gdc_popup_menu.dart';
 
 enum ReportPeriod { today, thisWeek, thisMonth, custom }
 
@@ -1884,51 +1885,48 @@ class _ReportsScreenState extends State<ReportsScreen>
       pastMonths.add(DateTime(now.year, now.month - i, 1));
     }
 
-    return PopupMenuButton<DateTime>(
+    DateTime? activeMonth;
+    if (_selectedPeriod == ReportPeriod.thisMonth) {
+      activeMonth = DateTime(now.year, now.month, 1);
+    } else if (_selectedPeriod == ReportPeriod.custom && _customRange != null) {
+      final start = _customRange!.start;
+      final end = _customRange!.end;
+      final monthEnd = DateTime(start.year, start.month + 1, 0);
+      if (start.day == 1 &&
+          end.year == monthEnd.year &&
+          end.month == monthEnd.month &&
+          end.day == monthEnd.day) {
+        activeMonth = DateTime(start.year, start.month, 1);
+      }
+    }
+
+    final isCustomMonth =
+        _selectedPeriod == ReportPeriod.custom && activeMonth != null;
+
+    return GdcPopupMenuButton<DateTime>.pill(
       tooltip: 'Pick Specific Month (e.g. October)',
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Theme.of(context)
-                .colorScheme
-                .outlineVariant
-                .withValues(alpha: 0.5),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.calendar_view_month_rounded,
-                size: 16, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 6),
-            Text(
-              'Pick Month',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(width: 2),
-            Icon(Icons.arrow_drop_down,
-                size: 18, color: Theme.of(context).colorScheme.primary),
-          ],
-        ),
-      ),
+      menuTitle: 'Select Month',
+      label: isCustomMonth
+          ? DateFormat('MMM yyyy').format(activeMonth)
+          : 'Pick Month',
+      icon: Icons.calendar_view_month_rounded,
+      isActive: isCustomMonth,
+      emphasized: true,
+      borderRadius: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      constraints: const BoxConstraints(minWidth: 215, maxHeight: 340),
       onSelected: (date) {
         _selectSpecificMonth(date.year, date.month);
       },
-      itemBuilder: (ctx) => pastMonths.map((m) {
-        final label = DateFormat('MMMM yyyy').format(m);
-        return PopupMenuItem<DateTime>(
+      options: pastMonths.map((m) {
+        final isSelected = activeMonth != null &&
+            activeMonth.year == m.year &&
+            activeMonth.month == m.month;
+        return GdcPopupOption<DateTime>(
           value: m,
-          child: Text(label,
-              style:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          label: DateFormat('MMMM yyyy').format(m),
+          icon: Icons.calendar_month_rounded,
+          isSelected: isSelected,
         );
       }).toList(),
     );

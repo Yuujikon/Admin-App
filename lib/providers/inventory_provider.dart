@@ -54,7 +54,9 @@ class InventoryProvider extends BaseProvider {
   bool _isEvaluatingLowStock = false;
   bool _lowStockReevalQueued = false;
   Timer? _lowStockSyncDebounceTimer;
-  final Set<String> _alertedLowStockKeysToday = {};
+  final Map<String, String> _alertedLowStockLevelToday = {};
+  final Set<String> _seenAboveThresholdInSession = {};
+  bool _seededResupplyAlertState = false;
   StoreSettings _settings = const StoreSettings(isClosed: false);
   String _adminName = 'Admin';
   bool _isProcessingSale = false;
@@ -84,6 +86,13 @@ class InventoryProvider extends BaseProvider {
   List<DailyResupplyItem> get todayResupplyItems =>
       todayResupplyLog.sortedItems;
   bool get isSendingDailyResupplyEmail => _isSendingDailyResupplyEmail;
+
+  Stream<List<DailyResupplyLog>> dailyResupplyLogsHistoryStream({
+    int limit = 30,
+  }) =>
+      _fs.dailyResupplyLogsHistoryStream(limit: limit);
+
+  Future<void> refreshTodayResupplyLog() => _evaluatePhysicalLowStockResupply();
 
   Future<void> markAdminNotificationRead(String id) =>
       _fs.markAdminNotificationRead(id);
@@ -341,19 +350,90 @@ class InventoryProvider extends BaseProvider {
 
   // ── Physical Low-Stock Monitoring & Daily Resupply Log ────────────────────
 
+  static String _sanitizeDocIdSegment(String raw) {
+    final cleaned = raw.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    return cleaned.length > 80 ? cleaned.substring(0, 80) : cleaned;
+  }
+
+  static String _buildLowStockNotifDocId(
+    String dateKey,
+    String itemKey,
+    bool isOos,
+  ) =>
+      'low30_${dateKey}_${_sanitizeDocIdSegment(itemKey)}_${isOos ? 'oos' : 'low'}';
+
   void _scheduleLowStockCheck() {
     if (_isProductsLoading) return;
     _lowStockSyncDebounceTimer?.cancel();
     _lowStockSyncDebounceTimer = Timer(
-      const Duration(milliseconds: 600),
+      const Duration(milliseconds: 350),
       () => unawaited(_evaluatePhysicalLowStockResupply()),
     );
   }
 
+  void _emitLowStockInventoryAlert({
+    required String todayKey,
+    required DailyResupplyItem resupplyItem,
+  }) {
+    final bool isPhysOos = resupplyItem.availableStock <= 0;
+    final int orig = resupplyItem.effectiveOriginalStock;
+    final String alertTitle = isPhysOos
+        ? 'Out of Stock: ${resupplyItem.displayName}'
+        : 'Low Stock (30%): ${resupplyItem.displayName}';
+    final String alertMsg = isPhysOos
+        ? '${resupplyItem.displayName} is out of stock (0/$orig ${resupplyItem.unit}). Queued for End-of-Day Resupply Summary Email.'
+        : '${resupplyItem.displayName} is low on stock (${resupplyItem.availableStock}/$orig ${resupplyItem.unit} left; ≤ 30% alert at ${resupplyItem.lowStockThreshold}). Queued for End-of-Day Resupply Summary Email.';
+    final String notifDocId = _buildLowStockNotifDocId(
+      todayKey,
+      resupplyItem.itemKey,
+      isPhysOos,
+    );
+
+    unawaited(
+      NotificationService.showSmsNotificationPopUp(
+        id: 'physical_low_${resupplyItem.itemKey}'.hashCode,
+        title: alertTitle,
+        body: alertMsg,
+      ),
+    );
+    unawaited(
+      _fs.addAdminNotification(
+        {
+          'title': alertTitle,
+          'message': alertMsg,
+          'body': alertMsg,
+          'type': isPhysOos ? 'out_of_stock' : 'physical_low_stock_alert',
+          'severity': isPhysOos ? 'critical' : 'warning',
+          'status': isPhysOos
+              ? 'Out of Stock'
+              : 'Low Stock ≤ 30% (${resupplyItem.availableStock}/$orig)',
+          'suggestedRestock': resupplyItem.suggestedResupplyQty,
+          'relatedId': resupplyItem.productId,
+          'productId': resupplyItem.productId,
+          if (resupplyItem.variantId != null)
+            'variantId': resupplyItem.variantId,
+        },
+        docId: notifDocId,
+      ).catchError((e) => debugPrint(
+          '[InventoryProvider] Failed writing admin notification: $e')),
+    );
+    unawaited(
+      AuditLogService()
+          .logAction(
+            module: 'Inventory',
+            action: 'PHYSICAL_LOW_STOCK_30_PCT_HIT',
+            targetId: resupplyItem.productId,
+            targetName: resupplyItem.displayName,
+            summary: alertMsg,
+          )
+          .catchError((_) {}),
+    );
+  }
+
   /// Checks active products/variants to see whether 100% physical store stock
-  /// has reached 30% of its original stock, emitting a one-time Inventory Alert
-  /// and queueing the item in today's `daily_resupply_logs/{YYYY-MM-DD}` for the
-  /// Store-Closing Resupply Summary Email.
+  /// has reached 30% of its original stock, emitting an immediate Inventory
+  /// Alert and queueing the item in today's `daily_resupply_logs/{YYYY-MM-DD}`
+  /// for the Store-Closing Resupply Summary Email.
   Future<void> _evaluatePhysicalLowStockResupply() async {
     if (_isProductsLoading) return;
     if (_isEvaluatingLowStock) {
@@ -369,6 +449,7 @@ class InventoryProvider extends BaseProvider {
       final storeEmail = AdminMessagingService().storeEmailSync;
 
       final List<DailyResupplyItem> triggeredResupplyItems = [];
+      final List<String> recoveredItemKeys = [];
 
       for (final liveP in _products) {
         if (liveP.status == ProductStatus.archived) continue;
@@ -402,7 +483,7 @@ class InventoryProvider extends BaseProvider {
                 ),
               );
             } else {
-              _alertedLowStockKeysToday.remove('$todayKey::$itemKey');
+              recoveredItemKeys.add(itemKey);
             }
           }
         } else {
@@ -428,71 +509,68 @@ class InventoryProvider extends BaseProvider {
               ),
             );
           } else {
-            _alertedLowStockKeysToday.remove('$todayKey::$itemKey');
+            recoveredItemKeys.add(itemKey);
           }
         }
       }
 
+      // Clear restocked items from in-memory alert state and unsent daily logs
+      for (final itemKey in recoveredItemKeys) {
+        _seenAboveThresholdInSession.add(itemKey);
+        _alertedLowStockLevelToday.remove('$todayKey::$itemKey');
+        final log = _todayResupplyLog;
+        if (log != null &&
+            log.dateKey == todayKey &&
+            !log.summaryEmailSent &&
+            log.items.containsKey(itemKey)) {
+          unawaited(
+            _fs
+                .removeDailyResupplyItem(dateKey: todayKey, itemKey: itemKey)
+                .catchError((e) => debugPrint(
+                    '[InventoryProvider] Failed clearing restocked item $itemKey: $e')),
+          );
+        }
+      }
+
       for (final resupplyItem in triggeredResupplyItems) {
+        final bool isPhysOos = resupplyItem.availableStock <= 0;
+        final String nextLevel = isPhysOos ? 'oos' : 'low';
         final String memKey = '$todayKey::${resupplyItem.itemKey}';
-        final bool alreadyAlertedInMem =
-            _alertedLowStockKeysToday.contains(memKey);
+        final String? prevLevel = _alertedLowStockLevelToday[memKey];
+        final bool transitionedInSession =
+            _seenAboveThresholdInSession.contains(resupplyItem.itemKey);
+
+        bool isNewInDb = false;
+        bool escalatedInDb = false;
+        bool dbWriteFailed = false;
         try {
-          final bool isNewToday = await _fs.recordDailyResupplyItem(
+          final result = await _fs.recordDailyResupplyItem(
             dateKey: todayKey,
             item: resupplyItem,
             storeEmail: storeEmail,
           );
-
-          if (isNewToday && !alreadyAlertedInMem) {
-            _alertedLowStockKeysToday.add(memKey);
-            final bool isPhysOos = resupplyItem.availableStock <= 0;
-            final int orig = resupplyItem.effectiveOriginalStock;
-            final String alertTitle = isPhysOos
-                ? 'Out of Stock Alert: ${resupplyItem.displayName}'
-                : 'Low Stock Alert (30%): ${resupplyItem.displayName}';
-            final String alertMsg = isPhysOos
-                ? '${resupplyItem.displayName} is out of stock (0/$orig ${resupplyItem.unit}). Queued for Store-Closing Resupply Summary Email.'
-                : '${resupplyItem.displayName} reached 30% of original stock (${resupplyItem.availableStock}/$orig ${resupplyItem.unit} left; 30% alert ≤ ${resupplyItem.lowStockThreshold}). Queued for Store-Closing Resupply Summary Email.';
-
-            unawaited(
-              NotificationService.showSmsNotificationPopUp(
-                id: 'physical_low_${resupplyItem.itemKey}'.hashCode,
-                title: alertTitle,
-                body: alertMsg,
-              ),
-            );
-            unawaited(
-              _fs.addAdminNotification({
-                'title': alertTitle,
-                'message': alertMsg,
-                'body': alertMsg,
-                'type': isPhysOos ? 'out_of_stock' : 'physical_low_stock_alert',
-                'severity': isPhysOos ? 'critical' : 'warning',
-                'status': isPhysOos
-                    ? 'Out of Stock'
-                    : 'Low Stock ≤ 30% (${resupplyItem.availableStock}/$orig)',
-                'suggestedRestock': resupplyItem.suggestedResupplyQty,
-                'relatedId': resupplyItem.productId,
-              }).catchError((_) {}),
-            );
-            unawaited(
-              AuditLogService()
-                  .logAction(
-                    module: 'Inventory',
-                    action: 'PHYSICAL_LOW_STOCK_30_PCT_HIT',
-                    targetId: resupplyItem.productId,
-                    targetName: resupplyItem.displayName,
-                    summary: alertMsg,
-                  )
-                  .catchError((_) {}),
-            );
-          } else {
-            _alertedLowStockKeysToday.add(memKey);
-          }
+          isNewInDb = result.isNew;
+          escalatedInDb = result.escalatedToOos;
         } catch (e) {
+          dbWriteFailed = true;
           debugPrint(
             '[InventoryProvider] Failed recording daily resupply item ${resupplyItem.displayName}: $e',
+          );
+        }
+
+        final bool escalatedInMem = prevLevel == 'low' && nextLevel == 'oos';
+        final bool shouldEmitAlert = (prevLevel == null &&
+                (isNewInDb || transitionedInSession || dbWriteFailed)) ||
+            escalatedInMem ||
+            (escalatedInDb && prevLevel != 'oos');
+
+        _alertedLowStockLevelToday[memKey] = nextLevel;
+        _seenAboveThresholdInSession.remove(resupplyItem.itemKey);
+
+        if (shouldEmitAlert) {
+          _emitLowStockInventoryAlert(
+            todayKey: todayKey,
+            resupplyItem: resupplyItem,
           );
         }
       }
@@ -512,13 +590,23 @@ class InventoryProvider extends BaseProvider {
     }
     _resupplyLogSub?.cancel();
     _subscribedResupplyDateKey = dateKey;
+    _seededResupplyAlertState = false;
+    _alertedLowStockLevelToday.clear();
     final storeEmail = AdminMessagingService().storeEmailSync;
     _resupplyLogSub = _fs
         .dailyResupplyLogStream(dateKey, defaultStoreEmail: storeEmail)
         .listen((log) {
       _todayResupplyLog = log;
-      for (final itemKey in log.items.keys) {
-        _alertedLowStockKeysToday.add('$dateKey::$itemKey');
+      // Seed alert state ONLY on initial snapshot so Cloud Functions writing
+      // faster than our local debounce never suppresses in-session alerts.
+      if (!_seededResupplyAlertState) {
+        _seededResupplyAlertState = true;
+        for (final entry in log.items.entries) {
+          if (!_seenAboveThresholdInSession.contains(entry.key)) {
+            _alertedLowStockLevelToday['$dateKey::${entry.key}'] =
+                entry.value.isOutOfStock ? 'oos' : 'low';
+          }
+        }
       }
       notifyListeners();
     }, onError: (e) {
@@ -546,8 +634,7 @@ class InventoryProvider extends BaseProvider {
       final yesterdayLog = await _fs.getDailyResupplyLog(yesterdayKey);
       if (yesterdayLog != null &&
           yesterdayLog.itemCount > 0 &&
-          !yesterdayLog.summaryEmailSent &&
-          yesterdayLog.summaryEmailStatus != 'sending') {
+          !yesterdayLog.summaryEmailSent) {
         await _dispatchResupplyEmailForDate(
           dateKey: yesterdayKey,
           triggeredBy: 'admin_store_close_catchup',
@@ -556,15 +643,14 @@ class InventoryProvider extends BaseProvider {
       }
 
       // 2. Dispatch today's summary email immediately when the store closes
-      if (_settings.hasStoreClosedForDayAt(now)) {
+      if (!_isProductsLoading && _settings.hasStoreClosedForDayAt(now)) {
         // Ensure every item currently at <= 30% of original stock is recorded first
         await _evaluatePhysicalLowStockResupply();
 
         final current = await _fs.getDailyResupplyLog(todayKey);
         if (current != null &&
             current.itemCount > 0 &&
-            !current.summaryEmailSent &&
-            current.summaryEmailStatus != 'sending') {
+            !current.summaryEmailSent) {
           await _dispatchResupplyEmailForDate(
             dateKey: todayKey,
             triggeredBy: _settings.isClosed
@@ -636,10 +722,12 @@ class InventoryProvider extends BaseProvider {
               'End-of-Day Resupply Summary (${log.itemCount} item${log.itemCount == 1 ? '' : 's'}) sent to $targetEmail.',
         );
       }
+      final errDetail = AdminMessagingService().lastBrevoError;
       return (
         sent: false,
-        message:
-            'Failed to send End-of-Day Resupply Summary email. Check Brevo API key or network connection.',
+        message: errDetail != null && errDetail.isNotEmpty
+            ? 'Failed to send Resupply Summary email: $errDetail'
+            : 'Failed to send End-of-Day Resupply Summary email. Check Brevo API key or network connection.',
       );
     } finally {
       _isSendingDailyResupplyEmail = false;
@@ -660,29 +748,43 @@ class InventoryProvider extends BaseProvider {
     if (claimedLog == null) return false;
 
     try {
-      final sent = await AdminMessagingService().sendDailyResupplySummaryEmail(
+      final messaging = AdminMessagingService();
+      final sent = await messaging.sendDailyResupplySummaryEmail(
         log: claimedLog,
       );
+      final brevoError = messaging.lastBrevoError;
       await _fs.markDailyResupplyEmailResult(
         dateKey: dateKey,
         success: sent,
         sentBy: triggeredBy,
-        error: sent ? null : 'Brevo email delivery returned false',
+        error:
+            sent ? null : (brevoError ?? 'Brevo email delivery returned false'),
       );
       if (sent) {
         final storeEmail = claimedLog.storeEmail;
+        final sorted = claimedLog.sortedItems;
+        final previewNames = sorted.take(3).map((i) => i.displayName).toList();
+        final remainingCount = sorted.length - previewNames.length;
+        final itemsPreview = previewNames.isEmpty
+            ? ''
+            : ' (${previewNames.join(', ')}${remainingCount > 0 ? ' +$remainingCount more' : ''})';
         final summaryMsg =
-            'End-of-Day Resupply Summary ($dateKey) for ${claimedLog.itemCount} item${claimedLog.itemCount == 1 ? '' : 's'} (+${claimedLog.totalSuggestedUnits} suggested units) was emailed to $storeEmail.';
+            'End-of-Day Resupply Summary ($dateKey) for ${claimedLog.itemCount} low-stock item${claimedLog.itemCount == 1 ? '' : 's'}$itemsPreview (+${claimedLog.totalSuggestedUnits} suggested units) was emailed to $storeEmail.';
         unawaited(
-          _fs.addAdminNotification({
-            'title': 'End-of-Day Resupply Email Sent ($dateKey)',
-            'message': summaryMsg,
-            'body': summaryMsg,
-            'type': 'daily_resupply_summary',
-            'severity': 'info',
-            'status': '${claimedLog.itemCount} items summarized',
-            'relatedId': dateKey,
-          }).catchError((_) {}),
+          _fs.addAdminNotification(
+            {
+              'title': 'End-of-Day Resupply Email Sent ($dateKey)',
+              'message': summaryMsg,
+              'body': summaryMsg,
+              'type': 'daily_resupply_summary',
+              'severity': 'info',
+              'status': '${claimedLog.itemCount} items summarized',
+              'relatedId': dateKey,
+              'dateKey': dateKey,
+              'itemCount': claimedLog.itemCount,
+            },
+            docId: 'eod_resupply_${_sanitizeDocIdSegment(dateKey)}',
+          ).catchError((_) {}),
         );
         unawaited(
           AuditLogService()
@@ -783,7 +885,9 @@ class InventoryProvider extends BaseProvider {
     _liveBatchesByProductId = {};
     _hasLiveBatchStream = false;
     _todayResupplyLog = null;
-    _alertedLowStockKeysToday.clear();
+    _alertedLowStockLevelToday.clear();
+    _seenAboveThresholdInSession.clear();
+    _seededResupplyAlertState = false;
 
     _ensureTodayResupplySubscription();
     TimeService.instance.removeListener(_onTimeServiceChanged);
@@ -831,6 +935,9 @@ class InventoryProvider extends BaseProvider {
       _isProductsLoading = false;
       notifyListeners();
       _scheduleLowStockCheck();
+      if (_settings.hasStoreClosedForDayAt(TimeService.now)) {
+        unawaited(checkAndDispatchEndOfDayResupplyEmail());
+      }
     }));
 
     registerSubscription(_fs.adminNotificationsStream().handleError((e) {
@@ -975,6 +1082,7 @@ class InventoryProvider extends BaseProvider {
 
   void _onTimeServiceChanged() {
     _ensureTodayResupplySubscription();
+    _scheduleLowStockCheck();
     unawaited(checkAndDispatchEndOfDayResupplyEmail());
   }
 
@@ -1556,33 +1664,92 @@ class InventoryProvider extends BaseProvider {
         debugPrint('Notification alert error: $e');
       }
 
-      // Check for Low Stock (<= 30% of original stock) / Out of Stock after decrement
+      // Immediately evaluate Low Stock (<= 30% of original stock) / Out of Stock
+      // after POS deduction so alerts + daily resupply logs fire without waiting
+      // for stream debounce.
+      final now = TimeService.now;
+      final todayKey = InventoryAllocation.dateKeyFor(now);
+      final storeEmail = AdminMessagingService().storeEmailSync;
+
       for (var item in cart) {
         try {
           final p = _products.firstWhere((p) => p.id == item.productId);
           final ProductVariant? variant = item.variantId != null
               ? p.variants.firstWhere((v) => v.id == item.variantId)
               : null;
-          final int remainingStock = variant != null
+          final int remainingTotal = variant != null
               ? (variant.stock - item.qty).clamp(0, 999999)
               : (p.totalStock - item.qty).clamp(0, 999999);
+          final int reserved = variant != null
+              ? variant.effectiveReservedStock
+              : p.effectiveReservedStock;
+          final int remainingAvail =
+              (remainingTotal - reserved).clamp(0, 999999);
           final int origStock = variant != null
               ? variant.effectiveOriginalStock
               : p.effectiveOriginalStock;
           final int alertThreshold =
               InventoryAllocation.calculateLowStockTrigger(origStock);
-          if (origStock > 0 && remainingStock <= alertThreshold) {
-            final bool isOos = remainingStock <= 0;
-            unawaited(
-              NotificationService.showSmsNotificationPopUp(
-                id: '${p.id}_low'.hashCode,
-                title: isOos
-                    ? 'Out of Stock: ${item.name}'
-                    : 'Low Stock (30%): ${item.name}',
-                body: isOos
-                    ? '${item.name} is now out of stock (0/$origStock remaining).'
-                    : '${item.name} reached 30% of original stock ($remainingStock/$origStock ${p.unit} remaining).',
+          if (origStock > 0 && remainingAvail <= alertThreshold) {
+            final bool isOos = remainingAvail <= 0;
+            final String itemKey =
+                DailyResupplyItem.buildItemKey(p.id, variant?.id);
+            final String nextLevel = isOos ? 'oos' : 'low';
+            final String memKey = '$todayKey::$itemKey';
+            final int reserve = variant != null
+                ? variant.effectivePhysicalReserve
+                : p.effectivePhysicalReserve;
+            final int onlineAvail =
+                InventoryAllocation.calculateOnlineAvailable(
+              totalStock: remainingTotal,
+              physicalReserve: reserve,
+              reservedStock: reserved,
+            );
+            final resupplyItem = DailyResupplyItem(
+              itemKey: itemKey,
+              productId: p.id,
+              variantId: variant?.id,
+              productName: p.name,
+              variantName: variant?.name,
+              category: p.category,
+              unit: p.unit,
+              originalStock: origStock,
+              lowStockThreshold: alertThreshold,
+              physicalStock: remainingAvail,
+              onlineStock: onlineAvail,
+              totalStock: remainingTotal,
+              availableStock: remainingAvail,
+              suggestedResupplyQty:
+                  InventoryAllocation.calculateSuggestedResupplyQty(
+                availableStock: remainingAvail,
+                originalStock: origStock,
               ),
+              onlineOutOfStock: onlineAvail <= 0,
+              firstTriggeredAt: now,
+              lastUpdatedAt: now,
+            );
+
+            final String? prevLevel = _alertedLowStockLevelToday[memKey];
+            if (prevLevel == null || (prevLevel == 'low' && isOos)) {
+              _alertedLowStockLevelToday[memKey] = nextLevel;
+              _seenAboveThresholdInSession.remove(itemKey);
+              _emitLowStockInventoryAlert(
+                todayKey: todayKey,
+                resupplyItem: resupplyItem,
+              );
+            }
+            unawaited(
+              _fs
+                  .recordDailyResupplyItem(
+                dateKey: todayKey,
+                item: resupplyItem,
+                storeEmail: storeEmail,
+              )
+                  .catchError((e) {
+                debugPrint(
+                    '[InventoryProvider] Failed recording POS resupply item: $e');
+                return (isNew: false, escalatedToOos: false);
+              }),
             );
             _notifySupplierLowStock(p);
           }

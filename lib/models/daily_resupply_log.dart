@@ -125,6 +125,7 @@ class DailyResupplyLog {
   final Map<String, DailyResupplyItem> items;
   final bool summaryEmailSent;
   final String? summaryEmailStatus;
+  final DateTime? summaryEmailClaimedAt;
   final DateTime? summaryEmailSentAt;
   final String? summaryEmailSentBy;
   final String? summaryEmailError;
@@ -136,6 +137,7 @@ class DailyResupplyLog {
     this.items = const {},
     this.summaryEmailSent = false,
     this.summaryEmailStatus,
+    this.summaryEmailClaimedAt,
     this.summaryEmailSentAt,
     this.summaryEmailSentBy,
     this.summaryEmailError,
@@ -204,6 +206,7 @@ class DailyResupplyLog {
       items: parsedItems,
       summaryEmailSent: data['summaryEmailSent'] == true,
       summaryEmailStatus: data['summaryEmailStatus']?.toString(),
+      summaryEmailClaimedAt: parseDate(data['summaryEmailClaimedAt']),
       summaryEmailSentAt: parseDate(data['summaryEmailSentAt']),
       summaryEmailSentBy: data['summaryEmailSentBy']?.toString(),
       summaryEmailError: data['summaryEmailError']?.toString(),

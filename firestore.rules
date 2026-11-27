@@ -635,7 +635,8 @@ service cloud.firestore {
     function isValidAdminNotification(data) {
       return hasOnlyAllowedFields(data, [
           'title', 'body', 'message', 'type', 'severity', 'status',
-          'suggestedRestock', 'relatedId', 'isRead', 'createdAt'
+          'suggestedRestock', 'relatedId', 'productId', 'variantId',
+          'dateKey', 'itemCount', 'isRead', 'createdAt'
         ]) &&
         isOptionalNullableString(data, 'title', 200) &&
         isOptionalNullableString(data, 'body', 1000) &&
@@ -645,6 +646,10 @@ service cloud.firestore {
         isOptionalNullableString(data, 'status', 64) &&
         isOptionalNullableNumber(data, 'suggestedRestock', 0) &&
         isOptionalNullableString(data, 'relatedId', 128) &&
+        isOptionalNullableString(data, 'productId', 128) &&
+        isOptionalNullableString(data, 'variantId', 128) &&
+        isOptionalNullableString(data, 'dateKey', 16) &&
+        isOptionalNullableNumber(data, 'itemCount', 0) &&
         isOptionalNullableBool(data, 'isRead') &&
         isOptionalNullableTimestamp(data, 'createdAt');
     }
@@ -654,8 +659,9 @@ service cloud.firestore {
       return hasOnlyAllowedFields(data, [
           'dateKey', 'storeEmail', 'items', 'itemCount',
           'summaryEmailSent', 'summaryEmailStatus',
-          'summaryEmailSentAt', 'summaryEmailSentBy',
-          'summaryEmailError', 'updatedAt'
+          'summaryEmailClaimedAt', 'summaryEmailSentAt',
+          'summaryEmailSentBy', 'summaryEmailError',
+          'createdAt', 'updatedAt'
         ]) &&
         hasRequiredFields(data, ['dateKey', 'items']) &&
         data.dateKey is string && data.dateKey == dateKey && data.dateKey.size() == 10 &&
@@ -664,9 +670,11 @@ service cloud.firestore {
         isOptionalNullableNumber(data, 'itemCount', 0) &&
         isOptionalNullableBool(data, 'summaryEmailSent') &&
         isOptionalNullableString(data, 'summaryEmailStatus', 32) &&
+        isOptionalNullableTimestamp(data, 'summaryEmailClaimedAt') &&
         isOptionalNullableTimestamp(data, 'summaryEmailSentAt') &&
         isOptionalNullableString(data, 'summaryEmailSentBy', 200) &&
         isOptionalNullableString(data, 'summaryEmailError', 1000) &&
+        isOptionalNullableTimestamp(data, 'createdAt') &&
         isOptionalNullableTimestamp(data, 'updatedAt');
     }
 

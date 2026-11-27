@@ -26,10 +26,12 @@ enum _PoCategoryTab { all, drafts, pending, backorders, completed, closedShort }
 /// Unified Purchase Order Dashboard & Delivery History View supporting instant search & 5 category tabs.
 class PoHistoryView extends StatefulWidget {
   final String? supplierIdFilter;
+  final VoidCallback? onNewOrder;
 
   const PoHistoryView({
     super.key,
     this.supplierIdFilter,
+    this.onNewOrder,
   });
 
   @override
@@ -785,25 +787,47 @@ class _PoHistoryViewState extends State<PoHistoryView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Search by PO #, supplier, or product...',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
-                  isDense: true,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                onChanged: (val) => setState(() => _searchQuery = val),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: 'Search by PO #, supplier, or product...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 10),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                    ),
+                  ),
+                  if (widget.onNewOrder != null) ...[
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      onPressed: widget.onNewOrder,
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('New Order'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                ],
               ),
 
               const SizedBox(height: 10),

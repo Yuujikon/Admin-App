@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
@@ -9,6 +10,7 @@ import '../providers/auth_provider.dart';
 import '../utils/email_validator.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/action_warning_dialog.dart';
+import '../widgets/gdc_popup_menu.dart';
 import '../services/audit_log_service.dart';
 
 class UserManagementScreen extends StatelessWidget {
@@ -422,8 +424,12 @@ class UserManagementScreen extends StatelessWidget {
               onChanged: (_) =>
                   _confirmDisable(context, d.id, name, email, role),
             ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded, size: 20),
+            const SizedBox(width: 4),
+            GdcPopupMenuButton<String>.icon(
+              tooltip: 'Staff actions',
+              menuTitle: 'Staff Actions',
+              size: 36,
+              iconSize: 18,
               onSelected: (val) {
                 if (val == 'role') {
                   _showEditRoleDialog(context, d.id, name, email, role);
@@ -433,41 +439,24 @@ class UserManagementScreen extends StatelessWidget {
                   _confirmDisable(context, d.id, name, email, role);
                 }
               },
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(
+              options: [
+                const GdcPopupOption<String>(
                   value: 'role',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('Edit Role', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
+                  label: 'Edit Role',
+                  icon: Icons.badge_outlined,
                 ),
-                const PopupMenuItem(
+                GdcPopupOption<String>(
                   value: 'reset_pin',
-                  child: Row(
-                    children: [
-                      Icon(Icons.lock_reset_rounded, size: 18),
-                      SizedBox(width: 8),
-                      Text('Reset Security PIN',
-                          style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
+                  label: 'Reset Security PIN',
+                  icon: Icons.lock_reset_rounded,
+                  iconColor: Theme.of(context).semantic.warning,
                 ),
-                PopupMenuItem(
+                GdcPopupOption<String>(
                   value: 'revoke',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.block_rounded,
-                          size: 18, color: Colors.red),
-                      const SizedBox(width: 8),
-                      Text(
-                        isCurrentUser ? 'Disable My Account' : 'Revoke Access',
-                        style: const TextStyle(fontSize: 13, color: Colors.red),
-                      ),
-                    ],
-                  ),
+                  label: isCurrentUser ? 'Disable My Account' : 'Revoke Access',
+                  icon: Icons.block_rounded,
+                  isDestructive: true,
+                  showDividerBefore: true,
                 ),
               ],
             ),
@@ -1102,7 +1091,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
-  String _selectedRole = 'cashier';
+  String _selectedRole = 'trustedPartner';
   bool _obscurePin = true;
   bool _loading = false;
   String? _error;
@@ -1286,6 +1275,9 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                 obscureText: _obscurePin,
                 keyboardType: TextInputType.number,
                 maxLength: 6,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
                 decoration: InputDecoration(
                   labelText: 'Initial Security PIN / Password',
                   prefixIcon: const Icon(Icons.pin_rounded, size: 20),

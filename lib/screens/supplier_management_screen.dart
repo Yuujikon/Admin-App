@@ -11,6 +11,7 @@ import '../widgets/responsive_layout.dart';
 import '../widgets/supplier_sheet.dart';
 import '../widgets/po_builder_sheet.dart';
 import '../widgets/po_history_view.dart';
+import '../widgets/gdc_popup_menu.dart';
 import 'supplier_detail_screen.dart';
 
 class SupplierManagementScreen extends StatefulWidget {
@@ -26,27 +27,15 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
   String _searchQuery = '';
   final _searchCtrl = TextEditingController();
   late TabController _tabController;
-  int _currentTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(_onTabChanged);
-  }
-
-  void _onTabChanged() {
-    if (_tabController.indexIsChanging ||
-        _tabController.index != _currentTabIndex) {
-      setState(() {
-        _currentTabIndex = _tabController.index;
-      });
-    }
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchCtrl.dispose();
     super.dispose();
@@ -112,21 +101,6 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
           ],
         ),
       ),
-      floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton.extended(
-              onPressed: () => _showSupplierSheet(context, null),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add Supplier'),
-              backgroundColor: Colors.teal.shade800,
-              foregroundColor: Colors.white,
-            )
-          : FloatingActionButton.extended(
-              onPressed: () => PoBuilderSheet.show(context: context),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('New Order'),
-              backgroundColor: Colors.teal.shade800,
-              foregroundColor: Colors.white,
-            ),
       body: TabBarView(
         controller: _tabController,
         children: [
@@ -198,7 +172,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                         ),
                       )
                     : SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
                         child: ResponsiveCardGrid(
                           children: filteredSuppliers.map((s) {
                             final lowStockCount = allProducts
@@ -217,7 +191,9 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
           ),
 
           // Tab 2: Merged Purchase Orders & Delivery History
-          const PoHistoryView(),
+          PoHistoryView(
+            onNewOrder: () => PoBuilderSheet.show(context: context),
+          ),
         ],
       ),
     );
@@ -320,7 +296,11 @@ class _SupplierCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  PopupMenuButton<String>(
+                  GdcPopupMenuButton<String>.icon(
+                    tooltip: 'Supplier actions',
+                    menuTitle: 'Supplier Actions',
+                    size: 36,
+                    iconSize: 18,
                     onSelected: (val) {
                       if (val == 'edit') {
                         showModalBottomSheet(
@@ -333,16 +313,12 @@ class _SupplierCard extends StatelessWidget {
                         );
                       }
                     },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
+                    options: const [
+                      GdcPopupOption<String>(
                         value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit, size: 18),
-                            SizedBox(width: 8),
-                            Text('Edit Details'),
-                          ],
-                        ),
+                        label: 'Edit Details',
+                        subtitle: 'Update contact & terms',
+                        icon: Icons.edit_outlined,
                       ),
                     ],
                   ),

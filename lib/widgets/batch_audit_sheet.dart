@@ -7,8 +7,10 @@ import '../providers/inventory_provider.dart';
 import '../providers/procurement_provider.dart';
 import '../services/inventory_batch_service.dart';
 import '../utils/format.dart';
+import '../config/theme.dart';
 import 'premium_components.dart';
 import 'action_warning_dialog.dart';
+import 'gdc_popup_menu.dart';
 
 class BatchAuditSheet extends StatefulWidget {
   final Product product;
@@ -520,9 +522,12 @@ class _BatchAuditSheetState extends State<BatchAuditSheet> {
                   color: isDepleted ? Colors.grey : Colors.green.shade800,
                 ),
               ),
-              PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert, size: 18),
+              const SizedBox(width: 8),
+              GdcPopupMenuButton<String>.icon(
+                tooltip: 'Batch actions',
+                menuTitle: 'Batch Actions',
+                size: 32,
+                iconSize: 17,
                 onSelected: (val) {
                   if (val == 'spoil') {
                     _logBatchLossDialog(
@@ -542,39 +547,26 @@ class _BatchAuditSheetState extends State<BatchAuditSheet> {
                     );
                   }
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
+                options: [
+                  GdcPopupOption<String>(
                     value: 'link_supplier',
-                    child: Row(
-                      children: [
-                        Icon(Icons.storefront_outlined,
-                            size: 16, color: Colors.blue),
-                        SizedBox(width: 8),
-                        Text('Link / Change Supplier'),
-                      ],
-                    ),
+                    label: 'Link / Change Supplier',
+                    icon: Icons.storefront_outlined,
+                    iconColor: Theme.of(context).semantic.info,
                   ),
                   if (!isDepleted)
-                    const PopupMenuItem(
+                    GdcPopupOption<String>(
                       value: 'spoil',
-                      child: Row(
-                        children: [
-                          Icon(Icons.remove_circle_outline,
-                              size: 16, color: Colors.orange),
-                          SizedBox(width: 8),
-                          Text('Mark Loss / Spoiled'),
-                        ],
-                      ),
+                      label: 'Mark Loss / Spoiled',
+                      icon: Icons.remove_circle_outline_rounded,
+                      iconColor: Theme.of(context).semantic.warning,
                     ),
-                  const PopupMenuItem(
+                  const GdcPopupOption<String>(
                     value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, size: 16, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Delete Batch'),
-                      ],
-                    ),
+                    label: 'Delete Batch',
+                    icon: Icons.delete_outline_rounded,
+                    isDestructive: true,
+                    showDividerBefore: true,
                   ),
                 ],
               ),

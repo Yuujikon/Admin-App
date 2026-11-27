@@ -17,6 +17,7 @@ import '../models/product.dart';
 import '../models/supplier.dart';
 import '../utils/format.dart';
 import '../shared/services/time_service.dart';
+import '../widgets/gdc_popup_menu.dart';
 import '../widgets/receive_delivery_sheet.dart';
 import '../widgets/schedule_holiday_dialog.dart';
 import 'admin_app.dart';
@@ -746,10 +747,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  IconData _periodIcon(ChartPeriod period) => switch (period) {
+        ChartPeriod.today => Icons.today_rounded,
+        ChartPeriod.thisWeek => Icons.date_range_rounded,
+        ChartPeriod.thisMonth => Icons.calendar_month_rounded,
+        ChartPeriod.custom => Icons.edit_calendar_rounded,
+      };
+
   Widget _buildPeriodDropdown(BuildContext context) {
-    return PopupMenuButton<ChartPeriod>(
+    return GdcPopupMenuButton<ChartPeriod>.pill(
       initialValue: _selectedPeriod,
       tooltip: 'Select Time Period',
+      menuTitle: 'Time Period',
+      label: _getPeriodDisplayLabel(),
+      icon: _periodIcon(_selectedPeriod),
+      isActive: _selectedPeriod == ChartPeriod.custom,
+      borderRadius: 50,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       onSelected: (ChartPeriod period) async {
         if (period == ChartPeriod.custom) {
           final picked = await _showCustomDateRangePicker(context);
@@ -765,79 +779,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           });
         }
       },
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<ChartPeriod>>[
+      options: [
         for (final period in ChartPeriod.values)
-          PopupMenuItem<ChartPeriod>(
+          GdcPopupOption<ChartPeriod>(
             value: period,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (period == _selectedPeriod) ...[
-                  Icon(
-                    Icons.check_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                ] else ...[
-                  const SizedBox(width: 24),
-                ],
-                Text(
-                  period == ChartPeriod.custom && _customDateRange != null
-                      ? 'Custom Date (${DateFormat('MMM d').format(_customDateRange!.start)} - ${DateFormat('MMM d').format(_customDateRange!.end)})'
-                      : period.label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: period == _selectedPeriod
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
+            label: period.label,
+            subtitle: period == ChartPeriod.custom && _customDateRange != null
+                ? '${DateFormat('MMM d').format(_customDateRange!.start)} - ${DateFormat('MMM d').format(_customDateRange!.end)}'
+                : null,
+            icon: _periodIcon(period),
+            isSelected: period == _selectedPeriod,
+            showDividerBefore: period == ChartPeriod.custom,
           ),
       ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          border: Border.all(
-            color: Theme.of(context)
-                .colorScheme
-                .outlineVariant
-                .withValues(alpha: 0.6),
-          ),
-          borderRadius: BorderRadius.circular(50),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.calendar_today_rounded,
-              size: 14,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              _getPeriodDisplayLabel(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 16,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
     );
   }
 

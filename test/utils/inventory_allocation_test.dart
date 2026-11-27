@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gdc_admin_app/models/daily_resupply_log.dart';
 import 'package:gdc_admin_app/models/product.dart';
 import 'package:gdc_admin_app/models/store_settings.dart';
 import 'package:gdc_admin_app/utils/inventory_allocation.dart';
@@ -320,6 +321,107 @@ void main() {
             .hasStoreClosedForDayAt(DateTime(2026, 5, 10, 15, 0)),
         isTrue,
       );
+    });
+
+    test(
+        'legacy product without initialStock recovers baseline from physicalReserve without false positives',
+        () {
+      expect(InventoryAllocation.minOriginalStockFromReserve(0), 0);
+      expect(InventoryAllocation.minOriginalStockFromReserve(1), 1);
+      expect(InventoryAllocation.minOriginalStockFromReserve(2), 5);
+      expect(InventoryAllocation.minOriginalStockFromReserve(3), 9);
+      expect(InventoryAllocation.minOriginalStockFromReserve(25), 97);
+
+      // Fresh stock of 5 (reserve=2): 5 > ceil(5*0.30)=2 -> NOT low stock!
+      const freshSmall = Product(
+        id: 'p_small',
+        name: 'Small Pack',
+        category: 'Snacks',
+        price: 10.0,
+        stock: 5,
+        physicalReserve: 2,
+      );
+      expect(freshSmall.effectiveOriginalStock, 5);
+      expect(freshSmall.isPhysicalThresholdHit, isFalse);
+
+      // Legacy 100-unit product (reserve=25, no initialStock) sold down to 25 -> MUST trigger <= 30%!
+      const legacyLow = Product(
+        id: 'p_legacy',
+        name: 'Legacy Rice',
+        category: 'Grains',
+        price: 58.0,
+        stock: 25,
+        physicalReserve: 25,
+      );
+      expect(legacyLow.effectiveOriginalStock, 97);
+      expect(legacyLow.lowStockAlertThreshold, 30);
+      expect(legacyLow.isPhysicalThresholdHit, isTrue);
+
+      // Legacy variant product without initialStock sold down to 5 of ~20 (reserve=5 -> minOriginal=17, 30%=6)
+      const variantLow = Product(
+        id: 'p_var',
+        name: 'Noodles',
+        category: 'Noodles',
+        price: 15.0,
+        stock: 5,
+        variants: [
+          ProductVariant(
+            id: 'beef',
+            name: 'Beef',
+            price: 15.0,
+            stock: 5,
+            physicalReserve: 5,
+          ),
+        ],
+      );
+      expect(variantLow.variants.first.effectiveOriginalStock, 17);
+      expect(variantLow.variants.first.lowStockAlertThreshold, 6);
+      expect(variantLow.variants.first.isPhysicalThresholdHit, isTrue);
+      expect(variantLow.isPhysicalThresholdHit, isTrue);
+    });
+
+    test(
+        'depleted batch product with stock=0 and missing initialStock still triggers 30% / OOS alert',
+        () {
+      final depleted = Product(
+        id: 'p_depleted',
+        name: 'Depleted Milk',
+        category: 'Dairy',
+        price: 45.0,
+        stock: 0,
+        batches: [
+          ProductBatch(
+            batchId: 'BATCH-1',
+            productId: 'p_depleted',
+            initialQty: 20,
+            remainingQty: 0,
+            status: BatchStatus.depleted,
+          ),
+        ],
+      );
+
+      expect(depleted.totalStock, 0);
+      expect(depleted.effectiveOriginalStock, 20);
+      expect(depleted.lowStockAlertThreshold, 6);
+      expect(depleted.isPhysicalThresholdHit, isTrue);
+    });
+
+    test('DailyResupplyLog parses summaryEmailClaimedAt for stale-lock checks',
+        () {
+      final claimedIso = DateTime(2026, 5, 10, 21, 0).toIso8601String();
+      final log = DailyResupplyLog.fromMap(
+        {
+          'dateKey': '2026-05-10',
+          'storeEmail': 'gdcstore.ph@gmail.com',
+          'items': {},
+          'summaryEmailSent': false,
+          'summaryEmailStatus': 'sending',
+          'summaryEmailClaimedAt': claimedIso,
+        },
+        dateKey: '2026-05-10',
+      );
+      expect(log.summaryEmailStatus, 'sending');
+      expect(log.summaryEmailClaimedAt, DateTime(2026, 5, 10, 21, 0));
     });
   });
 }

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'audit_log_service.dart';
@@ -10,6 +11,7 @@ class AuthService {
 
   static const String _keyFailedAttempts = 'admin_pin_failed_attempts';
   static const String _keyLockoutUntil = 'admin_pin_lockout_until';
+  static const String defaultAdminPin = '123456';
   static const int maxFailedAttempts = 5;
   static const int lockoutDurationSeconds = 30;
 
@@ -42,18 +44,17 @@ class AuthService {
     int cooldownSeconds = lockoutDurationSeconds,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    int failed = (prefs.getInt(_keyFailedAttempts) ?? 0) + 1;
+    final int failed = (prefs.getInt(_keyFailedAttempts) ?? 0) + 1;
     bool isNowLockedOut = false;
     int remainingSeconds = 0;
 
+    await prefs.setInt(_keyFailedAttempts, failed);
     if (failed >= maxAttempts) {
       final lockoutUntil =
           DateTime.now().millisecondsSinceEpoch + (cooldownSeconds * 1000);
       await prefs.setInt(_keyLockoutUntil, lockoutUntil);
       isNowLockedOut = true;
       remainingSeconds = cooldownSeconds;
-    } else {
-      await prefs.setInt(_keyFailedAttempts, failed);
     }
 
     return {
@@ -71,33 +72,45 @@ class AuthService {
     await prefs.remove(_keyLockoutUntil);
   }
 
-  /// Verifies if the provided [pin] matches the stored admin PIN in local storage or user's Firestore profile.
+  /// Verifies if the provided [pin] matches the active user's Firestore PIN
+  /// (when set) or local fallback PIN for offline access.
   Future<bool> verifyPin(String pin) async {
     if (await isLockedOut()) return false;
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString('admin_pin') ?? '123456';
-    if (pin == stored) return true;
+    final localPin = prefs.getString('admin_pin');
 
-    // Check currently logged in user's PIN in Firestore
-    final user = _auth.currentUser;
-    if (user != null) {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        if (doc.exists) {
-          final userPin = doc.data()?['pin']?.toString();
-          if (userPin != null && userPin == pin) {
-            return true;
+    // Check currently logged-in user's PIN in Firestore first when Firebase is initialized,
+    // so the default PIN cannot bypass a user's custom Firestore PIN on a fresh device.
+    if (Firebase.apps.isNotEmpty) {
+      final user = _auth.currentUser;
+      if (user != null) {
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get();
+          if (doc.exists) {
+            final userPin = doc.data()?['pin']?.toString().trim();
+            if (userPin != null && userPin.isNotEmpty) {
+              if (userPin == pin) {
+                if (localPin != userPin) {
+                  await prefs.setString('admin_pin', userPin);
+                }
+                return true;
+              }
+              // User has an explicit custom PIN in Firestore; do not allow fallback bypass.
+              return false;
+            }
           }
+        } catch (e) {
+          debugPrint(
+              'Error verifying Firestore PIN (using local fallback): $e');
         }
-      } catch (e) {
-        debugPrint('Error verifying Firestore PIN: $e');
       }
     }
 
-    return false;
+    final stored = localPin ?? defaultAdminPin;
+    return pin == stored;
   }
 
   /// Updates the stored admin PIN in local preferences to [newPin].

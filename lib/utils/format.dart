@@ -22,6 +22,57 @@ String formatTimeAgo(DateTime? dt) {
   return 'Just now';
 }
 
+/// Validates a phone number string (supports Philippine mobile formats such as
+/// `09XXXXXXXXX`, `+639XXXXXXXXX`, `639XXXXXXXXX`, `9XXXXXXXXX`, as well as
+/// standard 10–15 digit international numbers).
+///
+/// Returns `null` if valid, or a descriptive error message if invalid.
+String? validatePhoneNumber(String? input) {
+  if (input == null || input.trim().isEmpty) {
+    return 'Please enter your contact phone number.';
+  }
+
+  final cleaned = input.trim().replaceAll(RegExp(r'[\s\-()]'), '');
+  if (!RegExp(r'^\+?[0-9]+$').hasMatch(cleaned)) {
+    return 'Phone number may only contain digits and an optional leading +.';
+  }
+
+  if (cleaned.startsWith('09')) {
+    if (cleaned.length != 11) {
+      return 'Philippine mobile numbers starting with 09 must be 11 digits (e.g. 09123456789).';
+    }
+    return null;
+  }
+
+  if (cleaned.startsWith('+639')) {
+    if (cleaned.length != 13) {
+      return 'Philippine mobile numbers starting with +639 must be 13 characters (e.g. +639123456789).';
+    }
+    return null;
+  }
+
+  if (cleaned.startsWith('639')) {
+    if (cleaned.length != 12) {
+      return 'Philippine mobile numbers starting with 639 must be 12 digits.';
+    }
+    return null;
+  }
+
+  if (cleaned.startsWith('9') && !cleaned.startsWith('+')) {
+    if (cleaned.length != 10) {
+      return 'Please enter a valid 11-digit mobile number (e.g. 09123456789).';
+    }
+    return null;
+  }
+
+  final digitsOnly = cleaned.replaceAll('+', '');
+  if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+    return 'Please enter a valid phone number (10–15 digits).';
+  }
+
+  return null;
+}
+
 /// Formats a phone number string to E.164 international format (e.g., +639123456789).
 String formatPhoneNumber(String phone) {
   // Remove all non-numeric characters except for the leading +

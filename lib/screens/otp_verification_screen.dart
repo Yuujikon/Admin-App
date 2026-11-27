@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pinput/pinput.dart';
 import '../shared/services/admin_messaging_service.dart';
 import '../widgets/premium_components.dart';
@@ -75,28 +76,36 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       _errorMessage = null;
     });
 
-    final res = await _messagingService.sendAdminOtp(
-      contactMethod: widget.contactMethod,
-      isEmail: widget.isEmail,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _isResending = false;
-    });
-
-    if (res['success'] == true) {
-      _startCountdown();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res['message'] as String? ?? 'New OTP sent!'),
-          backgroundColor: Colors.green.shade700,
-        ),
+    try {
+      final res = await _messagingService.sendAdminOtp(
+        contactMethod: widget.contactMethod,
+        isEmail: widget.isEmail,
       );
-    } else {
+
+      if (!mounted) return;
+
       setState(() {
-        _errorMessage = res['message'] as String? ?? 'Failed to resend OTP.';
+        _isResending = false;
+      });
+
+      if (res['success'] == true) {
+        _startCountdown();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] as String? ?? 'New OTP sent!'),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      } else {
+        setState(() {
+          _errorMessage = res['message'] as String? ?? 'Failed to resend OTP.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isResending = false;
+        _errorMessage = 'Failed to resend OTP: $e';
       });
     }
   }
@@ -243,10 +252,17 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   focusNode: _focusNode,
                   length: 6,
                   autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   defaultPinTheme: defaultPinTheme,
                   focusedPinTheme: focusedPinTheme,
                   errorPinTheme: errorPinTheme,
                   forceErrorState: _errorMessage != null,
+                  onChanged: (_) {
+                    setState(() {
+                      if (_errorMessage != null) _errorMessage = null;
+                    });
+                  },
                   onCompleted: (pin) => _verifyCode(pin),
                 ),
                 const SizedBox(height: 24),

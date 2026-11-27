@@ -19,6 +19,16 @@ class InventoryAllocation {
     return (totalStock * physicalReserveRate).ceil();
   }
 
+  /// Returns the mathematically exact minimum original stock `N` whose
+  /// 25% physical reserve equals [physicalReserve] (`ceil(N * 0.25) == R`).
+  ///
+  /// For `R >= 1`, `N >= (R - 1) * 4 + 1`. Used as a zero-false-positive
+  /// fallback baseline for legacy products whose `initialStock` was not stored.
+  static int minOriginalStockFromReserve(int physicalReserve) {
+    if (physicalReserve <= 0) return 0;
+    return ((physicalReserve - 1) * 4) + 1;
+  }
+
   /// Calculates the 30% low-stock alert quantity from [originalStock].
   /// Rounds up (`ceil()`) so even small stock counts alert at 1 unit left
   /// and the 30% alert level is always >= the 25% walk-in physical reserve.

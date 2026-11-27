@@ -131,7 +131,7 @@ class NotificationService {
           String productName, String supplierName, String phone) =>
       showSmsNotificationPopUp(
         id: productName.hashCode + 3,
-        title: 'Low Stock Alert 📞',
+        title: 'Low Stock: $productName 📞',
         body: '$productName is low in stock! Contact $supplierName at $phone.',
       );
 

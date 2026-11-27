@@ -60,7 +60,17 @@ class ProductVariant {
   int get effectiveBaselineStock {
     final safeStock = stock > 0 ? stock : 0;
     final init = effectiveInitialStock;
-    return init >= safeStock ? init : safeStock;
+    int baseline = init >= safeStock ? init : safeStock;
+    if ((initialStock == null || initialStock! <= 0) &&
+        physicalReserve != null &&
+        physicalReserve! > 0) {
+      final minFromReserve =
+          InventoryAllocation.minOriginalStockFromReserve(physicalReserve!);
+      if (minFromReserve > baseline) {
+        baseline = minFromReserve;
+      }
+    }
+    return baseline;
   }
 
   /// Alias for [effectiveBaselineStock] representing original stock of this restock cycle.
@@ -400,6 +410,29 @@ class Product {
           0, (acc, b) => acc + (b.initialQty > 0 ? b.initialQty : 0));
       if (activeBatchInit > baseline) {
         baseline = activeBatchInit;
+      }
+      // If all batches were depleted (stock == 0) and `initialStock` was never
+      // persisted on a legacy product, fall back to the largest non-archived
+      // batch's `initialQty` so Out-of-Stock items still trigger the 30% alert.
+      if (baseline <= 0) {
+        final depletedBatchInit = batches
+            .where((b) =>
+                b.status.trim().toUpperCase() != BatchStatus.archived &&
+                b.initialQty > 0)
+            .fold<int>(0,
+                (maxVal, b) => b.initialQty > maxVal ? b.initialQty : maxVal);
+        if (depletedBatchInit > baseline) {
+          baseline = depletedBatchInit;
+        }
+      }
+    }
+    if ((initialStock == null || initialStock! <= 0) &&
+        physicalReserve != null &&
+        physicalReserve! > 0) {
+      final minFromReserve =
+          InventoryAllocation.minOriginalStockFromReserve(physicalReserve!);
+      if (minFromReserve > baseline) {
+        baseline = minFromReserve;
       }
     }
     return baseline;

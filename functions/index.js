@@ -153,7 +153,7 @@ function resolvePhysicalReserve(totalStock, storedReserve) {
 /**
  * Dynamically computes Online Available Stock (`max(0, available - reserve)`).
  * Online orders can never dip into the 25% physical-only reserve.
- * @param {number} availableStock Unreserved physical stock (`stock - reserved`).
+ * @param {number} availableStock Unreserved physical stock.
  * @param {number} physicalReserve Walk-in physical reserve units.
  * @return {number} Online sellable units.
  */
@@ -176,18 +176,75 @@ function calculateLowStockTrigger(originalStock) {
 }
 
 /**
- * Resolves the baseline original physical stock for 30% low-stock evaluation.
+ * Returns the mathematically exact minimum original stock `N` whose 25%
+ * physical reserve equals `physicalReserve` (`ceil(N * 0.25) === R`).
+ * @param {*} physicalReserve Stored physical reserve units.
+ * @return {number} Minimum original stock lower bound.
+ */
+function minOriginalStockFromReserve(physicalReserve) {
+  const safeReserve = Math.floor(Number(physicalReserve) || 0);
+  if (safeReserve <= 0) return 0;
+  return ((safeReserve - 1) * 4) + 1;
+}
+
+/**
+ * Resolves the baseline original physical stock for 30% low-stock evaluation,
+ * supporting legacy products without `initialStock` via FIFO batches, stored
+ * `physicalReserve`, and prior stock snapshot.
  * @param {number} totalStock Current physical stock.
  * @param {*} storedInitialStock Optional stored `initialStock` field.
+ * @param {Object} [opts] Optional fallback metadata.
+ * @param {*} [opts.batches] Product batches map/array.
+ * @param {*} [opts.physicalReserve] Stored `physicalReserve` field.
+ * @param {number} [opts.previousStock] Stock before this update.
  * @return {number} Effective original stock.
  */
-function resolveOriginalStock(totalStock, storedInitialStock) {
+function resolveOriginalStock(totalStock, storedInitialStock, opts = {}) {
   const safeTotal = Math.max(0, Math.floor(Number(totalStock) || 0));
   const safeInitial = Math.max(0, Math.floor(Number(storedInitialStock) || 0));
-  if (safeInitial > 0) {
-    return Math.max(safeTotal, safeInitial);
+  let baseline = Math.max(safeTotal, safeInitial);
+
+  const rawBatches = opts.batches;
+  const batchList = Array.isArray(rawBatches) ?
+    rawBatches :
+    (rawBatches && typeof rawBatches === "object" ?
+      Object.values(rawBatches) :
+      []);
+  if (batchList.length > 0) {
+    let activeInitSum = 0;
+    let nonArchivedMaxInit = 0;
+    for (const b of batchList) {
+      if (!b || typeof b !== "object") continue;
+      const status = String(b.status || "ACTIVE").trim().toUpperCase();
+      const rawRem = b.remainingQty !== undefined && b.remainingQty !== null ?
+        b.remainingQty :
+        b.quantity;
+      const rem = Math.max(0, Math.floor(Number(rawRem) || 0));
+      const rawInit = b.initialQty !== undefined && b.initialQty !== null ?
+        b.initialQty :
+        rem;
+      const init = Math.max(0, Math.floor(Number(rawInit) || 0));
+      if (status !== "ARCHIVED" && init > nonArchivedMaxInit) {
+        nonArchivedMaxInit = init;
+      }
+      if (status === "ACTIVE" && rem > 0) {
+        activeInitSum += init;
+      }
+    }
+    if (activeInitSum > baseline) baseline = activeInitSum;
+    if (baseline <= 0 && nonArchivedMaxInit > 0) {
+      baseline = nonArchivedMaxInit;
+    }
   }
-  return safeTotal;
+
+  if (safeInitial <= 0) {
+    const fromReserve = minOriginalStockFromReserve(opts.physicalReserve);
+    if (fromReserve > baseline) baseline = fromReserve;
+    const prevStock = Math.max(0, Math.floor(Number(opts.previousStock) || 0));
+    if (prevStock > baseline) baseline = prevStock;
+  }
+
+  return baseline;
 }
 
 /**
@@ -222,7 +279,7 @@ function toDateOrNull(raw) {
  * Determines whether the store has closed for the day at `nowDate`,
  * matching `StoreSettings.hasStoreClosedForDayAt`.
  * Does NOT fire early in the morning before opening on a regular open day.
- * @param {Object} settingsData Firestore `settings/store_settings` document data.
+ * @param {Object} settingsData Firestore `settings/store_settings` data.
  * @param {{year: number, month: number, day: number,
  *   hour: number, minute: number}} manilaNow Asia/Manila date/time parts.
  * @param {Date} nowDate Current UTC Date instance.
@@ -273,14 +330,28 @@ function hasStoreClosedForDay(settingsData, manilaNow, nowDate) {
 }
 
 /**
+ * Builds a sanitized Firestore document ID segment from an item key.
+ * @param {string} raw Raw identifier.
+ * @return {string} Safe document ID fragment.
+ */
+function sanitizeDocIdSegment(raw) {
+  return String(raw || "item").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+}
+
+/**
  * Extracts all product/variant entries that have reached <= 30% of their
- * original physical stock.
+ * original physical stock, plus all active item keys so restocked items can
+ * be cleared from unsent daily logs.
  * @param {string} productId Product document ID.
  * @param {Object} data Product document data.
- * @return {Array<{itemKey: string, payload: Object}>} Breached entries.
+ * @param {Object} [beforeData] Optional prior product document data.
+ * @return {{breached: Array<{itemKey: string, payload: Object}>,
+ *   recoveredKeys: Array<string>}} Evaluated entries.
  */
-function extractLowStockEntriesForProduct(productId, data) {
-  if (!data || data.status === "archived") return [];
+function evaluateLowStockForProduct(productId, data, beforeData = null) {
+  if (!data || data.status === "archived") {
+    return {breached: [], recoveredKeys: []};
+  }
 
   const categoryName = String(data.category || "Others").trim() || "Others";
   const productName = String(data.name || "Unnamed Product").trim() ||
@@ -304,26 +375,46 @@ function extractLowStockEntriesForProduct(productId, data) {
       })) :
       []);
 
+  const beforeVariantsByKey = {};
+  if (beforeData && beforeData.variants) {
+    if (Array.isArray(beforeData.variants)) {
+      beforeData.variants.forEach((bv, idx) => {
+        const bKey = String((bv && bv.id) || `var_${idx}`);
+        beforeVariantsByKey[bKey] = bv || {};
+      });
+    } else if (typeof beforeData.variants === "object") {
+      Object.entries(beforeData.variants).forEach(([k, bv]) => {
+        beforeVariantsByKey[String(k)] = bv || {};
+      });
+    }
+  }
+
   const breached = [];
+  const recoveredKeys = [];
 
   if (variantEntries.length > 0) {
     variantEntries.forEach(({key, value: v}, idx) => {
+      const vId = String(v.id || key || `var_${idx}`);
+      const itemKey = `${productId}__${vId}`;
+      const prevVar = beforeVariantsByKey[vId] || beforeVariantsByKey[key];
       const vStock = Math.max(0, Math.floor(Number(v.stock) || 0));
       const vReserved = Math.max(0, Math.floor(Number(v.reservedStock) || 0));
       const vAvail = Math.max(0, vStock - vReserved);
-      const vOriginal = resolveOriginalStock(vStock, v.initialStock);
+      const vOriginal = resolveOriginalStock(vStock, v.initialStock, {
+        physicalReserve: v.physicalReserve,
+        previousStock: prevVar ? prevVar.stock : 0,
+      });
       const vTrigger = calculateLowStockTrigger(vOriginal);
-      const vReserve = resolvePhysicalReserve(vStock, v.physicalReserve);
+      const vReserve = resolvePhysicalReserve(vOriginal, v.physicalReserve);
       const vOnlineAvail = calculateOnlineAvailable(vAvail, vReserve);
       const vOnlineOos = vOnlineAvail <= 0;
       const vPhysicalHit = vOriginal > 0 && vAvail <= vTrigger;
 
       if (vPhysicalHit) {
-        const vId = String(v.id || key || `var_${idx}`);
         const vName = String(v.name || `Variant ${idx + 1}`);
         const restockQty = calculateSuggestedRestock(vAvail, vOriginal);
         breached.push({
-          itemKey: `${productId}__${vId}`,
+          itemKey,
           payload: {
             productId,
             variantId: vId,
@@ -341,15 +432,21 @@ function extractLowStockEntriesForProduct(productId, data) {
             onlineOutOfStock: vOnlineOos,
           },
         });
+      } else {
+        recoveredKeys.push(itemKey);
       }
     });
   } else {
     const stock = Math.max(0, Math.floor(Number(data.stock) || 0));
     const reserved = Math.max(0, Math.floor(Number(data.reservedStock) || 0));
     const avail = Math.max(0, stock - reserved);
-    const original = resolveOriginalStock(stock, data.initialStock);
+    const original = resolveOriginalStock(stock, data.initialStock, {
+      batches: data.batches,
+      physicalReserve: data.physicalReserve,
+      previousStock: beforeData ? beforeData.stock : 0,
+    });
     const trigger = calculateLowStockTrigger(original);
-    const reserve = resolvePhysicalReserve(stock, data.physicalReserve);
+    const reserve = resolvePhysicalReserve(original, data.physicalReserve);
     const onlineAvail = calculateOnlineAvailable(avail, reserve);
     const onlineOos = onlineAvail <= 0;
     const physicalHit = original > 0 && avail <= trigger;
@@ -373,16 +470,19 @@ function extractLowStockEntriesForProduct(productId, data) {
           onlineOutOfStock: onlineOos,
         },
       });
+    } else {
+      recoveredKeys.push(productId);
     }
   }
 
-  return breached;
+  return {breached, recoveredKeys};
 }
 
 /**
  * Scans all active products and ensures every item currently at <= 30% of
- * its original stock is captured in `daily_resupply_logs/{dateKey}` before
- * dispatching the store-closing summary email.
+ * its original stock is captured in `daily_resupply_logs/{dateKey}` (and any
+ * restocked items are removed if unsent) before dispatching the store-closing
+ * summary email.
  * @param {FirebaseFirestore.Firestore} db Firestore instance.
  * @param {string} dateKey Store calendar date key (YYYY-MM-DD).
  * @return {Promise<number>} Count of low-stock items synced.
@@ -391,10 +491,16 @@ async function syncCurrentlyLowStockProducts(db, dateKey) {
   const productsSnap = await db.collection("products").get();
   let count = 0;
   for (const doc of productsSnap.docs) {
-    const entries = extractLowStockEntriesForProduct(doc.id, doc.data() || {});
-    for (const entry of entries) {
+    const {breached, recoveredKeys} = evaluateLowStockForProduct(
+        doc.id,
+        doc.data() || {},
+    );
+    for (const entry of breached) {
       await upsertDailyResupplyItem(db, dateKey, entry.itemKey, entry.payload);
       count++;
+    }
+    for (const recoveredKey of recoveredKeys) {
+      await removeDailyResupplyItem(db, dateKey, recoveredKey);
     }
   }
   return count;
@@ -477,50 +583,56 @@ function escapeHtml(raw) {
 }
 
 /**
- * Sends an email to the GDC Sari-Sari Store Gmail account via Brevo API,
- * falling back to the Firestore `mail` collection.
+ * Sends an email to the GDC Sari-Sari Store Gmail account via Brevo API.
+ * If `BREVO_API_KEY` is not configured in Cloud Functions, returns
+ * `{sent: false, pendingClient: true}` instead of falsely marking sent so the
+ * Admin App (which holds the Brevo API key) dispatches the email immediately.
  * @param {{subject: string, html: string, text: string}} payload Email payload.
- * @return {Promise<boolean>} True once dispatched or queued.
+ * @return {Promise<Object>} Delivery outcome object.
  */
 async function sendStoreGmailAlert({subject, html, text}) {
-  const db = admin.firestore();
-  const brevoKey = process.env.BREVO_API_KEY || "";
+  const brevoKey = (process.env.BREVO_API_KEY || "").trim();
 
-  if (brevoKey) {
-    try {
-      const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
-        method: "POST",
-        headers: {
-          "accept": "application/json",
-          "api-key": brevoKey,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          sender: {name: "GDC Store", email: STORE_GMAIL_ADDRESS},
-          to: [{email: STORE_GMAIL_ADDRESS, name: "GDC Sari-Sari Store"}],
-          subject,
-          htmlContent: html,
-        }),
-      });
-      if (resp.ok) {
-        console.log(`Brevo email sent to ${STORE_GMAIL_ADDRESS}: ${subject}`);
-        return true;
-      }
-      console.error(
-          `Brevo email failed [${resp.status}]:`,
-          await resp.text(),
-      );
-    } catch (err) {
-      console.error("Error dispatching Brevo email:", err);
-    }
+  if (!brevoKey) {
+    console.warn(
+        "BREVO_API_KEY is not configured in Cloud Functions; leaving " +
+        "daily resupply summary pending for Admin App Brevo dispatch.",
+    );
+    return {
+      sent: false,
+      pendingClient: true,
+      error: "BREVO_API_KEY is not configured in Cloud Functions",
+    };
   }
 
-  await db.collection("mail").add({
-    to: STORE_GMAIL_ADDRESS,
-    message: {subject, text, html},
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return true;
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "api-key": brevoKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: {name: "GDC Store", email: STORE_GMAIL_ADDRESS},
+        to: [{email: STORE_GMAIL_ADDRESS, name: "GDC Sari-Sari Store"}],
+        replyTo: {email: STORE_GMAIL_ADDRESS, name: "GDC Store"},
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
+    });
+    if (resp.ok) {
+      console.log(`Brevo email sent to ${STORE_GMAIL_ADDRESS}: ${subject}`);
+      return {sent: true};
+    }
+    const errText = await resp.text();
+    console.error(`Brevo email failed [${resp.status}]:`, errText);
+    return {sent: false, error: `Brevo [${resp.status}]: ${errText}`};
+  } catch (err) {
+    console.error("Error dispatching Brevo email:", err);
+    return {sent: false, error: String(err)};
+  }
 }
 
 /**
@@ -530,7 +642,7 @@ async function sendStoreGmailAlert({subject, html, text}) {
  * @param {string} dateKey Store calendar date key (YYYY-MM-DD).
  * @param {string} itemKey Unique product or product__variant key.
  * @param {Object} itemPayload Resupply snapshot payload.
- * @return {Promise<boolean>} True if newly triggered today.
+ * @return {Promise<{isNewToday: boolean, escalatedToOos: boolean}>} Result.
  */
 async function upsertDailyResupplyItem(db, dateKey, itemKey, itemPayload) {
   const logRef = db.collection("daily_resupply_logs").doc(dateKey);
@@ -542,6 +654,9 @@ async function upsertDailyResupplyItem(db, dateKey, itemKey, itemPayload) {
     const itemsMap = Object.assign({}, existing.items || {});
     const prevItem = itemsMap[itemKey];
     const isNewToday = !prevItem;
+    const prevAvail = prevItem ? Number(prevItem.availableStock) : -1;
+    const nextAvail = Number(itemPayload.availableStock) || 0;
+    const escalatedToOos = !isNewToday && prevAvail > 0 && nextAvail <= 0;
 
     const firstTriggeredAt =
       prevItem && prevItem.firstTriggeredAt ?
@@ -558,6 +673,7 @@ async function upsertDailyResupplyItem(db, dateKey, itemKey, itemPayload) {
         dateKey,
         storeEmail: STORE_GMAIL_ADDRESS,
         items: itemsMap,
+        itemCount: Object.keys(itemsMap).length,
         summaryEmailSent: false,
         summaryEmailStatus: "pending",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -570,13 +686,46 @@ async function upsertDailyResupplyItem(db, dateKey, itemKey, itemPayload) {
             dateKey,
             storeEmail: existing.storeEmail || STORE_GMAIL_ADDRESS,
             items: itemsMap,
+            itemCount: Object.keys(itemsMap).length,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           {merge: true},
       );
     }
 
-    return isNewToday;
+    return {isNewToday, escalatedToOos};
+  });
+}
+
+/**
+ * Removes a restocked item from `daily_resupply_logs/{dateKey}` if the daily
+ * summary email has not yet been sent.
+ * @param {FirebaseFirestore.Firestore} db Firestore instance.
+ * @param {string} dateKey Store calendar date key (YYYY-MM-DD).
+ * @param {string} itemKey Unique product or product__variant key.
+ * @return {Promise<void>}
+ */
+async function removeDailyResupplyItem(db, dateKey, itemKey) {
+  const logRef = db.collection("daily_resupply_logs").doc(dateKey);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(logRef);
+    if (!snap.exists) return;
+    const existing = snap.data() || {};
+    if (existing.summaryEmailSent === true) return;
+    const itemsMap = Object.assign({}, existing.items || {});
+    if (!(itemKey in itemsMap)) return;
+    delete itemsMap[itemKey];
+    tx.set(
+        logRef,
+        {
+          dateKey,
+          storeEmail: existing.storeEmail || STORE_GMAIL_ADDRESS,
+          items: itemsMap,
+          itemCount: Object.keys(itemsMap).length,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        {merge: true},
+    );
   });
 }
 
@@ -761,7 +910,22 @@ async function dispatchDailyResupplySummaryForDate(db, dateKey, triggeredBy) {
     `\n\nTotal Suggested Resupply Units: ${totalSuggested}`;
 
   try {
-    await sendStoreGmailAlert({subject, html, text});
+    const delivery = await sendStoreGmailAlert({subject, html, text});
+    if (!delivery.sent) {
+      await logRef.set(
+          {
+            summaryEmailSent: false,
+            summaryEmailStatus: delivery.pendingClient ?
+              "pending_client" :
+              "failed",
+            summaryEmailError: delivery.error || "Email dispatch failed",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          {merge: true},
+      );
+      return false;
+    }
+
     await logRef.set(
         {
           summaryEmailSent: true,
@@ -774,20 +938,39 @@ async function dispatchDailyResupplySummaryForDate(db, dateKey, triggeredBy) {
         {merge: true},
     );
 
+    const previewNames = items.slice(0, 3).map((it) =>
+      it.variantName ?
+        `${it.productName} (${it.variantName})` :
+        (it.productName || "Unnamed Product"),
+    );
+    const extraCount = items.length - previewNames.length;
+    const extraSuffix = extraCount > 0 ? ` +${extraCount} more` : "";
+    const itemsPreview = previewNames.length > 0 ?
+      ` (${previewNames.join(", ")}${extraSuffix})` :
+      "";
     const notifMessage =
       `Store-Closing Resupply Summary emailed to ${claimResult.storeEmail} ` +
-      `for ${items.length} item${plural} at <= 30% stock (${dateKey}).`;
-    await db.collection("admin_notifications").add({
-      type: "daily_resupply_summary",
-      title: `📧 Store-Closing Resupply Email Sent (${dateKey})`,
-      message: notifMessage,
-      body: notifMessage,
-      severity: "info",
-      status: "unread",
-      dateKey,
-      itemCount: items.length,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      `for ${items.length} low-stock item${plural}${itemsPreview} ` +
+      `at <= 30% stock (${dateKey}).`;
+    await db
+        .collection("admin_notifications")
+        .doc(`eod_resupply_${sanitizeDocIdSegment(dateKey)}`)
+        .set(
+            {
+              type: "daily_resupply_summary",
+              title: `📧 Store-Closing Resupply Email Sent (${dateKey})`,
+              message: notifMessage,
+              body: notifMessage,
+              severity: "info",
+              status: `${items.length} items summarized`,
+              relatedId: dateKey,
+              dateKey,
+              itemCount: items.length,
+              isRead: false,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+        );
 
     await admin.messaging().send({
       notification: {
@@ -810,6 +993,7 @@ async function dispatchDailyResupplySummaryForDate(db, dateKey, triggeredBy) {
     );
     await logRef.set(
         {
+          summaryEmailSent: false,
           summaryEmailStatus: "failed",
           summaryEmailError: String(err),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -824,8 +1008,9 @@ async function dispatchDailyResupplySummaryForDate(db, dateKey, triggeredBy) {
  * Physical Low-Stock (30% of Original Stock) Monitor Trigger.
  * - Uses the fixed 100% POS / 75% Online (25% physical-only reserve) model.
  * - Fires an immediate Inventory Alert + FCM notification whenever 100%
- *   physical stock reaches <= 30% of original stock, and upserts the item
- *   into `daily_resupply_logs/{YYYY-MM-DD}` for the Store-Closing Email.
+ *   physical stock reaches <= 30% of original stock (or escalates to OOS),
+ *   and upserts the item into `daily_resupply_logs/{YYYY-MM-DD}` for the
+ *   Store-Closing Email. Removes restocked items from unsent daily logs.
  */
 exports.onProductStockThresholdCheck = onDocumentUpdated(
     "products/{productId}",
@@ -847,19 +1032,24 @@ exports.onProductStockThresholdCheck = onDocumentUpdated(
 
       const db = admin.firestore();
       const todayKey = getManilaDateKey(new Date());
-      const breachedEntries = extractLowStockEntriesForProduct(
+      const {breached, recoveredKeys} = evaluateLowStockForProduct(
           productId,
           after,
+          before,
       );
 
-      for (const entry of breachedEntries) {
-        const isNewToday = await upsertDailyResupplyItem(
+      for (const recoveredKey of recoveredKeys) {
+        await removeDailyResupplyItem(db, todayKey, recoveredKey);
+      }
+
+      for (const entry of breached) {
+        const {isNewToday, escalatedToOos} = await upsertDailyResupplyItem(
             db,
             todayKey,
             entry.itemKey,
             entry.payload,
         );
-        if (!isNewToday) continue;
+        if (!isNewToday && !escalatedToOos) continue;
 
         const p = entry.payload;
         const label = p.variantName ?
@@ -868,35 +1058,51 @@ exports.onProductStockThresholdCheck = onDocumentUpdated(
         const isCritical = p.availableStock <= 0;
         const title = isCritical ?
           `🚨 Out of Stock: ${label}` :
-          `⚠️ 30% Low-Stock Alert: ${label}`;
+          `⚠️ Low Stock (30%): ${label}`;
         const body = isCritical ?
-          `${label} reached 0/${p.originalStock} ${p.unit} ` +
-            `(30% alert: <= ${p.lowStockThreshold}). Online Store is ` +
-            "Out of Stock. Queued for Store-Closing Resupply Email." :
-          `${label} reached <= 30% of original stock ` +
-            `(${p.availableStock}/${p.originalStock} ${p.unit} left, ` +
+          `${label} is out of stock (0/${p.originalStock} ${p.unit}; ` +
+            `30% alert: <= ${p.lowStockThreshold}). Online Store is ` +
+            "Out of Stock. Queued for End-of-Day Resupply Email." :
+          `${label} is low on stock ` +
+            `(${p.availableStock}/${p.originalStock} ${p.unit} left; ` +
             `30% alert: <= ${p.lowStockThreshold}). Queued for ` +
-            `Store-Closing Resupply Email (+${p.suggestedResupplyQty} ` +
+            `End-of-Day Resupply Email (+${p.suggestedResupplyQty} ` +
             `${p.unit}).`;
 
-        await db.collection("admin_notifications").add({
-          type: "physical_low_stock_alert",
-          title,
-          message: body,
-          body,
-          productId: p.productId,
-          variantId: p.variantId || null,
-          severity: isCritical ? "critical" : "warning",
-          status: "unread",
-          suggestedRestock: p.suggestedResupplyQty,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        const notifDocId =
+          `low30_${todayKey}_${sanitizeDocIdSegment(entry.itemKey)}_` +
+          `${isCritical ? "oos" : "low"}`;
+
+        await db
+            .collection("admin_notifications")
+            .doc(notifDocId)
+            .set(
+                {
+                  type: isCritical ?
+                    "out_of_stock" :
+                    "physical_low_stock_alert",
+                  title,
+                  message: body,
+                  body,
+                  relatedId: p.productId,
+                  productId: p.productId,
+                  variantId: p.variantId || null,
+                  severity: isCritical ? "critical" : "warning",
+                  status: isCritical ?
+                    "Out of Stock" :
+                    `Low Stock <= 30% (${p.availableStock}/${p.originalStock})`,
+                  suggestedRestock: p.suggestedResupplyQty,
+                  isRead: false,
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                {merge: true},
+            );
 
         await admin.messaging().send({
           notification: {title, body},
           data: {
             recipient: "admin",
-            type: "physical_low_stock_alert",
+            type: isCritical ? "out_of_stock" : "physical_low_stock_alert",
             productId: p.productId,
           },
           topic: "admin_alerts",

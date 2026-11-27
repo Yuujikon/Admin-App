@@ -11,6 +11,7 @@ import '../utils/format.dart';
 import 'scanner_dialog.dart';
 import 'premium_components.dart';
 import 'action_warning_dialog.dart';
+import 'gdc_popup_menu.dart';
 
 class ReceiveDeliverySheet extends StatefulWidget {
   final Product? initialProduct;
@@ -575,52 +576,42 @@ class _ReceiveDeliverySheetState extends State<ReceiveDeliverySheet> {
                                 ),
                               ),
                             ),
-                            PopupMenuButton<int>(
+                            GdcPopupMenuButton<int>.pill(
                               tooltip: 'Set Expiry Date for All Items',
-                              child: Container(
-                                height: 36,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: colorScheme.primary
-                                        .withValues(alpha: 0.25),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.event_available_rounded,
-                                      size: 14,
-                                      color: colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Set All Expiry',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: colorScheme.primary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              menuTitle: 'Bulk Expiry Preset',
+                              label: 'Set All Expiry',
+                              icon: Icons.event_available_rounded,
+                              emphasized: true,
+                              height: 36,
+                              borderRadius: 10,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
                               ),
                               onSelected: (days) =>
                                   _setAllInquiryExpiry(Duration(days: days)),
-                              itemBuilder: (ctx) => [
-                                const PopupMenuItem(
-                                    value: 90,
-                                    child: Text('Set All: +90 Days')),
-                                const PopupMenuItem(
-                                    value: 180,
-                                    child: Text('Set All: +180 Days')),
-                                const PopupMenuItem(
-                                    value: 365,
-                                    child: Text('Set All: +1 Year')),
+                              options: const [
+                                GdcPopupOption<int>(
+                                  value: 90,
+                                  label: 'Set All: +90 Days',
+                                  subtitle: '3 months from today',
+                                  icon: Icons.schedule_rounded,
+                                  trailingBadge: '3M',
+                                ),
+                                GdcPopupOption<int>(
+                                  value: 180,
+                                  label: 'Set All: +180 Days',
+                                  subtitle: '6 months from today',
+                                  icon: Icons.calendar_month_rounded,
+                                  trailingBadge: '6M',
+                                ),
+                                GdcPopupOption<int>(
+                                  value: 365,
+                                  label: 'Set All: +1 Year',
+                                  subtitle: '12 months from today',
+                                  icon: Icons.event_repeat_rounded,
+                                  trailingBadge: '1Y',
+                                ),
                               ],
                             ),
                           ],

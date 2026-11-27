@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
+import 'gdc_popup_menu.dart';
 
 /// Pre-defined date range filter options for data lists.
 enum AdminDateFilter { all, today, thisWeek, thisMonth }
@@ -212,172 +213,183 @@ class _AdminFilterBarState extends State<AdminFilterBar> {
             if (widget.filterOutOptions != null &&
                 widget.filterOutOptions!.isNotEmpty) ...[
               const SizedBox(width: 8),
-              PopupMenuButton<String>(
-                tooltip: 'Exclusion Filters',
-                onSelected: null,
-                itemBuilder: (context) {
-                  return _localFilterOuts.keys.map((key) {
-                    final isChecked = _localFilterOuts[key] ?? false;
-                    return PopupMenuItem<String>(
-                      enabled: false,
-                      child: StatefulBuilder(
-                        builder: (context, setMenuState) {
-                          return InkWell(
-                            onTap: () {
-                              final updated = !isChecked;
-                              setState(() {
-                                _localFilterOuts[key] = updated;
-                              });
-                              setMenuState(() {});
-                              if (widget.onFilterOutChanged != null) {
-                                widget.onFilterOutChanged!(_localFilterOuts);
-                              }
-                            },
-                            child: Row(
-                              children: [
-                                Checkbox(
-                                  value: isChecked,
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _localFilterOuts[key] = val ?? false;
-                                    });
-                                    setMenuState(() {});
-                                    if (widget.onFilterOutChanged != null) {
-                                      widget.onFilterOutChanged!(
-                                          _localFilterOuts);
-                                    }
-                                  },
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    key,
-                                    style: const TextStyle(fontSize: 13),
+              Builder(
+                builder: (context) {
+                  final activeExclusions =
+                      _localFilterOuts.values.where((v) => v).length;
+                  return PopupMenuButton<String>(
+                    tooltip: 'Exclusion Filters',
+                    onSelected: null,
+                    position: PopupMenuPosition.under,
+                    offset: const Offset(0, 8),
+                    elevation: 12,
+                    shadowColor:
+                        Colors.black.withValues(alpha: isDark ? 0.5 : 0.14),
+                    surfaceTintColor: Colors.transparent,
+                    color: theme.colorScheme.surface,
+                    clipBehavior: Clip.antiAlias,
+                    menuPadding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    constraints: const BoxConstraints(minWidth: 220),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      side: BorderSide(
+                        color: theme.colorScheme.outlineVariant
+                            .withValues(alpha: isDark ? 0.45 : 0.85),
+                        width: 1,
+                      ),
+                    ),
+                    itemBuilder: (context) {
+                      return <PopupMenuEntry<String>>[
+                        buildGdcPopupMenuHeader<String>(
+                          context,
+                          'Exclude From View',
+                        ),
+                        ..._localFilterOuts.keys.map((key) {
+                          return PopupMenuItem<String>(
+                            enabled: false,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 2, vertical: 2),
+                            height: 44,
+                            child: StatefulBuilder(
+                              builder: (context, setMenuState) {
+                                final isChecked =
+                                    _localFilterOuts[key] ?? false;
+                                void toggle() {
+                                  setState(() {
+                                    _localFilterOuts[key] = !isChecked;
+                                  });
+                                  setMenuState(() {});
+                                  widget.onFilterOutChanged
+                                      ?.call(_localFilterOuts);
+                                }
+
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: toggle,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isChecked
+                                            ? theme.colorScheme.primary
+                                                .withValues(
+                                                    alpha: isDark ? 0.16 : 0.09)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: isChecked
+                                            ? Border.all(
+                                                color: theme.colorScheme.primary
+                                                    .withValues(alpha: 0.24),
+                                                width: 1,
+                                              )
+                                            : null,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 140),
+                                            width: 20,
+                                            height: 20,
+                                            decoration: BoxDecoration(
+                                              color: isChecked
+                                                  ? theme.colorScheme.primary
+                                                  : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: isChecked
+                                                    ? theme.colorScheme.primary
+                                                    : theme.colorScheme
+                                                        .onSurfaceVariant
+                                                        .withValues(alpha: 0.5),
+                                                width: 1.6,
+                                              ),
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: isChecked
+                                                ? Icon(
+                                                    Icons.check_rounded,
+                                                    size: 14,
+                                                    color: theme
+                                                        .colorScheme.onPrimary,
+                                                  )
+                                                : null,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              key,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: isChecked
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w600,
+                                                color: isChecked
+                                                    ? theme.colorScheme.primary
+                                                    : theme
+                                                        .colorScheme.onSurface,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
                           );
-                        },
-                      ),
-                    );
-                  }).toList();
-                },
-                child: Container(
-                  height: 46,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: _localFilterOuts.values.any((v) => v)
-                        ? theme.colorScheme.primaryContainer
-                        : (isDark
-                            ? theme.colorScheme.surfaceContainerHigh
-                            : Colors.white),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant
-                          .withValues(alpha: 0.5),
+                        }),
+                      ];
+                    },
+                    child: GdcPopupPillTrigger(
+                      label: 'Filter Out',
+                      icon: Icons.filter_alt_outlined,
+                      isActive: activeExclusions > 0,
+                      activeBadgeCount: activeExclusions,
+                      height: 46,
+                      borderRadius: 14,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.filter_alt_outlined,
-                        size: 18,
-                        color: _localFilterOuts.values.any((v) => v)
-                            ? theme.colorScheme.onPrimaryContainer
-                            : theme.colorScheme.onSurface,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Filter Out',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _localFilterOuts.values.any((v) => v)
-                              ? theme.colorScheme.onPrimaryContainer
-                              : theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                  );
+                },
               ),
             ],
 
             // Date Range Preset Filter Menu
             if (widget.dateFilter != null) ...[
               const SizedBox(width: 8),
-              PopupMenuButton<AdminDateFilter>(
+              GdcPopupMenuButton<AdminDateFilter>.pill(
                 tooltip: 'Date Range Filter',
+                menuTitle: 'Date Range',
                 initialValue: widget.dateFilter,
-                onSelected: widget.onDateFilterChanged,
-                itemBuilder: (context) => AdminDateFilter.values
-                    .map(
-                      (f) => PopupMenuItem(
-                        value: f,
-                        child: Row(
-                          children: [
-                            Icon(
-                              f == widget.dateFilter
-                                  ? Icons.radio_button_checked_rounded
-                                  : Icons.radio_button_unchecked_rounded,
-                              size: 16,
-                              color: theme.colorScheme.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(f.label, style: const TextStyle(fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-                child: Container(
-                  height: 46,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: widget.dateFilter != AdminDateFilter.all
-                        ? theme.colorScheme.primaryContainer
-                        : (isDark
-                            ? theme.colorScheme.surfaceContainerHigh
-                            : Colors.white),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant
-                          .withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.calendar_today_rounded,
-                        size: 16,
-                        color: widget.dateFilter != AdminDateFilter.all
-                            ? theme.colorScheme.onPrimaryContainer
-                            : theme.colorScheme.onSurface,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        widget.dateFilter!.label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: widget.dateFilter != AdminDateFilter.all
-                              ? theme.colorScheme.onPrimaryContainer
-                              : theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.arrow_drop_down_rounded,
-                        size: 18,
-                        color: widget.dateFilter != AdminDateFilter.all
-                            ? theme.colorScheme.onPrimaryContainer
-                            : theme.colorScheme.onSurface,
-                      ),
-                    ],
-                  ),
-                ),
+                label: widget.dateFilter!.label,
+                icon: Icons.calendar_today_rounded,
+                isActive: widget.dateFilter != AdminDateFilter.all,
+                height: 46,
+                borderRadius: 14,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                onSelected: (f) => widget.onDateFilterChanged?.call(f),
+                options: AdminDateFilter.values.map((f) {
+                  final icon = switch (f) {
+                    AdminDateFilter.all => Icons.all_inclusive_rounded,
+                    AdminDateFilter.today => Icons.today_rounded,
+                    AdminDateFilter.thisWeek => Icons.view_week_rounded,
+                    AdminDateFilter.thisMonth => Icons.calendar_month_rounded,
+                  };
+                  return GdcPopupOption<AdminDateFilter>(
+                    value: f,
+                    label: f.label,
+                    icon: icon,
+                    isSelected: f == widget.dateFilter,
+                  );
+                }).toList(),
               ),
             ],
 

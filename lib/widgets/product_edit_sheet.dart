@@ -3291,12 +3291,12 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         ));
       }
 
-      final int? prevInitial = _activeProduct?.initialStock;
+      final int prevOriginal = _activeProduct?.effectiveOriginalStock ?? 0;
       final bool isStockIncrease =
           _activeProduct == null || initialQty > _activeProduct!.totalStock;
       final int calculatedInitial = isStockIncrease
           ? initialQty
-          : (prevInitial != null && prevInitial > 0 ? prevInitial : initialQty);
+          : (prevOriginal > 0 ? prevOriginal : initialQty);
 
       final itemsPerCaseVal = int.tryParse(_itemsPerBoxCtrl.text) ??
           int.tryParse(_itemsPerCase.text);
@@ -3311,10 +3311,11 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         final bool isRestock = prev == null ||
             v.stock > prev.stock ||
             prev.physicalReserve == null;
+        final int prevVarOriginal = prev?.effectiveOriginalStock ?? 0;
         return v.copyWith(
           initialStock: (prev == null || v.stock > prev.stock)
               ? v.stock
-              : (prev.initialStock ?? v.stock),
+              : (prevVarOriginal > 0 ? prevVarOriginal : v.stock),
           physicalReserve: isRestock
               ? InventoryAllocation.calculatePhysicalReserve(v.stock)
               : prev.effectivePhysicalReserve,

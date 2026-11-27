@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../models/order.dart';
+import '../models/product.dart';
 import '../models/refund_request.dart';
 import '../models/admin_destination.dart';
 import '../config/theme.dart';
@@ -23,6 +24,8 @@ import 'sales_history_screen.dart';
 import 'inventory_records_screen.dart';
 import 'supplier_management_screen.dart';
 import 'more_management_screen.dart';
+import 'eod_resupply_summary_screen.dart';
+import 'product_detail_screen.dart';
 import '../shared/services/time_service.dart';
 import '../shared/widgets/common/time_travel_sheet.dart';
 import '../widgets/global_admin_search_palette.dart';
@@ -1038,6 +1041,8 @@ Future<void> _showAdminNotificationsSheet(BuildContext context) async {
                   ),
                 ),
                 const Divider(height: 1),
+                _DailyResupplySummaryBanner(inv: inv),
+                const Divider(height: 1),
                 Expanded(
                   child: notifications.isEmpty
                       ? Center(
@@ -1082,7 +1087,7 @@ Future<void> _showAdminNotificationsSheet(BuildContext context) async {
                             final type = (item['type'] ?? '').toString();
                             final severity =
                                 (item['severity'] ?? 'info').toString();
-                            final title =
+                            final rawTitle =
                                 (item['title'] ?? 'Inventory Alert').toString();
                             final message =
                                 (item['message'] ?? item['body'] ?? '')
@@ -1090,6 +1095,57 @@ Future<void> _showAdminNotificationsSheet(BuildContext context) async {
                             final isRead = item['isRead'] == true;
                             final status = (item['status'] ?? '').toString();
                             final suggestedRestock = item['suggestedRestock'];
+
+                            final String productId =
+                                (item['productId'] ?? item['relatedId'] ?? '')
+                                    .toString()
+                                    .trim();
+                            final String variantId =
+                                (item['variantId'] ?? '').toString().trim();
+
+                            Product? matchedProduct;
+                            if (productId.isNotEmpty) {
+                              for (final p in inv.products) {
+                                if (p.id == productId) {
+                                  matchedProduct = p;
+                                  break;
+                                }
+                              }
+                            }
+
+                            String? resolvedProductName =
+                                item['productName']?.toString().trim();
+                            if ((resolvedProductName == null ||
+                                    resolvedProductName.isEmpty) &&
+                                matchedProduct != null) {
+                              if (variantId.isNotEmpty) {
+                                String? variantName;
+                                for (final v in matchedProduct.variants) {
+                                  if (v.id == variantId) {
+                                    variantName = v.name;
+                                    break;
+                                  }
+                                }
+                                resolvedProductName = (variantName != null &&
+                                        variantName.trim().isNotEmpty)
+                                    ? '${matchedProduct.name} (${variantName.trim()})'
+                                    : matchedProduct.name;
+                              } else {
+                                resolvedProductName = matchedProduct.name;
+                              }
+                            }
+
+                            final bool isStockAlert =
+                                type == 'physical_low_stock_alert' ||
+                                    type == 'out_of_stock' ||
+                                    type == 'low_stock';
+                            final String title = (isStockAlert &&
+                                    resolvedProductName != null &&
+                                    resolvedProductName.isNotEmpty &&
+                                    !rawTitle.toLowerCase().contains(
+                                        resolvedProductName.toLowerCase()))
+                                ? '$rawTitle: $resolvedProductName'
+                                : rawTitle;
 
                             DateTime? createdAt;
                             final rawCreated = item['createdAt'];
@@ -1129,6 +1185,32 @@ Future<void> _showAdminNotificationsSheet(BuildContext context) async {
                                 onTap: () {
                                   if (!isRead && id.isNotEmpty) {
                                     inv.markAdminNotificationRead(id);
+                                  }
+                                  if (type == 'daily_resupply_summary') {
+                                    final dateKey =
+                                        item['dateKey']?.toString().trim();
+                                    Navigator.of(ctx).pop();
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            EodResupplySummaryScreen(
+                                          initialDateKey: (dateKey != null &&
+                                                  dateKey.isNotEmpty)
+                                              ? dateKey
+                                              : null,
+                                        ),
+                                      ),
+                                    );
+                                  } else if (matchedProduct != null) {
+                                    final productToOpen = matchedProduct;
+                                    Navigator.of(ctx).pop();
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => ProductDetailScreen(
+                                          product: productToOpen,
+                                        ),
+                                      ),
+                                    );
                                   }
                                 },
                                 child: Container(
@@ -1193,6 +1275,36 @@ Future<void> _showAdminNotificationsSheet(BuildContext context) async {
                                                   ),
                                               ],
                                             ),
+                                            if (resolvedProductName != null &&
+                                                resolvedProductName
+                                                    .isNotEmpty) ...[
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.inventory_2_outlined,
+                                                    size: 13,
+                                                    color: accentColor,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Product: $resolvedProductName',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: theme
+                                                          .textTheme.labelMedium
+                                                          ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: accentColor,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
                                             if (message.isNotEmpty) ...[
                                               const SizedBox(height: 4),
                                               Text(
@@ -1258,6 +1370,189 @@ Future<void> _showAdminNotificationsSheet(BuildContext context) async {
       );
     },
   );
+}
+
+class _DailyResupplySummaryBanner extends StatelessWidget {
+  final InventoryProvider inv;
+
+  const _DailyResupplySummaryBanner({required this.inv});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final log = inv.todayResupplyLog;
+    final items = log.sortedItems;
+    final bool isSending = inv.isSendingDailyResupplyEmail;
+    final bool isSent = log.summaryEmailSent;
+    final bool isFailed = !isSent && log.summaryEmailStatus == 'failed';
+    final Color statusColor = isSent
+        ? Colors.green.shade700
+        : isFailed
+            ? theme.colorScheme.error
+            : Colors.teal.shade700;
+
+    final String statusLabel;
+    if (isSending) {
+      statusLabel = 'Sending...';
+    } else if (isSent) {
+      final sentStr = log.summaryEmailSentAt != null
+          ? DateFormat('h:mm a').format(log.summaryEmailSentAt!)
+          : 'today';
+      statusLabel = 'Emailed at $sentStr';
+    } else if (isFailed) {
+      statusLabel = 'Email Failed';
+    } else if (items.isEmpty) {
+      statusLabel = 'All Stock Healthy';
+    } else {
+      final closeTime = inv.settings.dailyCloseTime ?? '21:00';
+      statusLabel = 'Queued for Close ($closeTime)';
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isSent
+                    ? Icons.mark_email_read_rounded
+                    : Icons.inventory_2_outlined,
+                size: 18,
+                color: statusColor,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'End-of-Day Resupply Summary (≤ 30%)',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+              _NotificationMetaChip(label: statusLabel, color: statusColor),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            items.isEmpty
+                ? 'No products are currently at ≤ 30% of original stock (${log.dateKey}).'
+                : '${items.length} low-stock item${items.length == 1 ? '' : 's'} (+${log.totalSuggestedUnits} suggested units) queued for ${log.storeEmail}:',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ...items.take(4).map((it) {
+                  final chipColor = it.isOutOfStock
+                      ? theme.colorScheme.error
+                      : Colors.amber.shade900;
+                  return _NotificationMetaChip(
+                    label:
+                        '${it.displayName} (${it.availableStock}/${it.effectiveOriginalStock} ${it.unit})',
+                    color: chipColor,
+                  );
+                }),
+                if (items.length > 4)
+                  _NotificationMetaChip(
+                    label: '+${items.length - 4} more',
+                    color: statusColor,
+                  ),
+              ],
+            ),
+          ],
+          if (isFailed &&
+              log.summaryEmailError != null &&
+              log.summaryEmailError!.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              log.summaryEmailError!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final navigator = Navigator.of(context);
+                    navigator.pop();
+                    navigator.push(
+                      MaterialPageRoute(
+                        builder: (_) => const EodResupplySummaryScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.visibility_outlined, size: 15),
+                  label: const Text(
+                    'View EOD Summary',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (items.isNotEmpty)
+                  FilledButton.tonalIcon(
+                    onPressed: isSending
+                        ? null
+                        : () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            final res =
+                                await inv.sendDailyResupplySummaryEmailNow(
+                              forceResend: isSent,
+                            );
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(res.message),
+                                backgroundColor: res.sent
+                                    ? Colors.green.shade800
+                                    : Colors.red.shade800,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                    icon: isSending
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_rounded, size: 15),
+                    label: Text(
+                      isSent
+                          ? 'Resend Summary to Gmail'
+                          : 'Send Summary to Gmail',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NotificationMetaChip extends StatelessWidget {

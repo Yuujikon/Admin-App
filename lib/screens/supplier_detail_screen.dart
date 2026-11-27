@@ -20,6 +20,7 @@ import '../widgets/add_product_sheet.dart';
 import '../widgets/product_edit_sheet.dart';
 import '../widgets/rfq_builder_sheet.dart';
 import '../widgets/po_builder_sheet.dart';
+import '../widgets/gdc_popup_menu.dart';
 
 class SupplierDetailScreen extends StatefulWidget {
   final Supplier supplier;
@@ -726,9 +727,12 @@ class _ProductsTabState extends State<_ProductsTab> {
                                         fontSize: 11, color: Colors.grey)),
                               ],
                             ),
-                            PopupMenuButton<String>(
-                              icon:
-                                  const Icon(Icons.more_vert_rounded, size: 20),
+                            const SizedBox(width: 8),
+                            GdcPopupMenuButton<String>.icon(
+                              tooltip: 'Product actions',
+                              menuTitle: 'Product Actions',
+                              size: 34,
+                              iconSize: 18,
                               onSelected: (val) {
                                 if (val == 'edit') {
                                   ProductEditSheet.show(
@@ -740,28 +744,18 @@ class _ProductsTabState extends State<_ProductsTab> {
                                       context, p, widget.supplier.name);
                                 }
                               },
-                              itemBuilder: (ctx) => [
-                                const PopupMenuItem(
+                              options: const [
+                                GdcPopupOption<String>(
                                   value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_outlined, size: 18),
-                                      SizedBox(width: 12),
-                                      Text('Edit Product'),
-                                    ],
-                                  ),
+                                  label: 'Edit Product',
+                                  icon: Icons.edit_outlined,
                                 ),
-                                const PopupMenuItem(
+                                GdcPopupOption<String>(
                                   value: 'unlink',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.link_off_rounded,
-                                          size: 18, color: Colors.red),
-                                      SizedBox(width: 12),
-                                      Text('Unlink from Supplier',
-                                          style: TextStyle(color: Colors.red)),
-                                    ],
-                                  ),
+                                  label: 'Unlink from Supplier',
+                                  icon: Icons.link_off_rounded,
+                                  isDestructive: true,
+                                  showDividerBefore: true,
                                 ),
                               ],
                             ),

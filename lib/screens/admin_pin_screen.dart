@@ -110,6 +110,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
 
   Future<void> _checkClipboardForTotp() async {
     if (_isVerifying || _useStaticPin || _isLockedOut) return;
+    if (!mounted || !context.read<AppAuthProvider>().totpEnabled) return;
 
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -163,6 +164,18 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   void _onKey(String key) {
     if (_isVerifying || _isLockedOut) return;
     const limit = 6;
+    HapticFeedback.lightImpact();
+
+    if (key == 'CLEAR') {
+      if (_pin.isNotEmpty) {
+        setState(() {
+          _pin = '';
+          _error = false;
+          _errorMessage = null;
+        });
+      }
+      return;
+    }
 
     if (key == '⌫') {
       if (_pin.isNotEmpty) {
@@ -188,20 +201,15 @@ class _AdminPinScreenState extends State<AdminPinScreen>
 
     setState(() => _isVerifying = true);
 
-    bool ok = false;
-    if (effectiveUseStaticPin) {
-      ok = await _pinService.verifyPin(code);
-    } else {
-      ok = auth.verifyTotp(code);
-      if (!ok) {
-        ok = await _pinService.verifyPin(code);
-      }
-    }
+    final bool ok = effectiveUseStaticPin
+        ? await _pinService.verifyPin(code)
+        : auth.verifyTotp(code);
 
     if (!mounted) return;
 
     if (ok) {
       await _pinService.resetFailedAttempts();
+      HapticFeedback.mediumImpact();
       setState(() {
         _isVerifying = false;
         _error = false;
@@ -209,6 +217,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       });
       _onSuccess();
     } else {
+      HapticFeedback.vibrate();
       final res = await _pinService.recordFailedAttempt();
       final bool nowLocked = res['isLockedOut'] as bool;
       final int remSec = res['remainingSeconds'] as int;
@@ -226,9 +235,9 @@ class _AdminPinScreenState extends State<AdminPinScreen>
         _startLockoutTimer(remSec);
       } else {
         setState(() {
-          _errorMessage = _useStaticPin
-              ? 'Incorrect Admin PIN. $remAtt ${remAtt == 1 ? "attempt" : "attempts"} remaining.'
-              : 'Invalid code. $remAtt ${remAtt == 1 ? "attempt" : "attempts"} remaining.';
+          _errorMessage = effectiveUseStaticPin
+              ? 'Incorrect 6-digit Offline PIN. $remAtt ${remAtt == 1 ? "attempt" : "attempts"} remaining.'
+              : 'Invalid Authenticator code. $remAtt ${remAtt == 1 ? "attempt" : "attempts"} remaining.';
         });
       }
     }
@@ -405,9 +414,10 @@ class _AdminPinScreenState extends State<AdminPinScreen>
     OtpMethodBottomSheet.show(
       context,
       defaultEmail: user?.email,
-      defaultPhone: auth.phoneNumber ?? '09558297358',
+      defaultPhone: auth.phoneNumber,
       onVerified: () async {
-        _showSetNewPinDialog(context);
+        if (!mounted) return;
+        _showSetNewPinDialog(this.context);
       },
     );
   }
@@ -437,19 +447,21 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       '7',
       '8',
       '9',
-      'SETUP',
+      'CLEAR',
       '0',
-      '⌫'
+      '⌫',
     ];
     final auth = context.watch<AppAuthProvider>();
     final bool effectiveUseStaticPin = !auth.totpEnabled ? true : _useStaticPin;
     final user = auth.currentUser;
     final String email = user?.email ?? 'Unknown';
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     const copperColor = Color(0xFFC07038);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -460,7 +472,7 @@ class _AdminPinScreenState extends State<AdminPinScreen>
             icon: const Icon(Icons.logout_rounded, size: 18),
             label: const Text('Log Out'),
             style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.onSurface,
+              foregroundColor: colorScheme.onSurface,
             ),
           ),
         ],
@@ -468,26 +480,28 @@ class _AdminPinScreenState extends State<AdminPinScreen>
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
+              constraints: const BoxConstraints(maxWidth: 380),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Store Branding Header
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: copperColor.withValues(alpha: 0.25),
+                      color: copperColor.withValues(alpha: 0.16),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.storefront_rounded,
-                      size: 40,
+                    child: Icon(
+                      effectiveUseStaticPin
+                          ? Icons.pin_rounded
+                          : Icons.verified_user_rounded,
+                      size: 38,
                       color: copperColor,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   const Text(
                     'GDC SARI-SARI STORE',
                     style: TextStyle(
@@ -500,20 +514,21 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   const SizedBox(height: 6),
                   Text(
                     effectiveUseStaticPin
-                        ? 'Enter Admin PIN'
-                        : 'Enter 6-Digit Code',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
+                        ? 'Enter 6-Digit Offline PIN'
+                        : 'Google Authenticator',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Verification required to access financial & staff settings',
+                    effectiveUseStaticPin
+                        ? 'Enter your 6-digit Admin PIN to unlock access'
+                        : 'Enter the 6-digit code from your Authenticator app',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -528,54 +543,89 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                   ),
                   const SizedBox(height: 16),
 
-                  // Pill mode toggle button
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      if (!auth.totpEnabled) {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Google Authenticator 2FA is turned off in Account Security.',
+                  // Explicit 2-Tab Mode Selector when 2FA is enabled
+                  if (auth.totpEnabled) ...[
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color:
+                              colorScheme.outlineVariant.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _PinModeTab(
+                              icon: Icons.verified_user_outlined,
+                              label: 'Google Auth',
+                              selected: !effectiveUseStaticPin,
+                              enabled: !_isVerifying,
+                              accentColor: copperColor,
+                              onTap: () {
+                                if (!_useStaticPin) return;
+                                setState(() {
+                                  _useStaticPin = false;
+                                  _pin = '';
+                                  _error = false;
+                                  _errorMessage = null;
+                                });
+                              },
                             ),
-                            duration: Duration(seconds: 2),
                           ),
-                        );
-                        return;
-                      }
-                      setState(() {
-                        _useStaticPin = !_useStaticPin;
-                        _pin = '';
-                        _errorMessage = null;
-                      });
-                    },
-                    icon: Icon(
-                      effectiveUseStaticPin
-                          ? Icons.security_rounded
-                          : Icons.keyboard_outlined,
-                      size: 16,
-                      color: copperColor,
-                    ),
-                    label: Text(
-                      effectiveUseStaticPin
-                          ? 'Use Google Authenticator'
-                          : 'Use 6-Digit Offline PIN',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: copperColor,
+                          Expanded(
+                            child: _PinModeTab(
+                              icon: Icons.pin_outlined,
+                              label: 'Offline PIN',
+                              selected: effectiveUseStaticPin,
+                              enabled: !_isVerifying,
+                              accentColor: copperColor,
+                              onTap: () {
+                                if (_useStaticPin) return;
+                                setState(() {
+                                  _useStaticPin = true;
+                                  _pin = '';
+                                  _error = false;
+                                  _errorMessage = null;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    style: OutlinedButton.styleFrom(
+                  ] else ...[
+                    Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      side: const BorderSide(color: copperColor, width: 1.2),
-                      shape: RoundedRectangleBorder(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: copperColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: copperColor.withValues(alpha: 0.4)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.pin_outlined,
+                              size: 14, color: copperColor),
+                          SizedBox(width: 6),
+                          Text(
+                            'Offline PIN Mode',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: copperColor,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                  ],
+                  const SizedBox(height: 18),
 
                   // 6 Circular PIN Indicators
                   Row(
@@ -589,16 +639,13 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: _isLockedOut
-                                ? Theme.of(context).colorScheme.error
+                            color: _isLockedOut || _error
+                                ? colorScheme.error
                                 : copperColor,
                             width: 1.5,
                           ),
                           color: _isLockedOut
-                              ? Theme.of(context)
-                                  .colorScheme
-                                  .error
-                                  .withValues(alpha: 0.3)
+                              ? colorScheme.error.withValues(alpha: 0.3)
                               : (i < _pin.length
                                   ? copperColor
                                   : Colors.transparent),
@@ -613,28 +660,22 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .errorContainer
-                            .withValues(alpha: 0.3),
+                        color:
+                            colorScheme.errorContainer.withValues(alpha: 0.35),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .error
-                                .withValues(alpha: 0.5)),
+                            color: colorScheme.error.withValues(alpha: 0.5)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.lock_clock_rounded,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.error),
+                              size: 18, color: colorScheme.error),
                           const SizedBox(width: 8),
                           Text(
                             'Locked out! Try again in ${_lockoutSeconds}s',
                             style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
+                                color: colorScheme.error,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12),
                           ),
@@ -649,14 +690,14 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                         _errorMessage ?? 'Incorrect code',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                            color: colorScheme.error,
                             fontSize: 12,
                             fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
                   if (_isVerifying)
                     const Padding(
@@ -670,60 +711,63 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                         crossAxisCount: 3,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         children: keys.map((k) {
-                          final isSetup = k == 'SETUP';
+                          final isClear = k == 'CLEAR';
                           final isBackspace = k == '⌫';
-                          if (isSetup) {
-                            if (effectiveUseStaticPin) {
-                              return const SizedBox();
+                          if (isClear) {
+                            if (_pin.isEmpty) {
+                              return const SizedBox.shrink();
                             }
-                            return GestureDetector(
-                              onTap: () => _showSetupDialog(context),
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Color(0xFFD6E4FF),
-                                ),
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.fingerprint_rounded,
-                                  color: Color(0xFF1967D2),
-                                  size: 26,
+                            return Material(
+                              color: Colors.transparent,
+                              shape: const CircleBorder(),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: () => _onKey('CLEAR'),
+                                child: Center(
+                                  child: Text(
+                                    'Clear',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
                           } else if (isBackspace) {
-                            return GestureDetector(
-                              onTap: () => _onKey('⌫'),
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.transparent,
-                                ),
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.backspace_outlined,
-                                  size: 22,
+                            return Material(
+                              color: Colors.transparent,
+                              shape: const CircleBorder(),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: () => _onKey('⌫'),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.backspace_outlined,
+                                    size: 22,
+                                  ),
                                 ),
                               ),
                             );
                           } else {
-                            return GestureDetector(
-                              onTap: () => _onKey(k),
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.transparent,
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  k,
-                                  style: const TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.bold,
+                            return Material(
+                              color: Colors.transparent,
+                              shape: const CircleBorder(),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: () => _onKey(k),
+                                child: Center(
+                                  child: Text(
+                                    k,
+                                    style: const TextStyle(
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -733,19 +777,65 @@ class _AdminPinScreenState extends State<AdminPinScreen>
                       ),
                     ),
 
-                  const SizedBox(height: 20),
-                  TextButton(
-                    onPressed: () => _showForgotPinDialog(context),
-                    child: Text(
-                      'Forgot PIN? Contact Super Admin',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
+                  const SizedBox(height: 16),
+
+                  // Mode-specific helper actions
+                  if (!effectiveUseStaticPin) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => auth.isTotpLinked
+                              ? _launchAuthenticatorApp(context)
+                              : _showSetupDialog(context),
+                          icon: Icon(
+                            auth.isTotpLinked
+                                ? Icons.open_in_new_rounded
+                                : Icons.qr_code_2_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            auth.isTotpLinked
+                                ? 'Open Authenticator'
+                                : 'Set Up Authenticator',
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1967D2),
+                            side: const BorderSide(color: Color(0xFF1967D2)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                        if (auth.isTotpLinked) ...[
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => _showSetupDialog(context),
+                            child: const Text(
+                              'Setup Key',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ] else ...[
+                    TextButton.icon(
+                      onPressed: () => _showForgotPinDialog(context),
+                      icon: const Icon(Icons.lock_reset_rounded, size: 16),
+                      label: Text(
+                        'Forgot PIN? Reset via OTP / Backup Code',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                  ],
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
@@ -756,126 +846,55 @@ class _AdminPinScreenState extends State<AdminPinScreen>
   }
 }
 
-class _AdminRecoveryDialog extends StatefulWidget {
-  final VoidCallback onSuccess;
-  const _AdminRecoveryDialog({required this.onSuccess});
+class _PinModeTab extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final Color accentColor;
+  final VoidCallback onTap;
 
-  @override
-  State<_AdminRecoveryDialog> createState() => _AdminRecoveryDialogState();
-}
-
-class _AdminRecoveryDialogState extends State<_AdminRecoveryDialog> {
-  final _codeCtrl = TextEditingController();
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _codeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final input = _codeCtrl.text.trim();
-    if (input.isEmpty) {
-      setState(() => _error = 'Please enter your Backup Recovery Code.');
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    final auth = context.read<AppAuthProvider>();
-    final ok = await auth.verifyAndConsumeRecoveryCode(input);
-
-    if (!mounted) return;
-
-    if (ok) {
-      Navigator.pop(context);
-      widget.onSuccess();
-    } else {
-      setState(() {
-        _loading = false;
-        _error =
-            'Invalid or already used Backup Recovery Code. Please verify your code and try again.';
-      });
-    }
-  }
+  const _PinModeTab({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.accentColor,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.shield_rounded, color: Colors.blue),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text('Admin Emergency PIN Recovery',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
-      content: Container(
-        width: 440,
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter one of your 8-character Backup Recovery Codes (e.g. A1B2-C3D4) to remove your current 6-digit PIN and set a new one.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _codeCtrl,
-              enabled: !_loading,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
-                labelText: 'Backup Recovery Code',
-                hintText: 'e.g. A1B2-C3D4',
-                prefixIcon: Icon(Icons.key_rounded),
-                border: OutlineInputBorder(),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? accentColor : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? Colors.white : colorScheme.onSurfaceVariant,
               ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(width: 6),
               Text(
-                _error!,
+                label,
                 style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context),
-          child: const Text('CANCEL'),
-        ),
-        ElevatedButton.icon(
-          onPressed: _loading ? null : _submit,
-          icon: _loading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
-                )
-              : const Icon(Icons.verified_user_rounded, size: 18),
-          label: const Text('VERIFY & RESET PIN'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -931,7 +950,7 @@ class _SetNewPinDialogState extends State<_SetNewPinDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                '6-Digit Security PIN set successfully! You are now logged in. 🔑'),
+                '6-Digit Security PIN set successfully! You are now logged in.'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
           ),
@@ -971,7 +990,7 @@ class _SetNewPinDialogState extends State<_SetNewPinDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Your old PIN has been removed using your Recovery Code. Please enter and confirm a new 6-digit Security PIN to log in.',
+                'Verification complete. Please enter and confirm a new 6-digit Security PIN to continue.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),

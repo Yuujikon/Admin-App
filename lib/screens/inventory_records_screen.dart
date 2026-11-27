@@ -19,6 +19,7 @@ import '../widgets/premium_components.dart';
 import 'product_detail_screen.dart';
 import 'stock_reconciliation_screen.dart';
 import '../widgets/admin_filter_bar.dart';
+import '../widgets/gdc_popup_menu.dart';
 
 enum _RecordTab {
   deliveryLogs,
@@ -544,44 +545,42 @@ class _InventoryRecordsScreenState extends State<InventoryRecordsScreen> {
                 child: Row(
                   children: [
                     // Date range selection
-                    PopupMenuButton<_DateFilter>(
+                    GdcPopupMenuButton<_DateFilter>.pill(
                       initialValue: _dateFilter,
+                      tooltip: 'Filter by date range',
+                      menuTitle: 'Date Filter',
+                      label: _getDateFilterLabel(_dateFilter),
+                      icon: Icons.calendar_today_rounded,
+                      isActive: _dateFilter != _DateFilter.all,
+                      borderRadius: 12,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       onSelected: (val) => setState(() => _dateFilter = val),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: colorScheme.outlineVariant
-                                  .withValues(alpha: 0.5)),
+                      options: [
+                        GdcPopupOption(
+                          value: _DateFilter.all,
+                          label: 'All Time',
+                          icon: Icons.all_inclusive_rounded,
+                          isSelected: _dateFilter == _DateFilter.all,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.calendar_today_rounded, size: 16),
-                            const SizedBox(width: 6),
-                            Text(
-                              _getDateFilterLabel(_dateFilter),
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                            const Icon(Icons.arrow_drop_down_rounded, size: 18),
-                          ],
+                        GdcPopupOption(
+                          value: _DateFilter.today,
+                          label: 'Today',
+                          icon: Icons.today_rounded,
+                          isSelected: _dateFilter == _DateFilter.today,
                         ),
-                      ),
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                            value: _DateFilter.all, child: Text('All Time')),
-                        const PopupMenuItem(
-                            value: _DateFilter.today, child: Text('Today')),
-                        const PopupMenuItem(
-                            value: _DateFilter.thisWeek,
-                            child: Text('This Week')),
-                        const PopupMenuItem(
-                            value: _DateFilter.thisMonth,
-                            child: Text('This Month')),
+                        GdcPopupOption(
+                          value: _DateFilter.thisWeek,
+                          label: 'This Week',
+                          icon: Icons.view_week_rounded,
+                          isSelected: _dateFilter == _DateFilter.thisWeek,
+                        ),
+                        GdcPopupOption(
+                          value: _DateFilter.thisMonth,
+                          label: 'This Month',
+                          icon: Icons.calendar_month_rounded,
+                          isSelected: _dateFilter == _DateFilter.thisMonth,
+                        ),
                       ],
                     ),
                     const SizedBox(width: 8),

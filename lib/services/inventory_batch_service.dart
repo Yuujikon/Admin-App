@@ -327,29 +327,40 @@ class InventoryBatchService {
   CollectionReference<Map<String, dynamic>> get _inventoryBatches =>
       _db.collection('inventory_batches');
 
-  /// Returns the `physicalReserve` update field for a standard product.
+  /// Returns the `physicalReserve` (and backfilled `initialStock`) update fields
+  /// for a standard product.
   ///
   /// - When [isRestock] is `true` (PO receiving, manual stock-in, restock
   ///   inquiry, or stock increase), recalculates `physicalReserve = (syncedStock * 0.25).ceil()`.
   /// - Otherwise (POS sale, refund, write-off, reconciliation, reservation),
-  ///   preserves the stored `physicalReserve` (falling back to `(syncedStock * 0.25).ceil()`
-  ///   only if missing on legacy documents).
+  ///   preserves the stored `physicalReserve` and backfills `initialStock` from
+  ///   the pre-deduction baseline if missing on legacy documents so the 30%
+  ///   low-stock alert always evaluates against the true original stock.
   Map<String, dynamic> _physicalReserveFields(
     Product product,
     int syncedStock, {
     required bool isRestock,
   }) {
+    final int baselineBeforeChange = product.effectiveOriginalStock > 0
+        ? product.effectiveOriginalStock
+        : syncedStock;
     final int nextReserve = isRestock
         ? InventoryAllocation.calculatePhysicalReserve(syncedStock)
         : InventoryAllocation.resolvePhysicalReserve(
-            totalStock: syncedStock,
+            totalStock: baselineBeforeChange,
             storedPhysicalReserve: product.physicalReserve,
           );
-    return {'physicalReserve': nextReserve};
+    final Map<String, dynamic> fields = {'physicalReserve': nextReserve};
+    if (!isRestock &&
+        (product.initialStock == null || product.initialStock! <= 0) &&
+        baselineBeforeChange > 0) {
+      fields['initialStock'] = baselineBeforeChange;
+    }
+    return fields;
   }
 
-  /// Returns `physicalReserve` update fields for variant products (per-variant
-  /// dot-paths + parent aggregate).
+  /// Returns `physicalReserve` (and backfilled `initialStock`) update fields
+  /// for variant products (per-variant dot-paths + parent aggregate).
   Map<String, dynamic> _variantPhysicalReserveFields(
     Product product, {
     Map<String, int>? stockOverrides,
@@ -360,13 +371,23 @@ class InventoryBatchService {
 
     for (final v in product.variants) {
       final int vStock = (stockOverrides?[v.id] ?? v.stock).clamp(0, 999999999);
-      final bool recalc =
-          restockedVariantIds.contains(v.id) || v.physicalReserve == null;
-      final int nextReserve = recalc
+      final bool isRestock = restockedVariantIds.contains(v.id);
+      final int baselineBeforeChange =
+          v.effectiveOriginalStock > 0 ? v.effectiveOriginalStock : vStock;
+      final int nextReserve = isRestock
           ? InventoryAllocation.calculatePhysicalReserve(vStock)
-          : v.effectivePhysicalReserve;
+          : InventoryAllocation.resolvePhysicalReserve(
+              totalStock: baselineBeforeChange,
+              storedPhysicalReserve: v.physicalReserve,
+            );
       totalReserve += nextReserve;
       fields['variants.${v.id}.physicalReserve'] = nextReserve;
+      if (isRestock && vStock > 0) {
+        fields['variants.${v.id}.initialStock'] = vStock;
+      } else if ((v.initialStock == null || v.initialStock! <= 0) &&
+          baselineBeforeChange > 0) {
+        fields['variants.${v.id}.initialStock'] = baselineBeforeChange;
+      }
     }
 
     fields['physicalReserve'] = totalReserve;
@@ -2400,6 +2421,7 @@ class InventoryBatchService {
             final int nextStock = (v.stock - ded).clamp(0, 999999999);
             final int nextRes =
                 (v.effectiveReservedStock - rel).clamp(0, 999999999);
+            final int preservedOriginal = v.effectiveOriginalStock;
             final int preservedReserve = v.effectivePhysicalReserve;
 
             newTotalVariantStock += nextStock;
@@ -2408,6 +2430,10 @@ class InventoryBatchService {
 
             if (ded > 0) {
               updateData['variants.${v.id}.stock'] = nextStock;
+            }
+            if ((v.initialStock == null || v.initialStock! <= 0) &&
+                preservedOriginal > 0) {
+              updateData['variants.${v.id}.initialStock'] = preservedOriginal;
             }
             if (v.physicalReserve == null) {
               updateData['variants.${v.id}.physicalReserve'] = preservedReserve;
@@ -2419,6 +2445,10 @@ class InventoryBatchService {
           updateData['stock'] = newTotalVariantStock;
           updateData['reservedStock'] = newTotalVariantReserved;
           updateData['physicalReserve'] = newTotalVariantReserve;
+          if ((product.initialStock == null || product.initialStock! <= 0) &&
+              product.effectiveOriginalStock > 0) {
+            updateData['initialStock'] = product.effectiveOriginalStock;
+          }
           transaction.update(prodRef, updateData);
           continue;
         }

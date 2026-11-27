@@ -335,11 +335,20 @@ class FirestoreService {
             }).toList());
   }
 
-  Future<void> addAdminNotification(Map<String, dynamic> payload) async {
+  Future<void> addAdminNotification(
+    Map<String, dynamic> payload, {
+    String? docId,
+  }) async {
     final data = Map<String, dynamic>.from(payload);
     data.putIfAbsent('isRead', () => false);
     data.putIfAbsent('createdAt', () => FieldValue.serverTimestamp());
-    await _adminNotifications.add(data);
+    if (docId != null && docId.trim().isNotEmpty) {
+      await _adminNotifications
+          .doc(docId.trim())
+          .set(data, SetOptions(merge: true));
+    } else {
+      await _adminNotifications.add(data);
+    }
   }
 
   Future<void> markAdminNotificationRead(String notificationId) async {
@@ -347,11 +356,17 @@ class FirestoreService {
   }
 
   Future<void> markAllAdminNotificationsRead() async {
-    final unread =
-        await _adminNotifications.where('isRead', isEqualTo: false).get();
-    if (unread.docs.isEmpty) return;
+    // Query recent notifications instead of `where('isRead', isEqualTo: false)`
+    // so legacy/Cloud Function notifications missing `isRead` are also marked read.
+    final recent = await _adminNotifications
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .get();
+    final unreadDocs =
+        recent.docs.where((doc) => doc.data()['isRead'] != true).toList();
+    if (unreadDocs.isEmpty) return;
     final batch = _db.batch();
-    for (final doc in unread.docs) {
+    for (final doc in unreadDocs) {
       batch.update(doc.reference, {'isRead': true});
     }
     await batch.commit();
@@ -374,6 +389,19 @@ class FirestoreService {
     });
   }
 
+  /// Streams recent End-of-Day resupply logs ordered newest-first (`YYYY-MM-DD`).
+  Stream<List<DailyResupplyLog>> dailyResupplyLogsHistoryStream({
+    int limit = 30,
+  }) {
+    return _dailyResupplyLogs
+        .orderBy(FieldPath.documentId, descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => DailyResupplyLog.fromFirestore(doc))
+            .toList());
+  }
+
   Future<DailyResupplyLog?> getDailyResupplyLog(String dateKey) async {
     final doc = await _dailyResupplyLogs.doc(dateKey).get();
     if (!doc.exists) return null;
@@ -383,15 +411,16 @@ class FirestoreService {
   /// Atomically records/updates a product (or variant) that hit its physical
   /// low-stock threshold on [dateKey].
   ///
-  /// Returns `true` if this item was newly added to [dateKey]'s resupply log
-  /// (so callers know to emit a one-time Inventory Alert for today's breach).
-  Future<bool> recordDailyResupplyItem({
+  /// Returns `isNew: true` if this item was newly added to [dateKey]'s resupply
+  /// log, and `escalatedToOos: true` if it previously had > 0 stock in today's
+  /// log and has now dropped to 0 (Out of Stock).
+  Future<({bool isNew, bool escalatedToOos})> recordDailyResupplyItem({
     required String dateKey,
     required DailyResupplyItem item,
     required String storeEmail,
   }) async {
     final docRef = _dailyResupplyLogs.doc(dateKey);
-    return _db.runTransaction<bool>((tx) async {
+    return _db.runTransaction<({bool isNew, bool escalatedToOos})>((tx) async {
       final snap = await tx.get(docRef);
       final existingData = snap.exists
           ? Map<String, dynamic>.from(snap.data() ?? {})
@@ -403,6 +432,11 @@ class FirestoreService {
 
       final bool isNew = !itemsMap.containsKey(item.itemKey);
       final existingItemRaw = itemsMap[item.itemKey];
+      final int prevAvail = existingItemRaw is Map
+          ? (existingItemRaw['availableStock'] as num? ?? -1).toInt()
+          : -1;
+      final bool escalatedToOos =
+          !isNew && prevAvail > 0 && item.availableStock <= 0;
       final DateTime preservedFirstTriggered = existingItemRaw is Map &&
               existingItemRaw['firstTriggeredAt'] is Timestamp
           ? (existingItemRaw['firstTriggeredAt'] as Timestamp).toDate()
@@ -440,22 +474,71 @@ class FirestoreService {
         'summaryEmailSent': existingData['summaryEmailSent'] == true,
         if (existingData['summaryEmailStatus'] != null)
           'summaryEmailStatus': existingData['summaryEmailStatus'],
+        if (existingData['summaryEmailClaimedAt'] != null)
+          'summaryEmailClaimedAt': existingData['summaryEmailClaimedAt'],
         if (existingData['summaryEmailSentAt'] != null)
           'summaryEmailSentAt': existingData['summaryEmailSentAt'],
         if (existingData['summaryEmailSentBy'] != null)
           'summaryEmailSentBy': existingData['summaryEmailSentBy'],
         if (existingData['summaryEmailError'] != null)
           'summaryEmailError': existingData['summaryEmailError'],
+        if (existingData['createdAt'] != null)
+          'createdAt': existingData['createdAt'],
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      return isNew;
+      return (isNew: isNew, escalatedToOos: escalatedToOos);
+    });
+  }
+
+  /// Removes a product/variant from [dateKey]'s unsent daily resupply log when
+  /// it has been restocked back above 30% of original stock before closing.
+  Future<void> removeDailyResupplyItem({
+    required String dateKey,
+    required String itemKey,
+  }) async {
+    final docRef = _dailyResupplyLogs.doc(dateKey);
+    await _db.runTransaction<void>((tx) async {
+      final snap = await tx.get(docRef);
+      if (!snap.exists) return;
+      final existingData = Map<String, dynamic>.from(snap.data() ?? {});
+      if (existingData['summaryEmailSent'] == true) return;
+      final Map<String, dynamic> itemsMap = existingData['items'] is Map
+          ? Map<String, dynamic>.from(existingData['items'] as Map)
+          : <String, dynamic>{};
+      if (!itemsMap.containsKey(itemKey)) return;
+      itemsMap.remove(itemKey);
+
+      tx.set(docRef, {
+        'dateKey': dateKey,
+        'storeEmail':
+            (existingData['storeEmail']?.toString().trim().isNotEmpty ?? false)
+                ? existingData['storeEmail'].toString().trim()
+                : 'gdcstore.ph@gmail.com',
+        'items': itemsMap,
+        'itemCount': itemsMap.length,
+        'summaryEmailSent': existingData['summaryEmailSent'] == true,
+        if (existingData['summaryEmailStatus'] != null)
+          'summaryEmailStatus': existingData['summaryEmailStatus'],
+        if (existingData['summaryEmailClaimedAt'] != null)
+          'summaryEmailClaimedAt': existingData['summaryEmailClaimedAt'],
+        if (existingData['summaryEmailSentAt'] != null)
+          'summaryEmailSentAt': existingData['summaryEmailSentAt'],
+        if (existingData['summaryEmailSentBy'] != null)
+          'summaryEmailSentBy': existingData['summaryEmailSentBy'],
+        if (existingData['summaryEmailError'] != null)
+          'summaryEmailError': existingData['summaryEmailError'],
+        if (existingData['createdAt'] != null)
+          'createdAt': existingData['createdAt'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 
   /// Atomically claims the End-of-Day Resupply Summary email dispatch lock for
   /// [dateKey] so Admin App & Cloud Scheduler never send duplicate emails.
   ///
+  /// Recovers automatically if a previous `sending` lock is older than 5 minutes.
   /// Returns the claimed [DailyResupplyLog] snapshot if dispatch should proceed,
   /// or `null` if already sent/in-progress or empty.
   Future<DailyResupplyLog?> claimDailyResupplyEmailDispatch({
@@ -470,13 +553,21 @@ class FirestoreService {
       final log = DailyResupplyLog.fromFirestore(snap);
       if (log.itemCount == 0) return null;
 
-      if (!forceResend &&
-          (log.summaryEmailSent || log.summaryEmailStatus == 'sending')) {
+      if (!forceResend && log.summaryEmailSent) {
         return null;
+      }
+
+      if (!forceResend && log.summaryEmailStatus == 'sending') {
+        final DateTime? claimedAt = log.summaryEmailClaimedAt ?? log.updatedAt;
+        if (claimedAt != null &&
+            DateTime.now().difference(claimedAt) < const Duration(minutes: 5)) {
+          return null;
+        }
       }
 
       tx.update(docRef, {
         'summaryEmailStatus': 'sending',
+        'summaryEmailClaimedAt': FieldValue.serverTimestamp(),
         'summaryEmailSentBy': triggeredBy,
         'summaryEmailError': null,
         'updatedAt': FieldValue.serverTimestamp(),

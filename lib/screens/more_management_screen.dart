@@ -24,6 +24,7 @@ import 'customer_restrictions_screen.dart';
 import 'admin_app.dart';
 import '../widgets/responsive_layout.dart';
 import 'audit_log_screen.dart';
+import 'eod_resupply_summary_screen.dart';
 
 class MoreManagementScreen extends StatelessWidget {
   final void Function(AppTab)? onNavigateToTab;
@@ -47,6 +48,20 @@ class MoreManagementScreen extends StatelessWidget {
 
     final bool isAdmin = auth.role == UserRole.admin;
     final bool isTrusted = auth.role == UserRole.trustedPartner;
+    final todayResupplyLog =
+        context.watch<InventoryProvider>().todayResupplyLog;
+    final todayResupplyItems = todayResupplyLog.sortedItems;
+    final String eodSubtitle;
+    if (todayResupplyItems.isEmpty) {
+      eodSubtitle = 'View Daily ≤ 30% Low-Stock Alerts & EOD Email Logs';
+    } else {
+      final preview =
+          todayResupplyItems.take(2).map((i) => i.displayName).join(', ');
+      final extra = todayResupplyItems.length - 2;
+      final statusWord =
+          todayResupplyLog.summaryEmailSent ? 'Emailed' : 'Queued for Close';
+      eodSubtitle = '$preview${extra > 0 ? ' +$extra more' : ''} • $statusWord';
+    }
 
     return Container(
       color: Theme.of(context).colorScheme.surface,
@@ -253,6 +268,26 @@ class MoreManagementScreen extends StatelessWidget {
                   ),
                   _menuItemCard(
                     context,
+                    icon: Icons.summarize_outlined,
+                    iconBg: const Color(0xFFCCFBF1),
+                    iconColor: const Color(0xFF0F766E),
+                    title: 'End-of-Day Resupply Summary',
+                    subtitle: eodSubtitle,
+                    badgeLabel: todayResupplyItems.isNotEmpty
+                        ? '${todayResupplyItems.length} low'
+                        : null,
+                    badgeColor: todayResupplyItems.any((i) => i.isOutOfStock)
+                        ? Theme.of(context).colorScheme.error
+                        : Colors.amber.shade800,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const EodResupplySummaryScreen(),
+                      ),
+                    ),
+                  ),
+                  _menuItemCard(
+                    context,
                     icon: Icons.inventory_2_outlined,
                     iconBg: const Color(0xFFFFEDD5),
                     iconColor: const Color(0xFFEA580C),
@@ -441,6 +476,8 @@ class MoreManagementScreen extends StatelessWidget {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    String? badgeLabel,
+    Color? badgeColor,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -478,19 +515,45 @@ class MoreManagementScreen extends StatelessWidget {
           ),
           subtitle: Text(
             subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w500,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            color: Theme.of(context)
-                .colorScheme
-                .onSurfaceVariant
-                .withValues(alpha: 0.5),
-            size: 20,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (badgeLabel != null && badgeLabel.isNotEmpty) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (badgeColor ?? iconColor).withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    badgeLabel,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: badgeColor ?? iconColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant
+                    .withValues(alpha: 0.5),
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),
@@ -704,7 +767,7 @@ class _AccountSecuritySectionState extends State<_AccountSecuritySection> {
                       OtpMethodBottomSheet.show(
                         context,
                         defaultEmail: auth.currentUser?.email,
-                        defaultPhone: auth.phoneNumber ?? '09558297358',
+                        defaultPhone: auth.phoneNumber,
                         onVerified: () async {
                           await auth.setTotpEnabled(false);
                           if (context.mounted) {

@@ -3,26 +3,43 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/otp_verification_screen.dart';
 import '../shared/services/admin_messaging_service.dart';
+import '../utils/email_validator.dart';
+import '../utils/format.dart';
 
-/// BottomSheet choice dialog prompting admin user to select verification method:
-/// [Send to Email], [Send to SMS], or [Use Emergency Backup Code].
+/// BottomSheet choice dialog prompting a user to select an OTP verification method:
+/// [Send to Email], [Send to SMS], or optionally [Use Emergency Backup Code].
 class OtpMethodBottomSheet extends StatefulWidget {
   final String? defaultEmail;
   final String? defaultPhone;
+  final String? title;
+  final String? subtitle;
+  final bool showBackupCodeOption;
+  final bool lockContactFields;
   final Future<void> Function()? onVerified;
+  final Future<void> Function(bool verifiedViaEmail)? onVerifiedWithMethod;
 
   const OtpMethodBottomSheet({
     super.key,
     this.defaultEmail,
     this.defaultPhone,
+    this.title,
+    this.subtitle,
+    this.showBackupCodeOption = true,
+    this.lockContactFields = false,
     this.onVerified,
+    this.onVerifiedWithMethod,
   });
 
   static Future<void> show(
     BuildContext context, {
     String? defaultEmail,
     String? defaultPhone,
+    String? title,
+    String? subtitle,
+    bool showBackupCodeOption = true,
+    bool lockContactFields = false,
     Future<void> Function()? onVerified,
+    Future<void> Function(bool verifiedViaEmail)? onVerifiedWithMethod,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -31,7 +48,12 @@ class OtpMethodBottomSheet extends StatefulWidget {
       builder: (ctx) => OtpMethodBottomSheet(
         defaultEmail: defaultEmail,
         defaultPhone: defaultPhone,
+        title: title,
+        subtitle: subtitle,
+        showBackupCodeOption: showBackupCodeOption,
+        lockContactFields: lockContactFields,
         onVerified: onVerified,
+        onVerifiedWithMethod: onVerifiedWithMethod,
       ),
     );
   }
@@ -56,8 +78,7 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   void initState() {
     super.initState();
     _emailCtrl = TextEditingController(text: widget.defaultEmail ?? '');
-    _phoneCtrl =
-        TextEditingController(text: widget.defaultPhone ?? '09558297358');
+    _phoneCtrl = TextEditingController(text: widget.defaultPhone ?? '');
     _backupCodeCtrl = TextEditingController();
   }
 
@@ -72,17 +93,24 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   Future<void> _sendOtp({required bool isEmail}) async {
     if (_loadingEmail || _loadingSms) return;
 
-    final contactMethod =
+    final rawContact =
         isEmail ? _emailCtrl.text.trim() : _phoneCtrl.text.trim();
 
-    if (contactMethod.isEmpty) {
-      setState(() {
-        _error = isEmail
-            ? 'Please enter a valid email address.'
-            : 'Please enter a valid contact phone number.';
-      });
-      return;
+    if (isEmail) {
+      final emailErr = EmailValidator.validate(rawContact);
+      if (emailErr != null) {
+        setState(() => _error = emailErr);
+        return;
+      }
+    } else {
+      final phoneErr = validatePhoneNumber(rawContact);
+      if (phoneErr != null) {
+        setState(() => _error = phoneErr);
+        return;
+      }
     }
+
+    final contactMethod = isEmail ? rawContact.toLowerCase() : rawContact;
 
     setState(() {
       if (isEmail) {
@@ -93,33 +121,48 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
       _error = null;
     });
 
-    final res = await _messagingService.sendAdminOtp(
-      contactMethod: contactMethod,
-      isEmail: isEmail,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _loadingEmail = false;
-      _loadingSms = false;
-    });
-
-    if (res['success'] == true) {
-      Navigator.pop(context); // Close bottom sheet
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (ctx) => OtpVerificationScreen(
-            contactMethod: contactMethod,
-            isEmail: isEmail,
-            onVerified: widget.onVerified,
-          ),
-        ),
+    try {
+      final res = await _messagingService.sendAdminOtp(
+        contactMethod: contactMethod,
+        isEmail: isEmail,
       );
-    } else {
+
+      if (!mounted) return;
+
       setState(() {
-        _error = res['message'] as String? ?? 'Failed to send OTP.';
+        _loadingEmail = false;
+        _loadingSms = false;
+      });
+
+      if (res['success'] == true) {
+        final navigator = Navigator.of(context);
+        navigator.pop(); // Close bottom sheet
+        navigator.push(
+          MaterialPageRoute(
+            builder: (ctx) => OtpVerificationScreen(
+              contactMethod: contactMethod,
+              isEmail: isEmail,
+              onVerified: () async {
+                if (widget.onVerifiedWithMethod != null) {
+                  await widget.onVerifiedWithMethod!(isEmail);
+                } else if (widget.onVerified != null) {
+                  await widget.onVerified!();
+                }
+              },
+            ),
+          ),
+        );
+      } else {
+        setState(() {
+          _error = res['message'] as String? ?? 'Failed to send OTP.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingEmail = false;
+        _loadingSms = false;
+        _error = 'Error sending OTP: $e';
       });
     }
   }
@@ -152,14 +195,17 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
       });
 
       if (ok) {
+        final messenger = ScaffoldMessenger.of(context);
         Navigator.pop(context); // Close bottom sheet
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(
             content: Text('Backup recovery code verified successfully!'),
             backgroundColor: Colors.green,
           ),
         );
-        if (widget.onVerified != null) {
+        if (widget.onVerifiedWithMethod != null) {
+          await widget.onVerifiedWithMethod!(false);
+        } else if (widget.onVerified != null) {
           await widget.onVerified!();
         }
       } else {
@@ -183,321 +229,338 @@ class _OtpMethodBottomSheetState extends State<OtpMethodBottomSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
-    const copperColor = Color(0xFFC07038);
+    final primaryColor = theme.colorScheme.primary;
 
     return Container(
       padding: EdgeInsets.only(
         left: 24,
         right: 24,
-        top: 24,
+        top: 20,
         bottom: bottomPadding + 24,
       ),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.outlineVariant,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Select OTP Verification Method',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Choose how you would like to receive your 6-digit Admin verification code:',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          if (_error != null) ...[
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              margin: const EdgeInsets.only(bottom: 16),
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: theme.colorScheme.errorContainer.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _error!,
-                style: TextStyle(
-                  color: theme.colorScheme.error,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-          if (_selectedMethod == null) ...[
-            // Initial option buttons (No input fields shown)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _selectedMethod = 'email';
-                    _error = null;
-                  });
-                },
-                icon: const Icon(Icons.mark_email_read_rounded),
-                label: const Text('Send to Email',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: copperColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 16),
-
-            const Row(
-              children: [
-                Expanded(child: Divider()),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('OR',
+            Text(
+              widget.title ?? 'Select OTP Verification Method',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              widget.subtitle ??
+                  'Choose how you would like to receive your 6-digit verification code:',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            if (_error != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color:
+                      theme.colorScheme.errorContainer.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline_rounded,
+                        color: theme.colorScheme.error, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: theme.colorScheme.error,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (_selectedMethod == null) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _selectedMethod = 'email';
+                      _error = null;
+                    });
+                  },
+                  icon: const Icon(Icons.mark_email_read_rounded),
+                  label: const Text('Send to Email',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('OR',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey)),
+                  ),
+                  Expanded(child: Divider()),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _selectedMethod = 'sms';
+                      _error = null;
+                    });
+                  },
+                  icon: Icon(Icons.sms_rounded, color: primaryColor),
+                  label: Text('Send to SMS',
                       style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey)),
+                          fontWeight: FontWeight.bold, color: primaryColor)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(color: primaryColor, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
-                Expanded(child: Divider()),
+              ),
+              if (widget.showBackupCodeOption) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedMethod = 'backup';
+                        _error = null;
+                      });
+                    },
+                    icon: const Icon(Icons.vpn_key_outlined, size: 18),
+                    label: const Text('Use Emergency Backup Code',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _selectedMethod = 'sms';
-                    _error = null;
-                  });
-                },
-                icon: const Icon(Icons.sms_rounded, color: copperColor),
-                label: const Text('Send to SMS',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, color: copperColor)),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: copperColor, width: 1.5),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            ] else if (_selectedMethod == 'email') ...[
+              TextField(
+                controller: _emailCtrl,
+                autofocus: !widget.lockContactFields,
+                readOnly: widget.lockContactFields,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _sendOtp(isEmail: true),
+                decoration: InputDecoration(
+                  labelText: 'Email Address',
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  suffixIcon: widget.lockContactFields
+                      ? const Icon(Icons.lock_outline_rounded, size: 18)
+                      : null,
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: primaryColor, width: 2),
+                  ),
+                  isDense: true,
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed:
+                      _loadingEmail ? null : () => _sendOtp(isEmail: true),
+                  icon: _loadingEmail
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded),
+                  label: const Text('CONFIRM & SEND EMAIL OTP',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-
-            // Emergency Backup Code Option
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _selectedMethod = 'backup';
-                    _error = null;
-                  });
-                },
-                icon: const Icon(Icons.vpn_key_outlined, size: 18),
-                label: const Text('Use Emergency Backup Code',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _loadingEmail
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedMethod = null;
+                          _error = null;
+                        });
+                      },
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: const Text('Change Verification Method'),
               ),
-            ),
-          ] else if (_selectedMethod == 'email') ...[
-            // Reveal email input when 'Send to Email' is clicked
-            TextField(
-              controller: _emailCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                prefixIcon: Icon(Icons.email_outlined),
-                border: OutlineInputBorder(),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: copperColor, width: 2),
+            ] else if (_selectedMethod == 'sms') ...[
+              TextField(
+                controller: _phoneCtrl,
+                autofocus: !widget.lockContactFields,
+                readOnly: widget.lockContactFields,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _sendOtp(isEmail: false),
+                decoration: InputDecoration(
+                  labelText: 'Phone Number (SMS)',
+                  hintText: '09123456789',
+                  prefixIcon: const Icon(Icons.phone_android_outlined),
+                  suffixIcon: widget.lockContactFields
+                      ? const Icon(Icons.lock_outline_rounded, size: 18)
+                      : null,
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: primaryColor, width: 2),
+                  ),
+                  isDense: true,
                 ),
-                isDense: true,
+                keyboardType: TextInputType.phone,
               ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _loadingEmail ? null : () => _sendOtp(isEmail: true),
-                icon: _loadingEmail
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.send_rounded),
-                label: const Text('CONFIRM & SEND EMAIL OTP',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: copperColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed:
+                      _loadingSms ? null : () => _sendOtp(isEmail: false),
+                  icon: _loadingSms
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded),
+                  label: const Text('CONFIRM & SEND SMS OTP',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-
-            TextButton.icon(
-              onPressed: _loadingEmail
-                  ? null
-                  : () {
-                      setState(() {
-                        _selectedMethod = null;
-                        _error = null;
-                      });
-                    },
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Change Verification Method'),
-            ),
-          ] else if (_selectedMethod == 'sms') ...[
-            // Reveal phone input when 'Send to SMS' is clicked
-            TextField(
-              controller: _phoneCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number (SMS)',
-                prefixIcon: Icon(Icons.phone_android_outlined),
-                border: OutlineInputBorder(),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: copperColor, width: 2),
-                ),
-                isDense: true,
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _loadingSms
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedMethod = null;
+                          _error = null;
+                        });
+                      },
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: const Text('Change Verification Method'),
               ),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _loadingSms ? null : () => _sendOtp(isEmail: false),
-                icon: _loadingSms
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.send_rounded),
-                label: const Text('CONFIRM & SEND SMS OTP',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: copperColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            ] else if (_selectedMethod == 'backup') ...[
+              TextField(
+                controller: _backupCodeCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _verifyBackupCode(),
+                decoration: InputDecoration(
+                  labelText: 'Emergency Backup Code',
+                  hintText: 'XXXX-XXXX',
+                  prefixIcon: const Icon(Icons.vpn_key_outlined),
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: primaryColor, width: 2),
+                  ),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _loadingBackup ? null : _verifyBackupCode,
+                  icon: _loadingBackup
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.shield_outlined),
+                  label: const Text('VERIFY BACKUP CODE',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-
-            TextButton.icon(
-              onPressed: _loadingSms
-                  ? null
-                  : () {
-                      setState(() {
-                        _selectedMethod = null;
-                        _error = null;
-                      });
-                    },
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Change Verification Method'),
-            ),
-          ] else if (_selectedMethod == 'backup') ...[
-            // Reveal backup code input when 'Use Emergency Backup Code' is clicked
-            TextField(
-              controller: _backupCodeCtrl,
-              autofocus: true,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
-                labelText: 'Emergency Backup Code',
-                hintText: 'XXXX-XXXX',
-                prefixIcon: Icon(Icons.vpn_key_outlined),
-                border: OutlineInputBorder(),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: copperColor, width: 2),
-                ),
-                isDense: true,
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _loadingBackup
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedMethod = null;
+                          _error = null;
+                        });
+                      },
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: const Text('Change Verification Method'),
               ),
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _loadingBackup ? null : _verifyBackupCode,
-                icon: _loadingBackup
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.shield_outlined),
-                label: const Text('VERIFY BACKUP CODE',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: copperColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            TextButton.icon(
-              onPressed: _loadingBackup
-                  ? null
-                  : () {
-                      setState(() {
-                        _selectedMethod = null;
-                        _error = null;
-                      });
-                    },
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Change Verification Method'),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

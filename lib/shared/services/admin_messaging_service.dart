@@ -119,6 +119,9 @@ class AdminMessagingService {
   factory AdminMessagingService() => _instance;
   AdminMessagingService._internal();
 
+  /// Last Brevo HTTP/network error message, if any.
+  String? get lastBrevoError => _lastBrevoError;
+
   /// Returns the configured store/admin copy email address (loading `.env` if needed).
   Future<String> resolveStoreEmail() async {
     await _ensureEnvLoaded();
@@ -174,6 +177,7 @@ class AdminMessagingService {
     required String toEmail,
     required String subject,
     required String htmlContent,
+    String? textContent,
     String? recipientName,
     String? ccEmail,
     String? replyToEmail,
@@ -183,6 +187,7 @@ class AdminMessagingService {
     final senderEmail = _brevoSenderEmail;
 
     if (apiKey.isEmpty) {
+      _lastBrevoError = 'BREVO_API_KEY is missing from environment.';
       debugPrint(
           '[AdminMessagingService] BREVO_API_KEY is missing from environment.');
       return false;
@@ -213,6 +218,8 @@ class AdminMessagingService {
         ],
         'subject': subject,
         'htmlContent': htmlContent,
+        if (textContent != null && textContent.trim().isNotEmpty)
+          'textContent': textContent,
       };
 
       if (effectiveCc.isNotEmpty &&
@@ -248,6 +255,7 @@ class AdminMessagingService {
         return false;
       }
     } catch (e) {
+      _lastBrevoError = e.toString();
       debugPrint('[AdminMessagingService] Exception sending Brevo email: $e');
       return false;
     }
@@ -1831,12 +1839,30 @@ class AdminMessagingService {
 </div>
 ''';
 
+    final textLines = items.map((item) {
+      final orig = item.effectiveOriginalStock;
+      final onlineTxt =
+          item.onlineOutOfStock ? 'Out of Stock' : '${item.onlineStock}';
+      return '- ${item.displayName} (${item.category}): '
+          '${item.availableStock}/$orig ${item.unit} '
+          '(30% Alert: <= ${item.lowStockThreshold}) | Online: $onlineTxt | '
+          'Suggested Resupply: +${item.suggestedResupplyQty} ${item.unit}';
+    }).join('\n');
+
+    final textContent =
+        'GDC Sari-Sari Store — Store-Closing 30% Low-Stock Summary (${log.dateKey})\n'
+        'Generated: $generatedStr\n'
+        '${items.length} item(s) reached <= 30% of original stock ($oosCount physical OOS, $onlineOosCount online OOS).\n\n'
+        '$textLines\n\n'
+        'Total Suggested Resupply Units: +$totalResupplyUnits';
+
     return await sendBrevoEmail(
       toEmail: storeEmail,
       recipientName: 'GDC Sari-Sari Store',
       subject:
           '📦 Store-Closing Resupply Summary (${log.dateKey}): ${items.length} item${items.length == 1 ? '' : 's'} reached 30% stock',
       htmlContent: htmlContent,
+      textContent: textContent,
     );
   }
 }

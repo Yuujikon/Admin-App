@@ -1013,7 +1013,7 @@ class _PosProductTile extends StatelessWidget {
                             isOutOfStock
                                 ? 'Out of Stock'
                                 : isMaxStock
-                                    ? 'Max Stock'
+                                    ? 'Max ($available)'
                                     : 'Stock: $available',
                             style: TextStyle(
                               fontSize: 9.5,
@@ -1363,174 +1363,12 @@ class _CartPanel extends StatelessWidget {
               product = products.firstWhere((p) => p.id == item.productId);
             } catch (_) {}
 
-            final double currentPrice = item.price;
-            final bool isWholesale = product != null &&
-                product.wholesalePrice != null &&
-                item.qty >= (product.wholesaleThreshold ?? 999);
-
-            int stock = 0;
-            int reserved = 0;
-            if (product != null) {
-              if (item.variantId != null) {
-                try {
-                  final v = product.variants
-                      .firstWhere((v) => v.id == item.variantId);
-                  stock = v.availableStock;
-                  reserved = v.effectiveReservedStock;
-                } catch (_) {}
-              } else {
-                stock = product.totalAvailableStock;
-                reserved = product.totalReservedStock;
-              }
-            }
-
-            final bool isOutOfStock = product == null || stock <= 0;
-            final bool isOverQty = product != null && item.qty > stock;
-
-            double effectiveCost = item.costPrice;
-            if (effectiveCost <= 0 && product != null) {
-              if (item.variantId != null) {
-                try {
-                  final v = product.variants
-                      .firstWhere((v) => v.id == item.variantId);
-                  effectiveCost =
-                      v.costPrice > 0 ? v.costPrice : product.effectiveUnitCost;
-                } catch (_) {
-                  effectiveCost = product.effectiveUnitCost;
-                }
-              } else {
-                effectiveCost = product.effectiveUnitCost;
-              }
-            }
-            final bool isBelowCost = effectiveCost > 0 &&
-                currentPrice > 0 &&
-                currentPrice < effectiveCost;
-
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (isOutOfStock)
-                    Padding(
-                        padding: const EdgeInsets.only(left: 4, bottom: 4),
-                        child: Text(
-                            reserved > 0
-                                ? '⚠️ ALL $reserved UNITS RESERVED FOR ONLINE ORDERS'
-                                : '⚠️ THIS ITEM IS NOW SOLD OUT',
-                            style: const TextStyle(
-                                fontSize: 9,
-                                color: Colors.red,
-                                fontWeight: FontWeight.bold)))
-                  else if (isOverQty)
-                    Padding(
-                        padding: const EdgeInsets.only(left: 4, bottom: 4),
-                        child: Text('⚠️ ONLY $stock PHYSICAL UNITS AVAILABLE',
-                            style: const TextStyle(
-                                fontSize: 9,
-                                color: Colors.orange,
-                                fontWeight: FontWeight.bold))),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                decoration: isOutOfStock
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                                color: isOutOfStock ? Colors.grey : null,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '@ ${formatPeso(currentPrice)} / pc',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant
-                                    .withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      QtyControl(
-                        key: ValueKey(
-                            'qty_${item.productId}_${item.variantId ?? 'base'}'),
-                        qty: item.qty,
-                        max: stock,
-                        onChanged: (n) =>
-                            onSetQty(item.productId, item.variantId, n),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 70,
-                        child: Text(
-                          formatPeso(currentPrice * item.qty),
-                          textAlign: TextAlign.right,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                            color: isOutOfStock
-                                ? Colors.grey
-                                : Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () =>
-                            onRemove(item.productId, item.variantId),
-                        icon: const Icon(Icons.delete_outline_rounded,
-                            size: 20, color: Colors.red),
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        tooltip: 'Remove Item',
-                      ),
-                    ],
-                  ),
-                  if (isBelowCost)
-                    Padding(
-                        padding: const EdgeInsets.only(left: 4, top: 2),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.warning_amber_rounded,
-                                size: 11, color: Colors.amber),
-                            const SizedBox(width: 4),
-                            Text(
-                                '⚠️ Below Cost: Sold @ ${formatPeso(currentPrice)} (Cost: ${formatPeso(effectiveCost)})',
-                                style: TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.amber.shade900,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        )),
-                  if (isWholesale)
-                    const Padding(
-                        padding: EdgeInsets.only(left: 4, top: 2),
-                        child: Text('Wholesale pricing applied',
-                            style: TextStyle(
-                                fontSize: 9,
-                                color: Colors.blue,
-                                fontWeight: FontWeight.bold))),
-                  if (i < cart.length - 1) const Divider(height: 16),
-                ],
-              ),
+            return PosCartItemTile(
+              item: item,
+              product: product,
+              onSetQty: onSetQty,
+              onRemove: onRemove,
+              showDivider: i < cart.length - 1,
             );
           }),
         ],
@@ -1546,6 +1384,234 @@ class _CartPanel extends StatelessWidget {
     }
     final nextMultiple = (total / 500.0).ceil() * 500.0;
     return nextMultiple > total ? nextMultiple : null;
+  }
+}
+
+/// Renders a picked item row in the POS cart with unit price, live available stock,
+/// quantity stepper, subtotal, and stock/pricing warnings.
+class PosCartItemTile extends StatelessWidget {
+  final CartItem item;
+  final Product? product;
+  final void Function(String, String?, int) onSetQty;
+  final void Function(String, String?) onRemove;
+  final bool showDivider;
+
+  const PosCartItemTile({
+    super.key,
+    required this.item,
+    required this.product,
+    required this.onSetQty,
+    required this.onRemove,
+    this.showDivider = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = product;
+    final double currentPrice = item.price;
+    final bool isWholesale = p != null &&
+        p.wholesalePrice != null &&
+        item.qty >= (p.wholesaleThreshold ?? 999);
+
+    int stock = 0;
+    int reserved = 0;
+    bool isLowStock = false;
+    if (p != null) {
+      if (item.variantId != null) {
+        try {
+          final v = p.variants.firstWhere((v) => v.id == item.variantId);
+          stock = v.availableStock;
+          reserved = v.effectiveReservedStock;
+          isLowStock = stock > 0 && v.isPhysicalThresholdHit;
+        } catch (_) {}
+      } else {
+        stock = p.totalAvailableStock;
+        reserved = p.totalReservedStock;
+        isLowStock = stock > 0 && p.isPhysicalThresholdHit;
+      }
+    }
+
+    final bool isOutOfStock = p == null || stock <= 0;
+    final bool isOverQty = p != null && item.qty > stock;
+    final bool isMaxStock = !isOutOfStock && !isOverQty && item.qty >= stock;
+    final String unitLabel =
+        (p != null && p.unit.trim().isNotEmpty) ? p.unit.trim() : 'pcs';
+    final String stockLabel = isOutOfStock
+        ? 'Available: 0 $unitLabel'
+        : isMaxStock
+            ? 'Available: $stock $unitLabel (Max)'
+            : 'Available: $stock $unitLabel';
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final Color stockBadgeColor = (isOutOfStock || isOverQty)
+        ? Colors.red.shade700
+        : (isMaxStock || isLowStock)
+            ? Colors.orange.shade800
+            : colorScheme.onSurfaceVariant;
+    final Color stockBadgeBg = (isOutOfStock || isOverQty)
+        ? Colors.red.withValues(alpha: 0.1)
+        : (isMaxStock || isLowStock)
+            ? Colors.orange.withValues(alpha: 0.12)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.7);
+
+    double effectiveCost = item.costPrice;
+    if (effectiveCost <= 0 && p != null) {
+      if (item.variantId != null) {
+        try {
+          final v = p.variants.firstWhere((v) => v.id == item.variantId);
+          effectiveCost = v.costPrice > 0 ? v.costPrice : p.effectiveUnitCost;
+        } catch (_) {
+          effectiveCost = p.effectiveUnitCost;
+        }
+      } else {
+        effectiveCost = p.effectiveUnitCost;
+      }
+    }
+    final bool isBelowCost =
+        effectiveCost > 0 && currentPrice > 0 && currentPrice < effectiveCost;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isOutOfStock)
+            Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 4),
+                child: Text(
+                    reserved > 0
+                        ? '⚠️ ALL $reserved UNITS RESERVED FOR ONLINE ORDERS'
+                        : '⚠️ THIS ITEM IS NOW SOLD OUT',
+                    style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold)))
+          else if (isOverQty)
+            Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 4),
+                child: Text('⚠️ ONLY $stock PHYSICAL UNITS AVAILABLE',
+                    style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold))),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        decoration:
+                            isOutOfStock ? TextDecoration.lineThrough : null,
+                        color: isOutOfStock ? Colors.grey : null,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '@ ${formatPeso(currentPrice)} / pc',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.8),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: stockBadgeBg,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            stockLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: stockBadgeColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              QtyControl(
+                key: ValueKey(
+                    'qty_${item.productId}_${item.variantId ?? 'base'}'),
+                qty: item.qty,
+                max: stock,
+                onChanged: (n) => onSetQty(item.productId, item.variantId, n),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 70,
+                child: Text(
+                  formatPeso(currentPrice * item.qty),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    color: isOutOfStock ? Colors.grey : colorScheme.primary,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => onRemove(item.productId, item.variantId),
+                icon: const Icon(Icons.delete_outline_rounded,
+                    size: 20, color: Colors.red),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                tooltip: 'Remove Item',
+              ),
+            ],
+          ),
+          if (isBelowCost)
+            Padding(
+                padding: const EdgeInsets.only(left: 4, top: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 11, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text(
+                        '⚠️ Below Cost: Sold @ ${formatPeso(currentPrice)} (Cost: ${formatPeso(effectiveCost)})',
+                        style: TextStyle(
+                            fontSize: 9,
+                            color: Colors.amber.shade900,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                )),
+          if (isWholesale)
+            const Padding(
+                padding: EdgeInsets.only(left: 4, top: 2),
+                child: Text('Wholesale pricing applied',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold))),
+          if (showDivider) const Divider(height: 16),
+        ],
+      ),
+    );
   }
 }
 
