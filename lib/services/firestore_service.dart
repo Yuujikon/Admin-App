@@ -17,6 +17,7 @@ import '../models/rfq.dart';
 import '../models/purchase_order.dart';
 import '../models/receiving_record.dart';
 import '../models/inventory_batch_record.dart';
+import '../models/daily_resupply_log.dart';
 import '../shared/services/time_service.dart';
 import '../shared/services/admin_messaging_service.dart';
 import 'audit_log_service.dart';
@@ -119,6 +120,7 @@ class FirestoreService {
         'scheduledCloseAt':
             closeAt != null ? Timestamp.fromDate(closeAt) : null,
         'scheduledOpenAt': openAt != null ? Timestamp.fromDate(openAt) : null,
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
   Future<void> saveStoreSettings(StoreSettings s) =>
@@ -200,6 +202,7 @@ class FirestoreService {
     if (!p.hasVariants && !allowDirectStockOverride) {
       payload.remove('stock');
       payload.remove('batches');
+      payload.remove('physicalReserve');
     }
     // Never overwrite live reservedStock during product profile edits
     payload.remove('reservedStock');
@@ -312,6 +315,191 @@ class FirestoreService {
       }
       await batch.commit();
     }
+  }
+
+  // ── Admin In-App Notifications (`admin_notifications`) ─────────────────────
+
+  CollectionReference<Map<String, dynamic>> get _adminNotifications =>
+      _db.collection('admin_notifications');
+
+  Stream<List<Map<String, dynamic>>> adminNotificationsStream(
+      {int limit = 50}) {
+    return _adminNotifications
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) {
+              final data = Map<String, dynamic>.from(doc.data());
+              data['id'] = doc.id;
+              return data;
+            }).toList());
+  }
+
+  Future<void> addAdminNotification(Map<String, dynamic> payload) async {
+    final data = Map<String, dynamic>.from(payload);
+    data.putIfAbsent('isRead', () => false);
+    data.putIfAbsent('createdAt', () => FieldValue.serverTimestamp());
+    await _adminNotifications.add(data);
+  }
+
+  Future<void> markAdminNotificationRead(String notificationId) async {
+    await _adminNotifications.doc(notificationId).update({'isRead': true});
+  }
+
+  Future<void> markAllAdminNotificationsRead() async {
+    final unread =
+        await _adminNotifications.where('isRead', isEqualTo: false).get();
+    if (unread.docs.isEmpty) return;
+    final batch = _db.batch();
+    for (final doc in unread.docs) {
+      batch.update(doc.reference, {'isRead': true});
+    }
+    await batch.commit();
+  }
+
+  // ── Daily End-of-Day Resupply Logs (`daily_resupply_logs/{YYYY-MM-DD}`) ────
+
+  CollectionReference<Map<String, dynamic>> get _dailyResupplyLogs =>
+      _db.collection('daily_resupply_logs');
+
+  Stream<DailyResupplyLog> dailyResupplyLogStream(
+    String dateKey, {
+    String defaultStoreEmail = 'gdcstore.ph@gmail.com',
+  }) {
+    return _dailyResupplyLogs.doc(dateKey).snapshots().map((doc) {
+      if (!doc.exists) {
+        return DailyResupplyLog.empty(dateKey, storeEmail: defaultStoreEmail);
+      }
+      return DailyResupplyLog.fromFirestore(doc);
+    });
+  }
+
+  Future<DailyResupplyLog?> getDailyResupplyLog(String dateKey) async {
+    final doc = await _dailyResupplyLogs.doc(dateKey).get();
+    if (!doc.exists) return null;
+    return DailyResupplyLog.fromFirestore(doc);
+  }
+
+  /// Atomically records/updates a product (or variant) that hit its physical
+  /// low-stock threshold on [dateKey].
+  ///
+  /// Returns `true` if this item was newly added to [dateKey]'s resupply log
+  /// (so callers know to emit a one-time Inventory Alert for today's breach).
+  Future<bool> recordDailyResupplyItem({
+    required String dateKey,
+    required DailyResupplyItem item,
+    required String storeEmail,
+  }) async {
+    final docRef = _dailyResupplyLogs.doc(dateKey);
+    return _db.runTransaction<bool>((tx) async {
+      final snap = await tx.get(docRef);
+      final existingData = snap.exists
+          ? Map<String, dynamic>.from(snap.data() ?? {})
+          : <String, dynamic>{};
+
+      final Map<String, dynamic> itemsMap = existingData['items'] is Map
+          ? Map<String, dynamic>.from(existingData['items'] as Map)
+          : <String, dynamic>{};
+
+      final bool isNew = !itemsMap.containsKey(item.itemKey);
+      final existingItemRaw = itemsMap[item.itemKey];
+      final DateTime preservedFirstTriggered = existingItemRaw is Map &&
+              existingItemRaw['firstTriggeredAt'] is Timestamp
+          ? (existingItemRaw['firstTriggeredAt'] as Timestamp).toDate()
+          : item.firstTriggeredAt;
+
+      final mergedItem = DailyResupplyItem(
+        itemKey: item.itemKey,
+        productId: item.productId,
+        variantId: item.variantId,
+        productName: item.productName,
+        variantName: item.variantName,
+        category: item.category,
+        unit: item.unit,
+        originalStock: item.effectiveOriginalStock,
+        lowStockThreshold: item.lowStockThreshold,
+        physicalStock: item.physicalStock,
+        onlineStock: item.onlineStock,
+        totalStock: item.totalStock,
+        availableStock: item.availableStock,
+        suggestedResupplyQty: item.suggestedResupplyQty,
+        onlineOutOfStock: item.onlineOutOfStock,
+        firstTriggeredAt: preservedFirstTriggered,
+        lastUpdatedAt: item.lastUpdatedAt,
+      );
+
+      itemsMap[item.itemKey] = mergedItem.toMap();
+
+      tx.set(docRef, {
+        'dateKey': dateKey,
+        'storeEmail': storeEmail.trim().isNotEmpty
+            ? storeEmail.trim()
+            : 'gdcstore.ph@gmail.com',
+        'items': itemsMap,
+        'itemCount': itemsMap.length,
+        'summaryEmailSent': existingData['summaryEmailSent'] == true,
+        if (existingData['summaryEmailStatus'] != null)
+          'summaryEmailStatus': existingData['summaryEmailStatus'],
+        if (existingData['summaryEmailSentAt'] != null)
+          'summaryEmailSentAt': existingData['summaryEmailSentAt'],
+        if (existingData['summaryEmailSentBy'] != null)
+          'summaryEmailSentBy': existingData['summaryEmailSentBy'],
+        if (existingData['summaryEmailError'] != null)
+          'summaryEmailError': existingData['summaryEmailError'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      return isNew;
+    });
+  }
+
+  /// Atomically claims the End-of-Day Resupply Summary email dispatch lock for
+  /// [dateKey] so Admin App & Cloud Scheduler never send duplicate emails.
+  ///
+  /// Returns the claimed [DailyResupplyLog] snapshot if dispatch should proceed,
+  /// or `null` if already sent/in-progress or empty.
+  Future<DailyResupplyLog?> claimDailyResupplyEmailDispatch({
+    required String dateKey,
+    required String triggeredBy,
+    bool forceResend = false,
+  }) async {
+    final docRef = _dailyResupplyLogs.doc(dateKey);
+    return _db.runTransaction<DailyResupplyLog?>((tx) async {
+      final snap = await tx.get(docRef);
+      if (!snap.exists) return null;
+      final log = DailyResupplyLog.fromFirestore(snap);
+      if (log.itemCount == 0) return null;
+
+      if (!forceResend &&
+          (log.summaryEmailSent || log.summaryEmailStatus == 'sending')) {
+        return null;
+      }
+
+      tx.update(docRef, {
+        'summaryEmailStatus': 'sending',
+        'summaryEmailSentBy': triggeredBy,
+        'summaryEmailError': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return log;
+    });
+  }
+
+  Future<void> markDailyResupplyEmailResult({
+    required String dateKey,
+    required bool success,
+    required String sentBy,
+    String? error,
+  }) async {
+    final docRef = _dailyResupplyLogs.doc(dateKey);
+    await docRef.update({
+      'summaryEmailSent': success,
+      'summaryEmailStatus': success ? 'sent' : 'failed',
+      if (success) 'summaryEmailSentAt': FieldValue.serverTimestamp(),
+      'summaryEmailSentBy': sentBy,
+      'summaryEmailError': success ? null : error,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Atomic FIFO checkout pipeline (routed through [InventoryBatchService.deductStockFIFO]

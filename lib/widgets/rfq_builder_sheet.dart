@@ -345,7 +345,7 @@ class _RfqBuilderSheetState extends State<RfqBuilderSheet> {
                                     style: const TextStyle(
                                         fontWeight: FontWeight.bold)),
                                 subtitle: Text(
-                                    'Stock: ${p.stock} ${p.unit} • Threshold: ${p.lowStockThreshold}'),
+                                    'Stock: ${p.totalAvailableStock}/${p.effectiveOriginalStock} ${p.unit} • 30% Alert: ≤ ${p.lowStockAlertThreshold}'),
                                 trailing: isAdded
                                     ? const Icon(Icons.check_circle,
                                         color: Colors.green)

@@ -204,7 +204,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                             final lowStockCount = allProducts
                                 .where((p) =>
                                     p.status == ProductStatus.published &&
-                                    p.stock <= p.lowStockThreshold &&
+                                    p.isPhysicalThresholdHit &&
                                     p.supplierId == s.id)
                                 .length;
                             return _SupplierCard(

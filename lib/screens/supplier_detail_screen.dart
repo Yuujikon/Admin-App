@@ -102,8 +102,7 @@ class _OverviewTab extends StatelessWidget {
         inventory.products.where((p) => p.supplierId == supplier.id).toList();
     final lowStockCount = suppliedProducts
         .where((p) =>
-            p.status == ProductStatus.published &&
-            p.stock <= p.lowStockThreshold)
+            p.status == ProductStatus.published && p.isPhysicalThresholdHit)
         .length;
 
     return ListView(
@@ -641,7 +640,7 @@ class _ProductsTabState extends State<_ProductsTab> {
                   itemCount: filteredProducts.length,
                   itemBuilder: (ctx, index) {
                     final p = filteredProducts[index];
-                    final bool isLowStock = p.totalStock <= p.lowStockThreshold;
+                    final bool isLowStock = p.isPhysicalThresholdHit;
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -1131,7 +1130,7 @@ class _RestockTabState extends State<_RestockTab> {
     final lowStockItems = inventory.products
         .where((p) =>
             p.status == ProductStatus.published &&
-            p.totalStock <= p.lowStockThreshold &&
+            p.isPhysicalThresholdHit &&
             p.supplierId == widget.supplier.id)
         .toList();
 
@@ -1250,7 +1249,7 @@ class _RestockTabState extends State<_RestockTab> {
                               style:
                                   const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(
-                              'Stock: ${p.totalStock} / Min: ${p.lowStockThreshold} ${p.unit}'),
+                              'Stock: ${p.totalAvailableStock}/${p.effectiveOriginalStock} ${p.unit} (30% Alert: ≤ ${p.lowStockAlertThreshold})'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1552,8 +1551,7 @@ class _RestockTabState extends State<_RestockTab> {
                             itemBuilder: (c, i) {
                               final p = displayProducts[i];
                               final bool isSelected = _manualIds.contains(p.id);
-                              final bool isLowStock =
-                                  p.totalStock <= p.lowStockThreshold;
+                              final bool isLowStock = p.isPhysicalThresholdHit;
 
                               return CheckboxListTile(
                                 title: Text(p.name,

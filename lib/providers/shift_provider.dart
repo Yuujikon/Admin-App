@@ -29,8 +29,12 @@ class ShiftProvider extends BaseProvider {
   /// Full historical list of all shift sessions (active & closed).
   List<ShiftSession> get allShifts => _allShifts;
 
-  /// Initializes shift listeners.
-  ShiftProvider() {
+  /// Creates a [ShiftProvider] without subscribing until staff authentication succeeds.
+  ShiftProvider();
+
+  /// Initializes real-time Firestore listeners for all shift sessions after staff sign-in.
+  void initialize() {
+    cancelSubscriptions();
     _initShiftListener();
   }
 

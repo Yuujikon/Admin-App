@@ -13,6 +13,7 @@ import '../providers/inventory_provider.dart';
 import '../utils/barcode_routing.dart';
 import '../utils/format.dart';
 import '../utils/image_utils.dart';
+import '../utils/inventory_allocation.dart';
 import 'scanner_dialog.dart';
 import 'full_product_scanner_dialog.dart';
 import 'receive_delivery_sheet.dart';
@@ -79,7 +80,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   late final TextEditingController _barcode;
   late final TextEditingController _itemsPerCase;
   late final TextEditingController _pickupWindow;
-  late final TextEditingController _lowStockT;
   late final TextEditingController _boxPriceCtrl;
   late final TextEditingController _itemsPerBoxCtrl;
   late final TextEditingController _boxesReceivedCtrl;
@@ -101,7 +101,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
   late final FocusNode _fBarcode;
   late final FocusNode _fItemsPerCase;
   late final FocusNode _fPickupWindow;
-  late final FocusNode _fLowStockT;
   late final FocusNode _fBoxPrice;
   late final FocusNode _fItemsPerBox;
   late final FocusNode _fBoxesReceived;
@@ -163,9 +162,10 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
 
     int? initBoxes;
     int? initExtra;
-    if (p != null && p.stock > 0 && p.hasBulkPacking) {
-      initBoxes = p.stock ~/ p.piecesPerPack;
-      initExtra = p.stock % p.piecesPerPack;
+    final int initialDisplayStock = p?.totalStock ?? 0;
+    if (p != null && initialDisplayStock > 0 && p.hasBulkPacking) {
+      initBoxes = initialDisplayStock ~/ p.piecesPerPack;
+      initExtra = initialDisplayStock % p.piecesPerPack;
     }
 
     _name = TextEditingController(text: p?.name ?? '');
@@ -173,7 +173,8 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _parentIdCtrl = TextEditingController(text: p?.parentId ?? '');
     _price = TextEditingController(text: p?.price.toString() ?? '');
     _costPrice = TextEditingController(text: p?.costPrice.toString() ?? '0');
-    _stock = TextEditingController(text: p?.stock.toString() ?? '');
+    _stock =
+        TextEditingController(text: p != null ? p.totalStock.toString() : '');
     _unit = TextEditingController(text: p?.unit ?? 'pcs');
     _shelf = TextEditingController(text: p?.shelfDays?.toString() ?? '');
     _barcode =
@@ -182,8 +183,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         TextEditingController(text: p?.itemsPerCase?.toString() ?? '');
     _pickupWindow =
         TextEditingController(text: p?.pickupWindowHours?.toString() ?? '');
-    _lowStockT =
-        TextEditingController(text: p?.lowStockThreshold.toString() ?? '5');
     _boxPriceCtrl = TextEditingController(text: p?.packCost?.toString() ?? '');
     _itemsPerBoxCtrl =
         TextEditingController(text: p?.itemsPerCase?.toString() ?? '');
@@ -208,7 +207,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
     _fBarcode = FocusNode();
     _fItemsPerCase = FocusNode();
     _fPickupWindow = FocusNode();
-    _fLowStockT = FocusNode();
     _fBoxPrice = FocusNode();
     _fItemsPerBox = FocusNode();
     _fBoxesReceived = FocusNode();
@@ -227,7 +225,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _barcode,
       _itemsPerCase,
       _pickupWindow,
-      _lowStockT,
       _boxPriceCtrl,
       _itemsPerBoxCtrl,
       _boxesReceivedCtrl,
@@ -250,7 +247,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _fBarcode,
       _fItemsPerCase,
       _fPickupWindow,
-      _fLowStockT,
       _fBoxPrice,
       _fItemsPerBox,
       _fBoxesReceived,
@@ -270,7 +266,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _fBarcode: _barcode,
       _fItemsPerCase: _itemsPerCase,
       _fPickupWindow: _pickupWindow,
-      _fLowStockT: _lowStockT,
       _fBoxPrice: _boxPriceCtrl,
       _fItemsPerBox: _itemsPerBoxCtrl,
       _fBoxesReceived: _boxesReceivedCtrl,
@@ -311,9 +306,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         (initBoxes != null && initBoxes > 0) ||
         (p?.packCost != null && p!.packCost! > 0);
     _showVariantFamily = p?.parentId != null && p!.parentId!.isNotEmpty;
-    _showSupplierAlerts =
-        (p?.supplierId != null && p!.supplierId!.isNotEmpty) ||
-            (p?.lowStockThreshold != null && p!.lowStockThreshold != 5);
+    _showSupplierAlerts = p?.supplierId != null && p!.supplierId!.isNotEmpty;
     _showPerishableDetails = _perishable || p?.shelfDays != null;
 
     _barcode.addListener(_onBarcodeChanged);
@@ -565,20 +558,20 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _parentIdCtrl.text = p.parentId ?? '';
       _price.text = p.price.toString();
       _costPrice.text = p.costPrice.toString();
-      _stock.text = p.stock.toString();
+      final int liveStock = p.totalStock;
+      _stock.text = liveStock.toString();
       _unit.text = p.unit;
       _shelf.text = p.shelfDays?.toString() ?? '';
       _barcode.text = p.barcode ?? '';
       _itemsPerCase.text = p.itemsPerCase?.toString() ?? '';
       _pickupWindow.text = p.pickupWindowHours?.toString() ?? '';
-      _lowStockT.text = p.lowStockThreshold.toString();
       _boxPriceCtrl.text = p.packCost?.toString() ?? '';
       _itemsPerBoxCtrl.text = p.itemsPerCase?.toString() ?? '';
       _bulkUnitCtrl.text = p.bulkUnit;
 
-      if (p.hasBulkPacking && p.stock > 0) {
-        final b = p.stock ~/ p.piecesPerPack;
-        final r = p.stock % p.piecesPerPack;
+      if (p.hasBulkPacking && liveStock > 0) {
+        final b = liveStock ~/ p.piecesPerPack;
+        final r = liveStock % p.piecesPerPack;
         _boxesReceivedCtrl.text = b > 0 ? b.toString() : '';
         _extraItemsCtrl.text = r > 0 ? r.toString() : '';
       } else {
@@ -613,7 +606,7 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _showBulkUom =
           p.hasBulkPacking || (p.packCost != null && p.packCost! > 0);
       _showVariantFamily = p.parentId != null && p.parentId!.isNotEmpty;
-      _showSupplierAlerts = p.supplierId != null || p.lowStockThreshold != 5;
+      _showSupplierAlerts = p.supplierId != null && p.supplierId!.isNotEmpty;
       _showPerishableDetails = p.isPerishable || p.shelfDays != null;
     });
   }
@@ -677,12 +670,15 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       _itemsPerCase.text = itemsPerBox.toString();
     }
 
-    // 1. Calculate Initial Stock Quantity
-    if (boxes > 0 && itemsPerBox > 0) {
-      final calculatedStock = (boxes * itemsPerBox) + extraItems;
-      _stock.text = calculatedStock.toString();
-    } else if (extraItems > 0 && boxes == 0 && itemsPerBox == 0) {
-      _stock.text = extraItems.toString();
+    // 1. Calculate Initial Stock Quantity (only for newly created products;
+    // existing non-variant product stock is managed via atomic FIFO batches).
+    if (_activeProduct == null) {
+      if (boxes > 0 && itemsPerBox > 0) {
+        final calculatedStock = (boxes * itemsPerBox) + extraItems;
+        _stock.text = calculatedStock.toString();
+      } else if (extraItems > 0 && boxes == 0 && itemsPerBox == 0) {
+        _stock.text = extraItems.toString();
+      }
     }
 
     // 2. Calculate Base Unit Cost (COGS) from Bulk Box Cost
@@ -2581,12 +2577,12 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                       ),
                       const SizedBox(height: 10),
 
-                      // ── COLLAPSIBLE SECTION C: SUPPLIER & INVENTORY ALERTS ───
+                      // ── COLLAPSIBLE SECTION C: SUPPLIER ───
                       _buildCollapsibleCard(
-                        title: 'Supplier & Stock Alerts',
+                        title: 'Supplier',
                         subtitle: _supplierId != null
-                            ? 'Supplier linked • Alert threshold: ${_lowStockT.text}'
-                            : 'Set low stock safety thresholds & supplier info',
+                            ? 'Supplier linked • Auto low-stock alerts at 30% of original stock'
+                            : 'Link supplier (alerts trigger automatically at 30% of original stock)',
                         icon: Icons.local_shipping_outlined,
                         isExpanded: _showSupplierAlerts,
                         onToggle: () => setState(
@@ -2596,24 +2592,6 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
                           children: [
                             Row(
                               children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _lowStockT,
-                                    focusNode: _fLowStockT,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly
-                                    ],
-                                    decoration: const InputDecoration(
-                                      isDense: true,
-                                      labelText: 'Safety Stock Limit',
-                                      hintText: 'e.g. 5',
-                                      contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 10),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
                                 Expanded(
                                   child: DropdownButtonFormField<String?>(
                                     isExpanded: true,
@@ -3314,15 +3292,43 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
       }
 
       final int? prevInitial = _activeProduct?.initialStock;
-      final int calculatedInitial = (_activeProduct == null)
+      final bool isStockIncrease =
+          _activeProduct == null || initialQty > _activeProduct!.totalStock;
+      final int calculatedInitial = isStockIncrease
           ? initialQty
-          : (initialQty > (prevInitial ?? _activeProduct?.stock ?? 0)
-              ? initialQty
-              : (prevInitial ?? initialQty));
+          : (prevInitial != null && prevInitial > 0 ? prevInitial : initialQty);
 
       final itemsPerCaseVal = int.tryParse(_itemsPerBoxCtrl.text) ??
           int.tryParse(_itemsPerCase.text);
       final packCostVal = double.tryParse(_boxPriceCtrl.text);
+
+      final Map<String, ProductVariant> prevVariantsById = {
+        for (final v in _activeProduct?.variants ?? const <ProductVariant>[])
+          v.id: v,
+      };
+      final List<ProductVariant> resolvedVariants = _variants.map((v) {
+        final prev = prevVariantsById[v.id];
+        final bool isRestock = prev == null ||
+            v.stock > prev.stock ||
+            prev.physicalReserve == null;
+        return v.copyWith(
+          initialStock: (prev == null || v.stock > prev.stock)
+              ? v.stock
+              : (prev.initialStock ?? v.stock),
+          physicalReserve: isRestock
+              ? InventoryAllocation.calculatePhysicalReserve(v.stock)
+              : prev.effectivePhysicalReserve,
+        );
+      }).toList();
+
+      final int resolvedPhysicalReserve = resolvedVariants.isNotEmpty
+          ? resolvedVariants.fold(
+              0, (acc, v) => acc + v.effectivePhysicalReserve)
+          : (_activeProduct == null ||
+                  initialQty > _activeProduct!.totalStock ||
+                  _activeProduct!.physicalReserve == null)
+              ? InventoryAllocation.calculatePhysicalReserve(initialQty)
+              : _activeProduct!.effectivePhysicalReserve;
 
       final p = Product(
         id: _activeProduct?.id ?? '',
@@ -3348,17 +3354,17 @@ class _ProductEditSheetState extends State<ProductEditSheet> {
         manualMarkupPercent: manualMarkupToSave,
         salesVelocityScore: _salesVelocityScore,
         computedMarkupPercent: computedMarkupToSave,
+        physicalReserve: resolvedPhysicalReserve,
         barcode: barcode,
         shelfDays: _perishable ? int.tryParse(_shelf.text) : null,
         pickupWindowHours:
             _perishable ? int.tryParse(_pickupWindow.text) : null,
-        lowStockThreshold: int.tryParse(_lowStockT.text) ?? 5,
         isTaxable: _taxable,
         status: _status,
         photoBase64: _photoBase64,
         supplierId: _supplierId,
         expiryDate: _expiryDate,
-        variants: _variants,
+        variants: resolvedVariants,
         batches: _activeProduct?.batches ?? const [],
       );
 

@@ -7,16 +7,7 @@ class StoreHours {
   static bool isOpen([StoreSettings? settings, DateTime? date]) {
     final checkTime = date ?? TimeService.now;
     if (settings != null) {
-      if (settings.isClosed) return false;
-
-      // Check date-range schedule overrides first
-      for (final override in settings.overrides) {
-        if (override.appliesToDate(checkTime)) {
-          return !override.isDateTimeClosed(checkTime);
-        }
-      }
-
-      return !settings.effectivelyClosed;
+      return !settings.isEffectivelyClosedAt(checkTime);
     }
     final h = checkTime.hour;
     return h >= 8 && h < 21; // Default fallback: 8:00 AM - 9:00 PM
@@ -34,34 +25,42 @@ class StoreHours {
       return []; // No slots available during emergency maintenance
     }
 
-    // Check if there is a ScheduleOverride active for targetDate
-    ScheduleOverride? override;
-    if (settings != null) {
-      for (final o in settings.overrides) {
-        if (o.appliesToDate(date)) {
-          override = o;
-          break;
-        }
-      }
+    final matchingOverrides = settings != null
+        ? settings.overridesForDate(date)
+        : const <ScheduleOverride>[];
+
+    // If any full-day closure applies on targetDate, no slots are available.
+    if (matchingOverrides.any((o) => o.type == OverrideType.fullClosure)) {
+      return [];
     }
 
-    if (override != null) {
-      if (override.type == OverrideType.fullClosure) {
-        return []; // Closed all day
-      }
-    } else if (settings != null && settings.effectivelyClosed && isToday) {
+    final customHoursOverrides = matchingOverrides
+        .where((o) => o.type == OverrideType.customOpenHours)
+        .toList();
+    final maintenanceOverrides = matchingOverrides
+        .where((o) => o.type == OverrideType.maintenanceWindow)
+        .toList();
+
+    final ScheduleOverride? customHoursOverride =
+        customHoursOverrides.isNotEmpty ? customHoursOverrides.first : null;
+
+    // If no custom open hours override exists, respect regular closed days of week.
+    if (customHoursOverride == null &&
+        settings != null &&
+        settings.operatingHoursEnabled &&
+        settings.closedDaysOfWeek.contains(date.weekday)) {
       return [];
     }
 
     int openHour = 8;
     int closeHour = 20;
 
-    if (override != null && override.type == OverrideType.customOpenHours) {
-      if (override.startMinutes != null) {
-        openHour = override.startMinutes! ~/ 60;
+    if (customHoursOverride != null) {
+      if (customHoursOverride.startMinutes != null) {
+        openHour = customHoursOverride.startMinutes! ~/ 60;
       }
-      if (override.endMinutes != null) {
-        closeHour = (override.endMinutes! / 60.0).ceil();
+      if (customHoursOverride.endMinutes != null) {
+        closeHour = (customHoursOverride.endMinutes! / 60.0).ceil();
       }
     } else if (settings != null && settings.operatingHoursEnabled) {
       if (settings.dailyOpenTime != null) {
@@ -81,16 +80,19 @@ class StoreHours {
         continue;
       }
 
-      // If maintenance window override applies, skip maintenance hours
-      if (override != null && override.type == OverrideType.maintenanceWindow) {
-        final slotStartMins = hour * 60;
-        final slotEndMins = (hour + 1) * 60;
-        final sMins = override.startMinutes ?? 0;
-        final eMins = override.endMinutes ?? 1439;
-        if (slotStartMins >= sMins && slotEndMins <= eMins) {
-          continue; // Skip maintenance slot
+      // Skip any slot overlapping an active maintenance window override
+      final slotStartMins = hour * 60;
+      final slotEndMins = (hour + 1) * 60;
+      bool blockedByMaintenance = false;
+      for (final m in maintenanceOverrides) {
+        final sMins = m.startMinutes ?? 0;
+        final eMins = m.endMinutes ?? 1439;
+        if (slotStartMins < eMins && slotEndMins > sMins) {
+          blockedByMaintenance = true;
+          break;
         }
       }
+      if (blockedByMaintenance) continue;
 
       final displayStart = _formatHour(hour);
       final displayEnd = _formatHour(hour + 1);

@@ -126,7 +126,7 @@ class _PosScreenState extends State<PosScreen> {
           _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty + 1);
         } else {
           final msg = reservedCount > 0
-              ? 'Max available stock reached ($reservedCount units reserved for pre-orders).'
+              ? 'Max available stock reached ($reservedCount units reserved for pending online orders).'
               : 'Max available stock reached.';
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text(msg)));
@@ -134,7 +134,7 @@ class _PosScreenState extends State<PosScreen> {
       } else {
         if (stock <= 0) {
           final msg = reservedCount > 0
-              ? 'Item unavailable for walk-in sale ($reservedCount units reserved for pre-orders).'
+              ? 'Item unavailable for walk-in sale ($reservedCount units reserved for pending online orders).'
               : 'Item out of stock.';
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text(msg)));
@@ -169,10 +169,32 @@ class _PosScreenState extends State<PosScreen> {
             itemCount: p.variants.length,
             itemBuilder: (ctx, i) {
               final v = p.variants[i];
+              final bool vOos = v.availableStock <= 0;
               return ListTile(
-                title: Text(v.name),
-                subtitle:
-                    Text('${formatPeso(v.price)} • Stock: ${v.availableStock}'),
+                title: Row(
+                  children: [
+                    Expanded(child: Text(v.name)),
+                    if (vOos)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Out of Stock',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.red),
+                        ),
+                      ),
+                  ],
+                ),
+                subtitle: Text(
+                  '${formatPeso(v.price)} • POS: ${v.availableStock} • Online: ${v.isOnlineOutOfStock ? 'OOS' : v.onlineAvailableStock}',
+                ),
                 enabled: v.availableStock > 0,
                 onTap: () => Navigator.pop(ctx, v),
               );
@@ -192,7 +214,7 @@ class _PosScreenState extends State<PosScreen> {
         for (final pid in b.productIds) {
           try {
             final p = products.firstWhere((p) => p.id == pid);
-            if (p.availableStock <= 0) continue;
+            if (p.totalAvailableStock <= 0) continue;
             final idx = _cart.indexWhere((c) => c.productId == p.id);
             if (idx < 0) {
               _cart.insert(
@@ -206,7 +228,7 @@ class _PosScreenState extends State<PosScreen> {
                       qty: 1,
                       isPerishable: p.isPerishable));
             } else {
-              if (_cart[idx].qty < p.availableStock) {
+              if (_cart[idx].qty < p.totalAvailableStock) {
                 _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty + 1);
               }
             }
@@ -267,27 +289,22 @@ class _PosScreenState extends State<PosScreen> {
         if (idx < 0) return;
 
         int stock = 9999;
-        int reserved = 0;
         final products = context.read<InventoryProvider>().products;
         try {
           final p = products.firstWhere((p) => p.id == id);
           if (variantId != null) {
             final v = p.variants.firstWhere((v) => v.id == variantId);
             stock = v.availableStock;
-            reserved = v.effectiveReservedStock;
           } else {
             stock = p.totalAvailableStock;
-            reserved = p.totalReservedStock;
           }
         } catch (_) {}
 
         if (targetQty > stock) {
-          final reservedNote =
-              reserved > 0 ? ' ($reserved reserved for pre-orders)' : '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Requested quantity for ${_cart[idx].name} exceeds available stock ($stock available$reservedNote).',
+                'Requested quantity for ${_cart[idx].name} exceeds available physical stock ($stock available).',
               ),
               backgroundColor: Colors.amber.shade900,
               behavior: SnackBarBehavior.floating,
@@ -317,7 +334,7 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    // Pre-flight check: Ensure no items in cart exceed available stock
+    // Pre-flight check: Ensure no items in cart exceed available physical stock (100% POS access)
     final products = inventory.products;
     for (var item in _cart) {
       try {
@@ -329,12 +346,9 @@ class _PosScreenState extends State<PosScreen> {
             : p.availableStock;
 
         if (currentAvailable < item.qty) {
-          final reservedNote = p.totalReservedStock > 0
-              ? ' (${p.totalReservedStock} reserved for pre-orders)'
-              : '';
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(
-                  'Cannot complete sale: ${item.name} has only $currentAvailable available units left$reservedNote.')));
+                  'Cannot complete sale: ${item.name} has only $currentAvailable physical units available.')));
           return;
         }
       } catch (_) {
@@ -529,7 +543,7 @@ class _PosScreenState extends State<PosScreen> {
             (p.barcode?.contains(query) ?? false))
         .toList();
 
-    // Automatically push out-of-stock / zero available stock items to the end (last) of the POS list
+    // Automatically push out-of-stock items to the end of the POS list
     filtered.sort((a, b) {
       final aHasStock = a.totalAvailableStock > 0;
       final bHasStock = b.totalAvailableStock > 0;
@@ -610,7 +624,7 @@ class _PosScreenState extends State<PosScreen> {
                   ? Align(
                       alignment: Alignment.topCenter,
                       child: Container(
-                        constraints: const BoxConstraints(maxWidth: 800),
+                        constraints: const BoxConstraints(maxWidth: 1200),
                         child: _CartPanel(
                           cart: _cart,
                           cashCtrl: _cashCtrl,
@@ -643,7 +657,10 @@ class _PosScreenState extends State<PosScreen> {
                               icon: Icons.remove_shopping_cart_rounded,
                             );
                             if (confirm) {
-                              setState(() => _cart.clear());
+                              setState(() {
+                                _cart.clear();
+                                _cashCtrl.clear();
+                              });
                             }
                           },
                           onBackToProducts: () =>
@@ -916,10 +933,10 @@ class _PosProductTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool inCart = cartQty > 0;
     final int available = p.totalAvailableStock;
-    final int reserved = p.totalReservedStock;
-    final bool isOutOfStock = available <= 0;
+    final bool isTotalOos = p.totalStock <= 0;
+    final bool isOutOfStock = isTotalOos || available <= 0;
     final bool isMaxStock = available > 0 && cartQty >= available;
-    final bool isLow = available > 0 && available <= p.lowStockThreshold;
+    final bool isLow = available > 0 && p.isPhysicalThresholdHit;
 
     return GestureDetector(
       onTap: onToggle,
@@ -997,18 +1014,16 @@ class _PosProductTile extends StatelessWidget {
                                 ? 'Out of Stock'
                                 : isMaxStock
                                     ? 'Max Stock'
-                                    : reserved > 0
-                                        ? '$available ($reserved res)'
-                                        : 'Stock: $available',
+                                    : 'Stock: $available',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 9.5,
                               fontWeight: (isMaxStock || isOutOfStock)
                                   ? FontWeight.bold
-                                  : FontWeight.normal,
+                                  : FontWeight.w600,
                               color: isOutOfStock || isMaxStock
                                   ? Colors.red
                                   : (isLow
-                                      ? Colors.orange
+                                      ? Colors.orange.shade800
                                       : Colors.grey.shade700),
                             ),
                           ),
@@ -1019,6 +1034,49 @@ class _PosProductTile extends StatelessWidget {
                 ),
               ],
             ),
+            // Stock Status Badge on top-left corner (Low Stock stays clickable so POS sales continue)
+            if (isTotalOos)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Out of Stock',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 8.5,
+                    ),
+                  ),
+                ),
+              )
+            else if (isLow)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade800,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Low Stock',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 8.5,
+                    ),
+                  ),
+                ),
+              ),
             // Cart Quantity Badge on top corner
             if (inCart)
               Positioned(
@@ -1101,625 +1159,382 @@ class _CartPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
       ),
-      child: Column(
-        children: [
-          // 1. Header Section
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outlineVariant
-                      .withValues(alpha: 0.3),
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    if (onBackToProducts != null) ...[
-                      IconButton.filledTonal(
-                        onPressed: onBackToProducts,
-                        icon: const Icon(Icons.arrow_back),
-                        tooltip: 'Back to Products',
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Your Cart',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          '${cart.length} item${cart.length != 1 ? 's' : ''} • $totalUnits unit${totalUnits != 1 ? 's' : ''}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant
-                                .withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    if (cart.isNotEmpty)
-                      TextButton.icon(
-                        onPressed: onClear,
-                        icon: const Icon(Icons.remove_shopping_cart_outlined,
-                            size: 16, color: Colors.red),
-                        label: const Text('Clear Cart',
-                            style: TextStyle(
-                                color: Colors.red,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12)),
-                      ),
-                    const SizedBox(width: 8),
-                    Text(
-                      formatPeso(breakdown.total),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 20,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isSideBySide =
+              constraints.maxWidth >= 580 && cart.isNotEmpty;
+          final double sidePanelWidth =
+              (constraints.maxWidth * 0.42).clamp(260.0, 420.0);
+          final bool canComplete = cart.isNotEmpty &&
+              cashCtrl.text.trim().isNotEmpty &&
+              cashNum >= breakdown.total &&
+              breakdown.total > 0 &&
+              !saving &&
+              !inventory.isProcessingSale;
+          final bool isBusy = saving || inventory.isProcessingSale;
 
-          // 2. Scrollable Cart Items Section
-          Expanded(
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                if (cart.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 40),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.shopping_cart_outlined,
-                            size: 40,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant
-                                .withValues(alpha: 0.4),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Your cart is empty',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant
-                                  .withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else ...[
-                  ...List.generate(cart.length, (i) {
-                    final item = cart[i];
-                    Product? product;
-                    try {
-                      product =
-                          products.firstWhere((p) => p.id == item.productId);
-                    } catch (_) {}
-
-                    final double currentPrice = item.price;
-                    final bool isWholesale = product != null &&
-                        product.wholesalePrice != null &&
-                        item.qty >= (product.wholesaleThreshold ?? 999);
-
-                    int stock = 0;
-                    int reserved = 0;
-                    if (product != null) {
-                      if (item.variantId != null) {
-                        try {
-                          final v = product.variants
-                              .firstWhere((v) => v.id == item.variantId);
-                          stock = v.availableStock;
-                          reserved = v.effectiveReservedStock;
-                        } catch (_) {}
-                      } else {
-                        stock = product.totalAvailableStock;
-                        reserved = product.totalReservedStock;
-                      }
-                    }
-
-                    final bool isOutOfStock = product == null || stock <= 0;
-                    final bool isOverQty = product != null && item.qty > stock;
-
-                    double effectiveCost = item.costPrice;
-                    if (effectiveCost <= 0 && product != null) {
-                      if (item.variantId != null) {
-                        try {
-                          final v = product.variants
-                              .firstWhere((v) => v.id == item.variantId);
-                          effectiveCost = v.costPrice > 0
-                              ? v.costPrice
-                              : product.effectiveUnitCost;
-                        } catch (_) {
-                          effectiveCost = product.effectiveUnitCost;
-                        }
-                      } else {
-                        effectiveCost = product.effectiveUnitCost;
-                      }
-                    }
-                    final bool isBelowCost = effectiveCost > 0 &&
-                        currentPrice > 0 &&
-                        currentPrice < effectiveCost;
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (isOutOfStock)
-                            Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 4, bottom: 4),
-                                child: Text(
-                                    reserved > 0
-                                        ? '⚠️ ALL $reserved UNITS RESERVED FOR ONLINE ORDERS'
-                                        : '⚠️ THIS ITEM IS NOW SOLD OUT',
-                                    style: const TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.bold)))
-                          else if (isOverQty)
-                            Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 4, bottom: 4),
-                                child: Text(
-                                    '⚠️ ONLY $stock AVAILABLE FOR SALE${reserved > 0 ? " ($reserved reserved)" : ""}',
-                                    style: const TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.orange,
-                                        fontWeight: FontWeight.bold))),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item.name,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        decoration: isOutOfStock
-                                            ? TextDecoration.lineThrough
-                                            : null,
-                                        color:
-                                            isOutOfStock ? Colors.grey : null,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '@ ${formatPeso(currentPrice)} / pc',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant
-                                            .withValues(alpha: 0.8),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              QtyControl(
-                                key: ValueKey(
-                                    'qty_${item.productId}_${item.variantId ?? 'base'}'),
-                                qty: item.qty,
-                                max: stock,
-                                onChanged: (n) =>
-                                    onSetQty(item.productId, item.variantId, n),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 70,
-                                child: Text(
-                                  formatPeso(currentPrice * item.qty),
-                                  textAlign: TextAlign.right,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 13,
-                                    color: isOutOfStock
-                                        ? Colors.grey
-                                        : Theme.of(context).colorScheme.primary,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                onPressed: () =>
-                                    onRemove(item.productId, item.variantId),
-                                icon: const Icon(Icons.delete_outline_rounded,
-                                    size: 20, color: Colors.red),
-                                tooltip: 'Remove Item',
-                              ),
-                            ],
-                          ),
-                          if (isBelowCost)
-                            Padding(
-                                padding: const EdgeInsets.only(left: 4, top: 2),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.warning_amber_rounded,
-                                        size: 11, color: Colors.amber),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                        '⚠️ Below Cost: Sold @ ${formatPeso(currentPrice)} (Cost: ${formatPeso(effectiveCost)})',
-                                        style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.amber.shade900,
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                )),
-                          if (isWholesale)
-                            const Padding(
-                                padding: EdgeInsets.only(left: 4, top: 2),
-                                child: Text('Wholesale pricing applied',
-                                    style: TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.blue,
-                                        fontWeight: FontWeight.bold))),
-                          if (i < cart.length - 1) const Divider(height: 16),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-              ],
-            ),
-          ),
-
-          // 3. Footer / Checkout & Payment Section
-          Container(
-            padding: EdgeInsets.fromLTRB(
-                16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, -4),
-                ),
-              ],
-              border: Border(
-                top: BorderSide(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outlineVariant
-                      .withValues(alpha: 0.4),
-                ),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Totals Breakdown
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
+          return Column(
+            children: [
+              // 1. Header Section
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(
+                    bottom: BorderSide(
                       color: Theme.of(context)
                           .colorScheme
                           .outlineVariant
                           .withValues(alpha: 0.3),
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Subtotal:',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey.shade700)),
-                          Text(formatPeso(breakdown.subtotal),
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        if (onBackToProducts != null) ...[
+                          IconButton.filledTonal(
+                            onPressed: onBackToProducts,
+                            icon: const Icon(Icons.arrow_back),
+                            tooltip: 'Back to Products',
+                          ),
+                          const SizedBox(width: 12),
                         ],
-                      ),
-                      if (breakdown.savings > 0) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Wholesale Discount:',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold)),
-                            Text('- ${formatPeso(breakdown.savings)}',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold)),
+                            Text(
+                              'Your Cart',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            ),
+                            Text(
+                              '${cart.length} item${cart.length != 1 ? 's' : ''} • $totalUnits unit${totalUnits != 1 ? 's' : ''}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant
+                                    .withValues(alpha: 0.7),
+                              ),
+                            ),
                           ],
                         ),
                       ],
-                      const Divider(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Grand Total:',
-                              style: TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.w900)),
-                          Text(
-                            formatPeso(breakdown.total),
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
+                    ),
+                    if (cart.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: onClear,
+                        icon: const Icon(
+                          Icons.remove_shopping_cart_outlined,
+                          size: 16,
+                          color: Colors.red,
+                        ),
+                        label: const Text(
+                          'Clear Cart',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
                           ),
-                        ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // 2. Body: Picked Products on Left + Cash Received UI on Right (wide)
+              //    or stacked vertically on compact portrait screens
+              if (isSideBySide)
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: _buildCartItemsList(context)),
+                      SizedBox(
+                        width: sidePanelWidth,
+                        child: PosCheckoutPaymentFooter(
+                          breakdown: breakdown,
+                          totalUnits: totalUnits,
+                          cashCtrl: cashCtrl,
+                          cashFocus: cashFocus,
+                          cashNum: cashNum,
+                          change: change,
+                          nextBill: nextBill,
+                          isSidePanel: true,
+                          canComplete: canComplete,
+                          isBusy: isBusy,
+                          onComplete: onComplete,
+                        ),
                       ),
                     ],
                   ),
-                ),
+                )
+              else ...[
+                Expanded(child: _buildCartItemsList(context)),
+                if (cart.isNotEmpty)
+                  PosCheckoutPaymentFooter(
+                    breakdown: breakdown,
+                    totalUnits: totalUnits,
+                    cashCtrl: cashCtrl,
+                    cashFocus: cashFocus,
+                    cashNum: cashNum,
+                    change: change,
+                    nextBill: nextBill,
+                    maxFooterHeight: (constraints.maxHeight - 84)
+                        .clamp(140.0, double.infinity),
+                    canComplete: canComplete,
+                    isBusy: isBusy,
+                    onComplete: onComplete,
+                  ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
 
-                const SizedBox(height: 10),
-
-                // Cash Input & Payment Section
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextField(
-                            controller: cashCtrl,
-                            focusNode: cashFocus,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true, signed: false),
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d*\.?\d{0,2}')),
-                            ],
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: 'Cash Received',
-                              prefixText: '₱ ',
-                              prefixStyle: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                              ),
-                              isDense: true,
-                              suffixIcon: cashCtrl.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(Icons.clear, size: 18),
-                                      onPressed: () => cashCtrl.clear(),
-                                    )
-                                  : null,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          // Quick Cash Chips
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                ActionChip(
-                                  label: const Text('Exact',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 11)),
-                                  avatar: const Icon(Icons.check, size: 14),
-                                  backgroundColor: Colors.green.shade50,
-                                  side:
-                                      BorderSide(color: Colors.green.shade300),
-                                  onPressed: () {
-                                    cashCtrl.text = breakdown.total % 1 == 0
-                                        ? breakdown.total.toStringAsFixed(0)
-                                        : breakdown.total.toStringAsFixed(2);
-                                  },
-                                ),
-                                const SizedBox(width: 6),
-                                ...[50.0, 100.0, 200.0, 500.0, 1000.0]
-                                    .map((bill) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: ChoiceChip(
-                                      label: Text('₱${bill.toStringAsFixed(0)}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: cashNum == bill
-                                                ? Colors.white
-                                                : Colors.black87,
-                                          )),
-                                      selected: cashNum == bill,
-                                      selectedColor:
-                                          Theme.of(context).colorScheme.primary,
-                                      onSelected: (_) {
-                                        cashCtrl.text = bill.toStringAsFixed(0);
-                                      },
-                                    ),
-                                  );
-                                }),
-                                if (nextBill != null &&
-                                    ![50.0, 100.0, 200.0, 500.0, 1000.0]
-                                        .contains(nextBill))
-                                  ActionChip(
-                                    label: Text(
-                                        'Next ₱${nextBill.toStringAsFixed(0)}',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 11)),
-                                    backgroundColor: Colors.blue.shade50,
-                                    side:
-                                        BorderSide(color: Colors.blue.shade300),
-                                    onPressed: () {
-                                      cashCtrl.text =
-                                          nextBill.toStringAsFixed(0);
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+  Widget _buildCartItemsList(BuildContext context) {
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        if (cart.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 56),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.shopping_basket_outlined,
+                    size: 48,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Your basket is empty',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.85),
                     ),
-                    const SizedBox(width: 12),
-                    // Complete Sale / PAY Button
-                    Expanded(
-                      flex: 2,
-                      child: SizedBox(
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: (cart.isNotEmpty &&
-                                  cashNum >= breakdown.total &&
-                                  breakdown.total > 0 &&
-                                  !saving &&
-                                  !inventory.isProcessingSale)
-                              ? onComplete
-                              : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade700,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 2,
-                          ),
-                          child: (saving || inventory.isProcessingSale)
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2.5, color: Colors.white))
-                              : const Text(
-                                  'COMPLETE\nSALE',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 13,
-                                    height: 1.1,
-                                  ),
-                                ),
-                        ),
-                      ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Pick items to view total cost and receive cash.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.65),
+                    ),
+                  ),
+                  if (onBackToProducts != null) ...[
+                    const SizedBox(height: 16),
+                    FilledButton.tonalIcon(
+                      onPressed: onBackToProducts,
+                      icon: const Icon(Icons.storefront_outlined, size: 18),
+                      label: const Text('Browse Products'),
                     ),
                   ],
-                ),
-
-                if (cart.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  // Live Change Due vs Insufficient Cash Banner
-                  if (cashNum >= breakdown.total && breakdown.total > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.green.shade300),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.payments_rounded,
-                                  size: 20, color: Colors.green.shade800),
-                              const SizedBox(width: 8),
-                              Text('CHANGE DUE:',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                      color: Colors.green.shade900)),
-                            ],
-                          ),
-                          Text(formatPeso(change),
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 18,
-                                  color: Colors.green.shade900)),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.red.shade200),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.warning_amber_rounded,
-                                  size: 18, color: Colors.red.shade800),
-                              const SizedBox(width: 6),
-                              Text('INSUFFICIENT CASH',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                      color: Colors.red.shade900)),
-                            ],
-                          ),
-                          Text(
-                              'Short: ${formatPeso(breakdown.total - cashNum)}',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: Colors.red.shade900)),
-                        ],
-                      ),
-                    ),
                 ],
-              ],
+              ),
             ),
-          ),
+          )
+        else ...[
+          ...List.generate(cart.length, (i) {
+            final item = cart[i];
+            Product? product;
+            try {
+              product = products.firstWhere((p) => p.id == item.productId);
+            } catch (_) {}
+
+            final double currentPrice = item.price;
+            final bool isWholesale = product != null &&
+                product.wholesalePrice != null &&
+                item.qty >= (product.wholesaleThreshold ?? 999);
+
+            int stock = 0;
+            int reserved = 0;
+            if (product != null) {
+              if (item.variantId != null) {
+                try {
+                  final v = product.variants
+                      .firstWhere((v) => v.id == item.variantId);
+                  stock = v.availableStock;
+                  reserved = v.effectiveReservedStock;
+                } catch (_) {}
+              } else {
+                stock = product.totalAvailableStock;
+                reserved = product.totalReservedStock;
+              }
+            }
+
+            final bool isOutOfStock = product == null || stock <= 0;
+            final bool isOverQty = product != null && item.qty > stock;
+
+            double effectiveCost = item.costPrice;
+            if (effectiveCost <= 0 && product != null) {
+              if (item.variantId != null) {
+                try {
+                  final v = product.variants
+                      .firstWhere((v) => v.id == item.variantId);
+                  effectiveCost =
+                      v.costPrice > 0 ? v.costPrice : product.effectiveUnitCost;
+                } catch (_) {
+                  effectiveCost = product.effectiveUnitCost;
+                }
+              } else {
+                effectiveCost = product.effectiveUnitCost;
+              }
+            }
+            final bool isBelowCost = effectiveCost > 0 &&
+                currentPrice > 0 &&
+                currentPrice < effectiveCost;
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isOutOfStock)
+                    Padding(
+                        padding: const EdgeInsets.only(left: 4, bottom: 4),
+                        child: Text(
+                            reserved > 0
+                                ? '⚠️ ALL $reserved UNITS RESERVED FOR ONLINE ORDERS'
+                                : '⚠️ THIS ITEM IS NOW SOLD OUT',
+                            style: const TextStyle(
+                                fontSize: 9,
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold)))
+                  else if (isOverQty)
+                    Padding(
+                        padding: const EdgeInsets.only(left: 4, bottom: 4),
+                        child: Text('⚠️ ONLY $stock PHYSICAL UNITS AVAILABLE',
+                            style: const TextStyle(
+                                fontSize: 9,
+                                color: Colors.orange,
+                                fontWeight: FontWeight.bold))),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.name,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                decoration: isOutOfStock
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: isOutOfStock ? Colors.grey : null,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '@ ${formatPeso(currentPrice)} / pc',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant
+                                    .withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      QtyControl(
+                        key: ValueKey(
+                            'qty_${item.productId}_${item.variantId ?? 'base'}'),
+                        qty: item.qty,
+                        max: stock,
+                        onChanged: (n) =>
+                            onSetQty(item.productId, item.variantId, n),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 70,
+                        child: Text(
+                          formatPeso(currentPrice * item.qty),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            color: isOutOfStock
+                                ? Colors.grey
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () =>
+                            onRemove(item.productId, item.variantId),
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            size: 20, color: Colors.red),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        tooltip: 'Remove Item',
+                      ),
+                    ],
+                  ),
+                  if (isBelowCost)
+                    Padding(
+                        padding: const EdgeInsets.only(left: 4, top: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning_amber_rounded,
+                                size: 11, color: Colors.amber),
+                            const SizedBox(width: 4),
+                            Text(
+                                '⚠️ Below Cost: Sold @ ${formatPeso(currentPrice)} (Cost: ${formatPeso(effectiveCost)})',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.amber.shade900,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        )),
+                  if (isWholesale)
+                    const Padding(
+                        padding: EdgeInsets.only(left: 4, top: 2),
+                        child: Text('Wholesale pricing applied',
+                            style: TextStyle(
+                                fontSize: 9,
+                                color: Colors.blue,
+                                fontWeight: FontWeight.bold))),
+                  if (i < cart.length - 1) const Divider(height: 16),
+                ],
+              ),
+            );
+          }),
         ],
-      ),
+      ],
     );
   }
 
@@ -1731,6 +1546,654 @@ class _CartPanel extends StatelessWidget {
     }
     final nextMultiple = (total / 500.0).ceil() * 500.0;
     return nextMultiple > total ? nextMultiple : null;
+  }
+}
+
+/// Unified POS Basket checkout panel presenting payment info in strict
+/// **Total → Cash Received → Change** order once items are picked.
+class PosCheckoutPaymentFooter extends StatelessWidget {
+  final PricingBreakdown breakdown;
+  final int totalUnits;
+  final TextEditingController cashCtrl;
+  final FocusNode cashFocus;
+  final double cashNum;
+  final double change;
+  final double? nextBill;
+  final double? maxFooterHeight;
+  final bool isSidePanel;
+  final bool canComplete;
+  final bool isBusy;
+  final VoidCallback onComplete;
+
+  const PosCheckoutPaymentFooter({
+    super.key,
+    required this.breakdown,
+    required this.totalUnits,
+    required this.cashCtrl,
+    required this.cashFocus,
+    required this.cashNum,
+    required this.change,
+    required this.nextBill,
+    this.maxFooterHeight,
+    this.isSidePanel = false,
+    required this.canComplete,
+    required this.isBusy,
+    required this.onComplete,
+  });
+
+  void _applyCashText(String raw) {
+    cashCtrl.value = TextEditingValue(
+      text: raw,
+      selection: TextSelection.collapsed(offset: raw.length),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
+    final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final double bottomSafePad =
+        isKeyboardOpen ? 8 : MediaQuery.of(context).padding.bottom + 12;
+
+    final bool hasCashInput = cashCtrl.text.trim().isNotEmpty;
+    final bool isCashSufficient =
+        hasCashInput && breakdown.total > 0 && cashNum >= breakdown.total;
+    final bool isCashShort =
+        hasCashInput && breakdown.total > 0 && cashNum < breakdown.total;
+
+    final Color successFg =
+        isDark ? Colors.green.shade300 : Colors.green.shade800;
+    final Color successBg =
+        isDark ? Colors.green.withValues(alpha: 0.16) : Colors.green.shade50;
+    final Color successBorder =
+        isDark ? Colors.green.withValues(alpha: 0.45) : Colors.green.shade300;
+
+    final Color errorFg = isDark ? Colors.red.shade300 : Colors.red.shade800;
+    final Color errorBg =
+        isDark ? Colors.red.withValues(alpha: 0.16) : Colors.red.shade50;
+    final Color errorBorder =
+        isDark ? Colors.red.withValues(alpha: 0.45) : Colors.red.shade200;
+
+    final Color inputBorderColor = isCashSufficient
+        ? successBorder
+        : (isCashShort ? errorBorder : cs.outline.withValues(alpha: 0.45));
+
+    const standardBills = [50.0, 100.0, 200.0, 500.0, 1000.0];
+
+    return Container(
+      constraints: !isSidePanel && maxFooterHeight != null
+          ? BoxConstraints(maxHeight: maxFooterHeight!)
+          : null,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        isSidePanel ? 12 : (isKeyboardOpen ? 8 : 12),
+        16,
+        bottomSafePad,
+      ),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        boxShadow: isSidePanel
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+        border: isSidePanel
+            ? Border(
+                left: BorderSide(
+                  color: cs.outlineVariant.withValues(alpha: 0.45),
+                ),
+              )
+            : Border(
+                top: BorderSide(
+                  color: cs.outlineVariant.withValues(alpha: 0.45),
+                ),
+              ),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Unified Payment Card: Total -> Cash Received -> Change
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── 1. TOTAL COST ──────────────────────────────────────────
+                  if (breakdown.savings > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Subtotal: ${formatPeso(breakdown.subtotal)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: successBg,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Wholesale -${formatPeso(breakdown.savings)}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: successFg,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          runSpacing: 2,
+                          children: [
+                            Text(
+                              'Total Cost',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: cs.onSurface,
+                              ),
+                            ),
+                            Text(
+                              '($totalUnits ${totalUnits == 1 ? 'pc' : 'pcs'})',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            formatPeso(breakdown.total),
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: cs.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Divider(
+                      height: 1,
+                      color: cs.outlineVariant.withValues(alpha: 0.45),
+                    ),
+                  ),
+
+                  // ── 2. CASH RECEIVED ───────────────────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.payments_outlined,
+                              size: 16,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Cash Received',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (hasCashInput) ...[
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              formatPeso(cashNum),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: isCashShort ? errorFg : cs.onSurface,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: cashCtrl,
+                    focusNode: cashFocus,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'^\d*\.?\d{0,2}'),
+                      ),
+                    ],
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                      color: cs.onSurface,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Enter cash amount',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                      prefixText: '₱ ',
+                      prefixStyle: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        color: cs.onSurface,
+                      ),
+                      filled: true,
+                      fillColor: cs.surface,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      suffixIcon: hasCashInput
+                          ? IconButton(
+                              icon: Icon(
+                                Icons.cancel_rounded,
+                                size: 18,
+                                color: cs.onSurfaceVariant,
+                              ),
+                              tooltip: 'Clear cash',
+                              onPressed: cashCtrl.clear,
+                            )
+                          : null,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(11),
+                        borderSide: BorderSide(color: inputBorderColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(11),
+                        borderSide: BorderSide(
+                          color: isCashSufficient
+                              ? successFg
+                              : (isCashShort ? errorFg : cs.primary),
+                          width: 1.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _QuickCashPill(
+                          label: 'Exact',
+                          icon: Icons.check_rounded,
+                          isSelected: hasCashInput &&
+                              (cashNum - breakdown.total).abs() < 0.005,
+                          accentColor: successFg,
+                          backgroundColor: successBg,
+                          borderColor: successBorder,
+                          onTap: () {
+                            final exactText = breakdown.total % 1 == 0
+                                ? breakdown.total.toStringAsFixed(0)
+                                : breakdown.total.toStringAsFixed(2);
+                            _applyCashText(exactText);
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        ...standardBills.map((bill) {
+                          final bool selected =
+                              hasCashInput && (cashNum - bill).abs() < 0.005;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: _QuickCashPill(
+                              label: '₱${bill.toStringAsFixed(0)}',
+                              isSelected: selected,
+                              onTap: () =>
+                                  _applyCashText(bill.toStringAsFixed(0)),
+                            ),
+                          );
+                        }),
+                        if (nextBill != null &&
+                            !standardBills.contains(nextBill))
+                          _QuickCashPill(
+                            label: 'Next ₱${nextBill!.toStringAsFixed(0)}',
+                            isSelected: hasCashInput &&
+                                (cashNum - nextBill!).abs() < 0.005,
+                            accentColor: isDark
+                                ? Colors.blue.shade300
+                                : Colors.blue.shade800,
+                            backgroundColor: isDark
+                                ? Colors.blue.withValues(alpha: 0.16)
+                                : Colors.blue.shade50,
+                            borderColor: isDark
+                                ? Colors.blue.withValues(alpha: 0.45)
+                                : Colors.blue.shade300,
+                            onTap: () =>
+                                _applyCashText(nextBill!.toStringAsFixed(0)),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  // ── 3. CHANGE (shown only after cash is inputted) ──────────
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: hasCashInput
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                child: Divider(
+                                  height: 1,
+                                  color:
+                                      cs.outlineVariant.withValues(alpha: 0.45),
+                                ),
+                              ),
+                              if (isCashSufficient)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: successBg,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: successBorder),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.currency_exchange_rounded,
+                                              size: 18,
+                                              color: successFg,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: Text(
+                                                'Change',
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14,
+                                                  color: successFg,
+                                                ),
+                                              ),
+                                            ),
+                                            if (change == 0) ...[
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 1,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: successFg.withValues(
+                                                      alpha: 0.14),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  'Exact',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: successFg,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerRight,
+                                          child: Text(
+                                            formatPeso(change),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 20,
+                                              color: successFg,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isCashShort)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: errorBg,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: errorBorder),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.warning_amber_rounded,
+                                              size: 18,
+                                              color: errorFg,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: Text(
+                                                'Insufficient Cash',
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 13,
+                                                  color: errorFg,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerRight,
+                                          child: Text(
+                                            'Short ${formatPeso(breakdown.total - cashNum)}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 14,
+                                              color: errorFg,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Full-Width Complete Sale Button
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: canComplete ? onComplete : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: isBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_circle_outline_rounded, size: 20),
+                label: Text(
+                  isBusy ? 'Processing Sale...' : 'Complete Sale',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickCashPill extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final bool isSelected;
+  final Color? accentColor;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final VoidCallback onTap;
+
+  const _QuickCashPill({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+    this.icon,
+    this.accentColor,
+    this.backgroundColor,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final Color bg = isSelected
+        ? (accentColor ?? cs.primary)
+        : (backgroundColor ?? cs.surface);
+    final Color fg = isSelected ? Colors.white : (accentColor ?? cs.onSurface);
+    final Color border = isSelected
+        ? (accentColor ?? cs.primary)
+        : (borderColor ?? cs.outlineVariant.withValues(alpha: 0.7));
+
+    return Material(
+      color: bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(9),
+        side: BorderSide(color: border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: fg,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

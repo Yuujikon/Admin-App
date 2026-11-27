@@ -15,10 +15,10 @@ import '../models/transaction.dart';
 import '../models/restock_inquiry.dart';
 import '../models/product.dart';
 import '../models/supplier.dart';
-import '../models/store_settings.dart';
 import '../utils/format.dart';
 import '../shared/services/time_service.dart';
 import '../widgets/receive_delivery_sheet.dart';
+import '../widgets/schedule_holiday_dialog.dart';
 import 'admin_app.dart';
 import 'supplier_detail_screen.dart';
 import 'supplier_management_screen.dart';
@@ -180,8 +180,7 @@ _DashboardData _computeDashboardData(_IsolateComputationParams params) {
 
   final lowStock = params.products
       .where((p) =>
-          p.status == ProductStatus.published &&
-          p.totalStock <= p.lowStockThreshold)
+          p.status == ProductStatus.published && p.isPhysicalThresholdHit)
       .toList();
 
   final movementCounts = <String, int>{};
@@ -999,6 +998,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           statusColor = errorColor;
           statusIcon = Icons.warning_amber_rounded;
           break;
+        case 'HOLIDAY':
+          statusColor = errorColor;
+          statusIcon = Icons.event_busy_rounded;
+          break;
+        case 'SPECIAL SCHEDULE':
+          statusColor = Colors.deepOrange.shade700;
+          statusIcon = Icons.build_rounded;
+          break;
+        case 'SPECIAL HOURS':
+          statusColor = Colors.blue.shade700;
+          statusIcon = Icons.schedule_rounded;
+          break;
         case 'SCHEDULED':
           statusColor = warningColor;
           statusIcon = Icons.schedule;
@@ -1059,20 +1070,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
             runSpacing: 8,
             children: [
               _buildPeriodDropdown(context),
-              ActionChip(
-                backgroundColor: statusColor.withValues(alpha: 0.12),
-                side: BorderSide(color: statusColor.withValues(alpha: 0.25)),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(50)),
-                avatar: Icon(statusIcon, size: 16, color: statusColor),
-                label: Text(
-                  statusLabel,
-                  style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 11),
+              Tooltip(
+                message:
+                    '${inventory.settings.closureReason}\nTap to manage schedule & store status',
+                child: ActionChip(
+                  backgroundColor: statusColor.withValues(alpha: 0.12),
+                  side: BorderSide(color: statusColor.withValues(alpha: 0.25)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(50)),
+                  avatar: Icon(statusIcon, size: 16, color: statusColor),
+                  label: Text(
+                    statusLabel,
+                    style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11),
+                  ),
+                  onPressed: () => ScheduleHolidayDialog.show(context),
                 ),
-                onPressed: () => _showStatusDialog(context, inventory),
               ),
             ],
           ),
@@ -1305,7 +1320,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: Text(p.name,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
-                        'Threshold: ${p.lowStockThreshold} ${p.unit} • Current: ${p.totalStock} ${p.unit}',
+                        '30% Alert: ≤ ${p.lowStockAlertThreshold} ${p.unit} • Stock: ${p.totalAvailableStock}/${p.effectiveOriginalStock} ${p.unit}',
                         style: const TextStyle(fontSize: 10)),
                     trailing: Wrap(
                       spacing: 6,
@@ -1804,616 +1819,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
     );
-  }
-
-  void _showStatusDialog(BuildContext context, InventoryProvider inventory) {
-    final controller =
-        TextEditingController(text: inventory.settings.closureMessage);
-    final reasonCtrl = TextEditingController();
-
-    DateTimeRange? selectedDateRange;
-    OverrideType selectedType = OverrideType.customOpenHours;
-    TimeOfDay customStart =
-        const TimeOfDay(hour: 13, minute: 0); // 1:00 PM default
-    TimeOfDay customEnd =
-        const TimeOfDay(hour: 15, minute: 0); // 3:00 PM default
-
-    TimeOfDay openTime = _parseTimeOfDay(
-        inventory.settings.dailyOpenTime, const TimeOfDay(hour: 8, minute: 0));
-    TimeOfDay closeTime = _parseTimeOfDay(inventory.settings.dailyCloseTime,
-        const TimeOfDay(hour: 21, minute: 0));
-
-    showDialog(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final settings = inventory.settings;
-          final isEffectivelyClosed = settings.effectivelyClosed;
-          final closureReason = settings.closureReason;
-
-          final Color errColor = Theme.of(context).colorScheme.error;
-          final Color succColor = Colors.green.shade700;
-
-          String formatTime(TimeOfDay t) => t.format(context);
-          String formatDate(DateTime d) => DateFormat('MMM d, yyyy').format(d);
-
-          return AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text(
-              'Schedule & Holiday Hours',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: Container(
-              width: 520,
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isEffectivelyClosed
-                            ? Theme.of(context)
-                                .colorScheme
-                                .errorContainer
-                                .withValues(alpha: 0.15)
-                            : succColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isEffectivelyClosed
-                              ? errColor.withValues(alpha: 0.3)
-                              : succColor.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isEffectivelyClosed
-                                ? Icons.lock_clock_rounded
-                                : Icons.storefront_rounded,
-                            color: isEffectivelyClosed ? errColor : succColor,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  isEffectivelyClosed
-                                      ? 'Store is CLOSED'
-                                      : 'Store is OPEN',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: isEffectivelyClosed
-                                        ? errColor
-                                        : succColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  closureReason,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Regular Operating Hours',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Opening Time',
-                                style: TextStyle(fontSize: 12)),
-                            subtitle: Text(_formatTimeOfDayDisplay(openTime),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                            trailing: const Icon(Icons.access_time, size: 18),
-                            onTap: () async {
-                              final picked = await showTimePicker(
-                                  context: context, initialTime: openTime);
-                              if (picked != null && context.mounted) {
-                                setDialogState(() => openTime = picked);
-                                await inventory
-                                    .saveStoreSettings(settings.copyWith(
-                                  operatingHoursEnabled: true,
-                                  dailyOpenTime: _formatTimeOfDay(picked),
-                                  dailyCloseTime: _formatTimeOfDay(closeTime),
-                                ));
-                              }
-                            },
-                          ),
-                        ),
-                        Expanded(
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Closing Time',
-                                style: TextStyle(fontSize: 12)),
-                            subtitle: Text(_formatTimeOfDayDisplay(closeTime),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                            trailing:
-                                const Icon(Icons.access_time_filled, size: 18),
-                            onTap: () async {
-                              final picked = await showTimePicker(
-                                  context: context, initialTime: closeTime);
-                              if (picked != null && context.mounted) {
-                                setDialogState(() => closeTime = picked);
-                                await inventory
-                                    .saveStoreSettings(settings.copyWith(
-                                  operatingHoursEnabled: true,
-                                  dailyOpenTime: _formatTimeOfDay(openTime),
-                                  dailyCloseTime: _formatTimeOfDay(picked),
-                                ));
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 24),
-                    const Text(
-                      'Custom Date / Holiday Schedule',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.calendar_month, size: 18),
-                      label: Text(
-                        selectedDateRange == null
-                            ? 'Select Custom Date Range (e.g. Dec 20 - Dec 23)'
-                            : '${formatDate(selectedDateRange!.start)}  →  ${formatDate(selectedDateRange!.end)}',
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 44),
-                        alignment: Alignment.centerLeft,
-                      ),
-                      onPressed: () async {
-                        final now = DateTime.now();
-                        final picked = await showDateRangePicker(
-                          context: context,
-                          firstDate: DateTime(now.year, now.month, 1),
-                          lastDate: DateTime(now.year + 2, 12, 31),
-                          initialDateRange: selectedDateRange,
-                        );
-                        if (picked != null) {
-                          setDialogState(() => selectedDateRange = picked);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    SegmentedButton<OverrideType>(
-                      segments: const [
-                        ButtonSegment(
-                          value: OverrideType.customOpenHours,
-                          label: Text('Custom Hours',
-                              style: TextStyle(fontSize: 11)),
-                          icon: Icon(Icons.schedule, size: 15),
-                        ),
-                        ButtonSegment(
-                          value: OverrideType.fullClosure,
-                          label: Text('Closed All Day',
-                              style: TextStyle(fontSize: 11)),
-                          icon: Icon(Icons.block, size: 15),
-                        ),
-                        ButtonSegment(
-                          value: OverrideType.maintenanceWindow,
-                          label: Text('Maintenance',
-                              style: TextStyle(fontSize: 11)),
-                          icon: Icon(Icons.build, size: 15),
-                        ),
-                      ],
-                      selected: {selectedType},
-                      onSelectionChanged: (val) {
-                        setDialogState(() => selectedType = val.first);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    if (selectedType != OverrideType.fullClosure) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () async {
-                                final t = await showTimePicker(
-                                  context: context,
-                                  initialTime: customStart,
-                                );
-                                if (t != null) {
-                                  setDialogState(() => customStart = t);
-                                }
-                              },
-                              child: InputDecorator(
-                                decoration: InputDecoration(
-                                  labelText: selectedType ==
-                                          OverrideType.maintenanceWindow
-                                      ? 'Maintenance From'
-                                      : 'Available From',
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                                child: Text(formatTime(customStart)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () async {
-                                final t = await showTimePicker(
-                                  context: context,
-                                  initialTime: customEnd,
-                                );
-                                if (t != null) {
-                                  setDialogState(() => customEnd = t);
-                                }
-                              },
-                              child: InputDecorator(
-                                decoration: InputDecoration(
-                                  labelText: selectedType ==
-                                          OverrideType.maintenanceWindow
-                                      ? 'Maintenance Until'
-                                      : 'Until Time',
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                                child: Text(formatTime(customEnd)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    TextField(
-                      controller: selectedType == OverrideType.maintenanceWindow
-                          ? controller
-                          : reasonCtrl,
-                      decoration: InputDecoration(
-                        labelText:
-                            selectedType == OverrideType.maintenanceWindow
-                                ? 'Maintenance Reason / Notice'
-                                : 'Reason / Notice',
-                        hintText: selectedType == OverrideType.fullClosure
-                            ? 'e.g. Holidays'
-                            : selectedType == OverrideType.maintenanceWindow
-                                ? 'Reason displayed to customers during maintenance'
-                                : 'e.g. Preparing for Holidays',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (selectedType == OverrideType.customOpenHours) ...[
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade800,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon:
-                            const Icon(Icons.event_available_rounded, size: 18),
-                        label: const Text(
-                          'Save Custom Hours',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        onPressed: () async {
-                          if (selectedDateRange == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      'Please select a date range first.')),
-                            );
-                            return;
-                          }
-                          await _saveOverrideHelper(
-                            context,
-                            inventory,
-                            settings,
-                            selectedDateRange!,
-                            selectedType,
-                            customStart,
-                            customEnd,
-                            reasonCtrl.text,
-                            setDialogState,
-                          );
-                        },
-                      ),
-                    ] else if (selectedType == OverrideType.fullClosure) ...[
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: errColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.block_rounded, size: 18),
-                        label: const Text(
-                          'Close Store',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        onPressed: () async {
-                          if (selectedDateRange == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      'Please select a date range first.')),
-                            );
-                            return;
-                          }
-                          await _saveOverrideHelper(
-                            context,
-                            inventory,
-                            settings,
-                            selectedDateRange!,
-                            selectedType,
-                            customStart,
-                            customEnd,
-                            reasonCtrl.text,
-                            setDialogState,
-                          );
-                        },
-                      ),
-                    ] else if (selectedType ==
-                        OverrideType.maintenanceWindow) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.amber.shade800,
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.build_rounded, size: 16),
-                              label: const Text('Maintenance',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold)),
-                              onPressed: () async {
-                                if (selectedDateRange == null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            'Please select a date range first.')),
-                                  );
-                                  return;
-                                }
-                                await _saveOverrideHelper(
-                                  context,
-                                  inventory,
-                                  settings,
-                                  selectedDateRange!,
-                                  selectedType,
-                                  customStart,
-                                  customEnd,
-                                  controller.text,
-                                  setDialogState,
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: errColor,
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.warning_amber_rounded,
-                                  size: 16),
-                              label: const Text('Emergency Maint.',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold)),
-                              onPressed: () async {
-                                final bool? confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (confirmCtx) => AlertDialog(
-                                    title: Row(
-                                      children: [
-                                        Icon(Icons.warning_amber_rounded,
-                                            color: errColor, size: 24),
-                                        const SizedBox(width: 8),
-                                        const Text(
-                                            'Confirm Emergency Maintenance'),
-                                      ],
-                                    ),
-                                    content: const Text(
-                                      'Are you sure you want to activate Emergency Maintenance?\n\n'
-                                      'This will immediately close the store and broadcast the emergency notice to all customers.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(confirmCtx, false),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: errColor,
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        onPressed: () =>
-                                            Navigator.pop(confirmCtx, true),
-                                        icon: const Icon(
-                                            Icons.warning_amber_rounded,
-                                            size: 18),
-                                        label: const Text('Confirm & Activate'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-
-                                if (confirm != true) return;
-
-                                try {
-                                  final msg = controller.text.trim().isNotEmpty
-                                      ? controller.text.trim()
-                                      : 'Emergency Maintenance - Will be back to you soon';
-                                  await inventory.toggleStoreStatus(true,
-                                      message: msg);
-                                  if (!ctx.mounted) return;
-                                  Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'Emergency Maintenance activated!'),
-                                    ),
-                                  );
-                                } catch (e) {
-                                  if (!ctx.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Error: $e'),
-                                      backgroundColor: errColor,
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close')),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  static Future<void> _saveOverrideHelper(
-    BuildContext context,
-    InventoryProvider inventory,
-    StoreSettings settings,
-    DateTimeRange dateRange,
-    OverrideType type,
-    TimeOfDay customStart,
-    TimeOfDay customEnd,
-    String reasonText,
-    void Function(void Function()) setDialogState,
-  ) async {
-    final startDay = DateTime(
-      dateRange.start.year,
-      dateRange.start.month,
-      dateRange.start.day,
-    );
-    final endDay = DateTime(
-      dateRange.end.year,
-      dateRange.end.month,
-      dateRange.end.day,
-      23,
-      59,
-      59,
-    );
-
-    final newOverride = ScheduleOverride(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      startDate: startDay,
-      endDate: endDay,
-      type: type,
-      startMinutes: type == OverrideType.fullClosure
-          ? null
-          : customStart.hour * 60 + customStart.minute,
-      endMinutes: type == OverrideType.fullClosure
-          ? null
-          : customEnd.hour * 60 + customEnd.minute,
-      reason: reasonText.trim().isEmpty
-          ? (type == OverrideType.fullClosure
-              ? 'Closed All Day'
-              : type == OverrideType.maintenanceWindow
-                  ? 'Scheduled Maintenance'
-                  : 'Special Operating Hours')
-          : reasonText.trim(),
-    );
-
-    final updatedList = List<ScheduleOverride>.from(settings.overrides)
-      ..add(newOverride);
-    await inventory.saveStoreSettings(
-      settings.copyWith(overrides: updatedList),
-    );
-
-    setDialogState(() {});
-
-    if (context.mounted) {
-      final String snackMsg = type == OverrideType.fullClosure
-          ? 'Store closed for selected dates.'
-          : type == OverrideType.customOpenHours
-              ? 'Custom hours saved for selected dates.'
-              : 'Maintenance window scheduled.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(snackMsg)),
-      );
-    }
-  }
-
-  static TimeOfDay _parseTimeOfDay(String? timeStr, TimeOfDay fallback) {
-    if (timeStr == null || !timeStr.contains(':')) return fallback;
-    try {
-      final parts = timeStr.split(':');
-      return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-    } catch (_) {
-      return fallback;
-    }
-  }
-
-  static String _formatTimeOfDay(TimeOfDay time) {
-    final h = time.hour.toString().padLeft(2, '0');
-    final m = time.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  static String _formatTimeOfDayDisplay(TimeOfDay time) {
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    final h12 = time.hour % 12 == 0 ? 12 : time.hour % 12;
-    final mStr = time.minute.toString().padLeft(2, '0');
-    return '$h12:$mStr $period';
   }
 }
 

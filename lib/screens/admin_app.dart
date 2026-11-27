@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -706,6 +708,58 @@ class _AdminTopBar extends StatelessWidget {
             },
           ),
           const SizedBox(width: 8),
+          // Real-Time Admin Notifications Bell (`admin_notifications`)
+          Builder(
+            builder: (context) {
+              final inv = context.watch<InventoryProvider>();
+              final unread = inv.unreadAdminNotificationCount;
+              return Tooltip(
+                message: unread > 0
+                    ? '$unread Unread Inventory Alerts'
+                    : 'Inventory Alerts',
+                child: Material(
+                  color: Colors.transparent,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _showAdminNotificationsSheet(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: unread > 0
+                            ? Colors.amber.shade800.withValues(alpha: 0.12)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: unread > 0
+                              ? Colors.amber.shade800
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Badge.count(
+                        count: unread,
+                        isLabelVisible: unread > 0,
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        child: Icon(
+                          unread > 0
+                              ? Icons.notifications_active_rounded
+                              : Icons.notifications_outlined,
+                          size: isCompact ? 18 : 20,
+                          color: unread > 0
+                              ? Colors.amber.shade900
+                              : Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
           // Dark Mode Toggle Button (Relocated cleanly in top right)
           Tooltip(
             message: context.watch<ThemeProvider>().isDarkMode
@@ -901,5 +955,336 @@ Future<void> _confirmLogout(BuildContext context, AppAuthProvider auth) async {
   );
   if (confirm == true) {
     await auth.logout();
+  }
+}
+
+Future<void> _showAdminNotificationsSheet(BuildContext context) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) {
+      return DraggableScrollableSheet(
+        initialChildSize: 0.72,
+        minChildSize: 0.45,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (ctx, scrollController) {
+          final theme = Theme.of(ctx);
+          final inv = ctx.watch<InventoryProvider>();
+          final notifications = inv.adminNotifications;
+          final unreadCount = inv.unreadAdminNotificationCount;
+
+          return Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 16, 10),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.notifications_active_rounded,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Inventory Alerts',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              unreadCount > 0
+                                  ? '$unreadCount unread notification${unreadCount == 1 ? '' : 's'}'
+                                  : 'All caught up',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (unreadCount > 0)
+                        TextButton.icon(
+                          onPressed: () => inv.markAllAdminNotificationsRead(),
+                          icon: const Icon(Icons.done_all_rounded, size: 16),
+                          label: const Text('Mark all read'),
+                        ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: notifications.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.notifications_none_rounded,
+                                  size: 48,
+                                  color: theme.colorScheme.outline,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No inventory alerts yet',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Store inventory notifications and system alerts appear here automatically.',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          controller: scrollController,
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          itemCount: notifications.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (_, index) {
+                            final item = notifications[index];
+                            final id = (item['id'] ?? '').toString();
+                            final type = (item['type'] ?? '').toString();
+                            final severity =
+                                (item['severity'] ?? 'info').toString();
+                            final title =
+                                (item['title'] ?? 'Inventory Alert').toString();
+                            final message =
+                                (item['message'] ?? item['body'] ?? '')
+                                    .toString();
+                            final isRead = item['isRead'] == true;
+                            final status = (item['status'] ?? '').toString();
+                            final suggestedRestock = item['suggestedRestock'];
+
+                            DateTime? createdAt;
+                            final rawCreated = item['createdAt'];
+                            if (rawCreated is Timestamp) {
+                              createdAt = rawCreated.toDate();
+                            } else if (rawCreated is DateTime) {
+                              createdAt = rawCreated;
+                            } else if (rawCreated is String) {
+                              createdAt = DateTime.tryParse(rawCreated);
+                            }
+
+                            final Color accentColor;
+                            final IconData iconData;
+                            if (type == 'out_of_stock' ||
+                                severity == 'critical') {
+                              accentColor = theme.colorScheme.error;
+                              iconData = Icons.error_outline_rounded;
+                            } else if (type == 'physical_low_stock_alert' ||
+                                severity == 'warning') {
+                              accentColor = Colors.amber.shade800;
+                              iconData = Icons.warning_amber_rounded;
+                            } else if (type == 'daily_resupply_summary') {
+                              accentColor = Colors.teal.shade700;
+                              iconData = Icons.mark_email_read_rounded;
+                            } else {
+                              accentColor = theme.colorScheme.primary;
+                              iconData = Icons.notifications_rounded;
+                            }
+
+                            return Material(
+                              color: isRead
+                                  ? theme.colorScheme.surfaceContainerLowest
+                                  : accentColor.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(14),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () {
+                                  if (!isRead && id.isNotEmpty) {
+                                    inv.markAdminNotificationRead(id);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isRead
+                                          ? theme.colorScheme.outlineVariant
+                                              .withValues(alpha: 0.5)
+                                          : accentColor.withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: accentColor.withValues(
+                                              alpha: 0.14),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          iconData,
+                                          size: 18,
+                                          color: accentColor,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    title,
+                                                    style: theme
+                                                        .textTheme.titleSmall
+                                                        ?.copyWith(
+                                                      fontWeight: isRead
+                                                          ? FontWeight.w600
+                                                          : FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (!isRead)
+                                                  Container(
+                                                    width: 8,
+                                                    height: 8,
+                                                    margin:
+                                                        const EdgeInsets.only(
+                                                            left: 8),
+                                                    decoration: BoxDecoration(
+                                                      color: accentColor,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            if (message.isNotEmpty) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                message,
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                  color: theme.colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                            if (status.isNotEmpty ||
+                                                suggestedRestock != null) ...[
+                                              const SizedBox(height: 8),
+                                              Wrap(
+                                                spacing: 6,
+                                                runSpacing: 6,
+                                                children: [
+                                                  if (status.isNotEmpty)
+                                                    _NotificationMetaChip(
+                                                      label: status,
+                                                      color: accentColor,
+                                                    ),
+                                                  if (suggestedRestock != null)
+                                                    _NotificationMetaChip(
+                                                      label:
+                                                          'Restock: +$suggestedRestock',
+                                                      color:
+                                                          Colors.teal.shade700,
+                                                    ),
+                                                ],
+                                              ),
+                                            ],
+                                            if (createdAt != null) ...[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                DateFormat(
+                                                        'MMM d, yyyy • h:mm a')
+                                                    .format(createdAt),
+                                                style: theme
+                                                    .textTheme.labelSmall
+                                                    ?.copyWith(
+                                                  color:
+                                                      theme.colorScheme.outline,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _NotificationMetaChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _NotificationMetaChip({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
   }
 }

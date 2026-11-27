@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/format.dart';
+import '../utils/inventory_allocation.dart';
 import '../utils/pricing_engine.dart';
 import 'batch.dart';
 export 'batch.dart';
@@ -20,6 +21,10 @@ class ProductVariant {
   final int? initialStock;
   final String? barcode;
 
+  /// Fixed 25% physical-only walk-in reserve calculated on restock/stock-in.
+  /// Online orders can never dip into this reserve; POS can sell down to 0.
+  final int? physicalReserve;
+
   const ProductVariant({
     required this.id,
     required this.name,
@@ -29,30 +34,73 @@ class ProductVariant {
     this.reservedStock = 0,
     this.initialStock,
     this.barcode,
+    this.physicalReserve,
   });
 
   /// Non-negative reserved quantity for pending pre-orders (guards against legacy negative drift).
   int get effectiveReservedStock => reservedStock > 0 ? reservedStock : 0;
 
-  int get availableStock {
-    final safeStock = stock > 0 ? stock : 0;
-    final avail = safeStock - effectiveReservedStock;
-    return avail > 0 ? avail : 0;
-  }
+  /// Total unreserved physical stock available to the walk-in POS (100% of physical stock).
+  int get availableStock => InventoryAllocation.calculatePosAvailable(
+        totalStock: stock,
+        reservedStock: effectiveReservedStock,
+      );
+
+  /// Resolved 25% walk-in physical reserve (falls back to `(stock * 0.25).ceil()` for legacy docs).
+  int get effectivePhysicalReserve =>
+      InventoryAllocation.resolvePhysicalReserve(
+        totalStock: stock > 0 ? stock : 0,
+        storedPhysicalReserve: physicalReserve,
+      );
 
   int get effectiveInitialStock =>
       (initialStock != null && initialStock! > 0) ? initialStock! : stock;
 
-  bool get isOutOfStockForCustomer =>
-      availableStock <= 0 ||
-      availableStock <= (effectiveInitialStock * 0.15).ceil();
-
-  int get maxPurchasableStock {
-    if (availableStock <= 0) return 0;
-    final buffer = (effectiveInitialStock * 0.15).ceil();
-    final available = availableStock - buffer;
-    return available > 0 ? available : 0;
+  /// Original stock baseline for the current restock cycle.
+  int get effectiveBaselineStock {
+    final safeStock = stock > 0 ? stock : 0;
+    final init = effectiveInitialStock;
+    return init >= safeStock ? init : safeStock;
   }
+
+  /// Alias for [effectiveBaselineStock] representing original stock of this restock cycle.
+  int get effectiveOriginalStock => effectiveBaselineStock;
+
+  /// Automatic 30% low-stock alert quantity derived from [effectiveOriginalStock].
+  int get lowStockAlertThreshold =>
+      InventoryAllocation.calculateLowStockTrigger(effectiveOriginalStock);
+
+  /// Computed low-stock threshold (30% of original stock; replaces manual limit).
+  int get lowStockThreshold => lowStockAlertThreshold;
+
+  /// True when Physical Store stock has reached or fallen below 30% of original stock.
+  bool get isPhysicalThresholdHit => InventoryAllocation.isLowStockAt30Percent(
+        physicalStock: availableStock,
+        originalStock: effectiveOriginalStock,
+      );
+
+  /// True when variant still has physical stock (> 0) and is at or below 30% of original stock.
+  bool get isLowStock => stock > 0 && isPhysicalThresholdHit;
+
+  /// Dynamically calculated online available stock (`max(0, availableStock - physicalReserve)`).
+  int get onlineAvailableStock => InventoryAllocation.calculateOnlineAvailable(
+        totalStock: stock,
+        physicalReserve: effectivePhysicalReserve,
+        reservedStock: effectiveReservedStock,
+      );
+
+  bool get isOnlineOutOfStock => onlineAvailableStock <= 0;
+
+  bool get isOutOfStockForCustomer => onlineAvailableStock <= 0;
+
+  int get maxPurchasableStock => onlineAvailableStock;
+
+  /// Calculates recommended restock quantity to replenish back to [effectiveOriginalStock].
+  int calculateSuggestedRestock() =>
+      InventoryAllocation.calculateSuggestedResupplyQty(
+        availableStock: availableStock,
+        originalStock: effectiveOriginalStock,
+      );
 
   factory ProductVariant.fromMap(dynamic m) {
     if (m is! Map) {
@@ -60,6 +108,9 @@ class ProductVariant {
           id: '', name: 'Invalid Variant', price: 0, stock: 0);
     }
     final data = Map<String, dynamic>.from(m);
+    final int? parsedReserve =
+        int.tryParse(data['physicalReserve']?.toString() ?? '');
+
     return ProductVariant(
       id: data['id']?.toString() ?? '',
       name: data['name']?.toString() ?? 'Unnamed Variant',
@@ -70,6 +121,8 @@ class ProductVariant {
           int.tryParse(data['reservedStock']?.toString() ?? '0') ?? 0,
       initialStock: int.tryParse(data['initialStock']?.toString() ?? ''),
       barcode: data['barcode']?.toString(),
+      physicalReserve:
+          parsedReserve != null && parsedReserve >= 0 ? parsedReserve : null,
     );
   }
 
@@ -81,6 +134,7 @@ class ProductVariant {
         'stock': stock,
         'reservedStock': reservedStock,
         'initialStock': initialStock ?? stock,
+        'physicalReserve': effectivePhysicalReserve,
         'barcode': barcode,
       };
 
@@ -92,6 +146,7 @@ class ProductVariant {
     int? reservedStock,
     int? initialStock,
     String? barcode,
+    int? physicalReserve,
   }) =>
       ProductVariant(
         id: id,
@@ -102,6 +157,7 @@ class ProductVariant {
         reservedStock: reservedStock ?? this.reservedStock,
         initialStock: initialStock ?? this.initialStock,
         barcode: barcode ?? this.barcode,
+        physicalReserve: physicalReserve ?? this.physicalReserve,
       );
 }
 
@@ -141,6 +197,11 @@ class Product {
   /// Active markup percentage applied to the current active FIFO batch `unitCost`.
   final double computedMarkupPercent;
 
+  // ── FIXED 100% POS / 75% ONLINE (25% PHYSICAL-ONLY RESERVE) ──
+  /// Walk-in physical-only reserve calculated as `(totalStock * 0.25).ceil()` on restock.
+  /// Online orders can never dip into this reserve; POS sells down to 0.
+  final int? physicalReserve;
+
   final String? barcode;
   final int? shelfDays;
   final int? pickupWindowHours;
@@ -151,7 +212,6 @@ class Product {
   final DateTime? expiryDate;
 
   final ProductStatus status;
-  final int lowStockThreshold;
   final bool isTaxable;
 
   final List<ProductVariant> variants;
@@ -177,6 +237,7 @@ class Product {
     this.manualMarkupPercent,
     this.salesVelocityScore = 0.5,
     this.computedMarkupPercent = 20.0,
+    this.physicalReserve,
     this.barcode,
     this.shelfDays,
     this.pickupWindowHours,
@@ -186,7 +247,6 @@ class Product {
     this.supplierId,
     this.expiryDate,
     this.status = ProductStatus.published,
-    this.lowStockThreshold = 5,
     this.isTaxable = true,
     this.variants = const [],
     this.batches = const [],
@@ -326,33 +386,115 @@ class Product {
   int get effectiveInitialStock =>
       (initialStock != null && initialStock! > 0) ? initialStock! : totalStock;
 
-  bool get isOutOfStockForCustomer {
+  /// Baseline stock capacity for restock estimation.
+  int get effectiveBaselineStock {
     if (hasVariants) {
-      if (variants.isEmpty) return totalAvailableStock <= 0;
-      return variants.every((v) => v.isOutOfStockForCustomer);
-    } else {
-      if (availableStock <= 0) return true;
-      final buffer = (effectiveInitialStock * 0.15).ceil();
-      return availableStock <= buffer;
+      return variants.fold(0, (acc, v) => acc + v.effectiveBaselineStock);
     }
+    int baseline = totalStock;
+    if (initialStock != null && initialStock! > baseline) {
+      baseline = initialStock!;
+    }
+    if (batches.isNotEmpty) {
+      final activeBatchInit = batches.where((b) => b.isSellable).fold<int>(
+          0, (acc, b) => acc + (b.initialQty > 0 ? b.initialQty : 0));
+      if (activeBatchInit > baseline) {
+        baseline = activeBatchInit;
+      }
+    }
+    return baseline;
   }
+
+  // ── FIXED 100% POS / 75% ONLINE (25% PHYSICAL-ONLY RESERVE) & 30% LOW-STOCK ALERT GETTERS ──
+
+  /// Original stock baseline for the current restock cycle.
+  int get effectiveOriginalStock {
+    if (hasVariants) {
+      return variants.fold(0, (acc, v) => acc + v.effectiveOriginalStock);
+    }
+    return effectiveBaselineStock;
+  }
+
+  /// Automatic 30% low-stock alert quantity (`ceil(effectiveOriginalStock * 0.30)`).
+  int get lowStockAlertThreshold {
+    if (hasVariants) {
+      return variants.fold(0, (acc, v) => acc + v.lowStockAlertThreshold);
+    }
+    return InventoryAllocation.calculateLowStockTrigger(effectiveOriginalStock);
+  }
+
+  /// Computed low-stock threshold (30% of original stock; replaces manual limit).
+  int get lowStockThreshold => lowStockAlertThreshold;
+
+  /// True when active physical stock is > 0 and at or below 30% of original stock.
+  bool get isLowStock {
+    if (hasVariants) {
+      return variants.any((v) => v.isLowStock);
+    }
+    return totalStock > 0 && isPhysicalThresholdHit;
+  }
+
+  /// True when 100% physical store stock has reached or fallen below 30% of original stock
+  /// (for this product or any of its variants), triggering an immediate Inventory Alert
+  /// and queueing it for the Store-Closing Resupply Summary Email.
+  bool get isPhysicalThresholdHit {
+    if (hasVariants) {
+      return variants.any((v) => v.isPhysicalThresholdHit);
+    }
+    return InventoryAllocation.isLowStockAt30Percent(
+      physicalStock: availableStock,
+      originalStock: effectiveOriginalStock,
+    );
+  }
+
+  /// Resolved 25% walk-in physical-only reserve (summed across variants if variant product,
+  /// or falling back to `(sellableStock * 0.25).ceil()` for legacy docs).
+  int get effectivePhysicalReserve {
+    if (hasVariants) {
+      return variants.fold(0, (acc, v) => acc + v.effectivePhysicalReserve);
+    }
+    return InventoryAllocation.resolvePhysicalReserve(
+      totalStock: sellableStock,
+      storedPhysicalReserve: physicalReserve,
+    );
+  }
+
+  /// Dynamically calculated online available stock (`max(0, availableStock - physicalReserve)`).
+  int get onlineAvailableStock {
+    if (hasVariants) {
+      return variants.fold(0, (acc, v) => acc + v.onlineAvailableStock);
+    }
+    return InventoryAllocation.calculateOnlineAvailable(
+      totalStock: sellableStock,
+      physicalReserve: effectivePhysicalReserve,
+      reservedStock: effectiveReservedStock,
+    );
+  }
+
+  bool get isOnlineOutOfStock {
+    if (hasVariants) {
+      return variants.isEmpty
+          ? onlineAvailableStock <= 0
+          : variants.every((v) => v.isOnlineOutOfStock);
+    }
+    return onlineAvailableStock <= 0;
+  }
+
+  bool get isOutOfStockForCustomer => isOnlineOutOfStock;
 
   int get maxPurchasableStock {
     if (hasVariants) {
       return variants.fold(0, (acc, v) => acc + v.maxPurchasableStock);
-    } else {
-      if (availableStock <= 0) return 0;
-      final buffer = (effectiveInitialStock * 0.15).ceil();
-      final available = availableStock - buffer;
-      return available > 0 ? available : 0;
     }
+    return onlineAvailableStock;
   }
 
-  /// Calculates how many items should be ordered to restock (`(lowStockThreshold * 3) - totalStock`).
-  int calculateSuggestedRestock() {
-    int suggested = (lowStockThreshold * 3) - totalStock;
-    return suggested > 0 ? suggested : lowStockThreshold;
-  }
+  /// Calculates recommended restock quantity to replenish back to [effectiveOriginalStock].
+  int calculateSuggestedRestock() =>
+      InventoryAllocation.calculateSuggestedResupplyQty(
+        availableStock: totalAvailableStock,
+        originalStock: effectiveOriginalStock,
+      );
 
   /// Returns authoritative sellable stock (derived from active non-expired FIFO batches
   /// for standard products, or sum of variant stocks for variant products).
@@ -394,6 +536,8 @@ class Product {
 
     final double? parsedComputedMarkup =
         double.tryParse(d['computedMarkupPercent']?.toString() ?? '');
+    final int? parsedPhysicalReserve =
+        int.tryParse(d['physicalReserve']?.toString() ?? '');
 
     final baseProduct = Product(
       id: id,
@@ -418,6 +562,10 @@ class Product {
           (parsedComputedMarkup != null && parsedComputedMarkup.isFinite)
               ? parsedComputedMarkup
               : 0.0,
+      physicalReserve:
+          parsedPhysicalReserve != null && parsedPhysicalReserve >= 0
+              ? parsedPhysicalReserve
+              : null,
       barcode: d['barcode']?.toString(),
       shelfDays: int.tryParse(d['shelfDays']?.toString() ?? ''),
       pickupWindowHours: int.tryParse(d['pickupWindowHours']?.toString() ?? ''),
@@ -433,8 +581,6 @@ class Product {
         (e) => e.name == (d['status'] ?? 'published'),
         orElse: () => ProductStatus.published,
       ),
-      lowStockThreshold:
-          (int.tryParse(d['lowStockThreshold']?.toString() ?? '5') ?? 5),
       isTaxable: d['isTaxable'] ?? true,
       variants: (d['variants'] is Map)
           ? (d['variants'] as Map).entries.map((entry) {
@@ -509,6 +655,7 @@ class Product {
         'manualMarkupPercent': manualMarkupPercent,
         'salesVelocityScore': salesVelocityScore,
         'computedMarkupPercent': computedMarkupPercent,
+        'physicalReserve': effectivePhysicalReserve,
         'barcode': barcode,
         'shelfDays': shelfDays,
         'pickupWindowHours': pickupWindowHours,
@@ -519,7 +666,6 @@ class Product {
         'expiryDate':
             expiryDate != null ? Timestamp.fromDate(expiryDate!) : null,
         'status': status.name,
-        'lowStockThreshold': lowStockThreshold,
         'isTaxable': isTaxable,
         'variants': {for (var v in variants) v.id: v.toMap()},
         'batches': {for (var b in batches) b.id: b.toMap()},
@@ -546,6 +692,7 @@ class Product {
     bool clearManualMarkupPercent = false,
     double? salesVelocityScore,
     double? computedMarkupPercent,
+    int? physicalReserve,
     String? barcode,
     String? photoBase64,
     int? pickupWindowHours,
@@ -554,7 +701,6 @@ class Product {
     String? supplierId,
     DateTime? expiryDate,
     ProductStatus? status,
-    int? lowStockThreshold,
     bool? isTaxable,
     List<ProductVariant>? variants,
     List<ProductBatch>? batches,
@@ -581,6 +727,7 @@ class Product {
         salesVelocityScore: salesVelocityScore ?? this.salesVelocityScore,
         computedMarkupPercent:
             computedMarkupPercent ?? this.computedMarkupPercent,
+        physicalReserve: physicalReserve ?? this.physicalReserve,
         barcode: barcode ?? this.barcode,
         shelfDays: shelfDays,
         pickupWindowHours: pickupWindowHours ?? this.pickupWindowHours,
@@ -590,7 +737,6 @@ class Product {
         supplierId: supplierId ?? this.supplierId,
         expiryDate: expiryDate ?? this.expiryDate,
         status: status ?? this.status,
-        lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
         isTaxable: isTaxable ?? this.isTaxable,
         variants: variants ?? this.variants,
         batches: batches ?? this.batches,

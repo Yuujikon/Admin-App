@@ -1,34 +1,174 @@
 rules_version = '2';
 
-// =============================================================================
-// FIRESTORE SECURITY RULES - GDC SARI-SARI STORE (CUSTOMER & ADMIN POS APPS)
-// =============================================================================
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
 //
-// Assumed Core Data Structures & Access Model:
-//  - products/{id}             : Public read; Staff manage; Customers update reserved stock at checkout.
-//  - catalog/{id}              : Master barcode catalog. Public read; Staff write.
-//  - bundles/{id}              : Product promotional bundles. Public read; Staff write.
-//  - watched_products/{id}     : User product restock watches. Auth read/write scoped to owner.
-//  - users/{userId}            : User profiles. Owner & Staff read; Owner update (blocked sensitive fields); Staff write.
-//  - users/{userId}/notif/{id} : User FCM notifications. Owner & Staff read/write.
-//  - orders/{orderId}          : Pre-orders. Customer read/create (if not ghosting restricted)/cancel; Staff manage.
-//  - transactions/{txId}       : POS & Customer receipts. Cashier, customer, & staff read; Staff create.
-//  - shifts/{shiftId}          : Cashier POS register shifts. Staff read/create/update; Admin delete.
-//  - settings/{settingId}      : Store config (e.g. store_settings). Public read; Staff write.
-//  - system_config/time_sim    : Dev time simulation offset. Auth read; Staff write.
-//  - supplier & inventory      : rfqs, purchase_orders, receiving_records, inventory_batches,
-//                                delivery_logs, loss_records, expenses, suppliers, refund_records.
-//                                Staff-only access (read & write).
-//  - restock_inquiries/{id}    : Auth customer create/read own; Staff manage.
-//  - customers/{customerId}    : Staff customer loyalty/profiles. Owner & Staff read; Owner update (blocked sensitive fields); Staff create/delete.
-//  - stock_audits/{auditId}    : Inventory physical stock count audits. Staff read/write.
-//  - audit_logs/{logId}        : Security & operational log trail. Staff read; Auth create; Immutable.
-//  - refund_requests/{id}      : Customer refund claims. Customer read/create own/cancel; Staff manage.
-//  - appeals/{appealId}        : Ghosting restriction appeals. Customer read/create own; Staff manage.
-//  - mail/{mailId}             : Firebase Email Trigger Queue. Auth create; Admin manage.
-//  - otp_requests/{contact}    : Sign-up OTP verification. Public get (single doc); List disabled; Auth create/update/delete.
+// This security rules file is shared by BOTH the GDC Sari-Sari Store
+// Admin POS App (`gdc_sari_sari_admin`) and Customer App
+// (`gdc_sari_sari_customer`) against Firebase project
+// `gdc-sari-sari-store-d5f06`.
 //
-// =============================================================================
+// Collection: products
+// Document ID: productId (auto-ID or custom SKU ID)
+// Fields:
+//   - name: string (required on staff write)
+//   - price, costPrice: number (>= 0)
+//   - stock, reservedStock: number (>= 0, nullable on legacy docs)
+//   - variants: map (optional)
+//   - notifyUserIds: list<string> (optional, max 5000)
+//   - updatedAt: timestamp (optional)
+// Access: Public read (storefront catalog); Staff create/update/delete;
+//   Authenticated customers may only update reservation/watch fields
+//   (`reservedStock`, `variants`, `notifyUserIds`, `updatedAt`).
+//
+// Subcollection: products/{productId}/batches/{batchId}
+//   (also queried via collectionGroup `batches`)
+// Document ID: batchId
+// Fields:
+//   - batchId: string (required, == docId, 1..100 chars, immutable)
+//   - productId: string (required, == parent productId, immutable)
+//   - productName, supplierId, supplierName, poId, poNumber, invoiceNumber:
+//       optional nullable strings (bounded lengths)
+//   - datePurchased, dateArrived: timestamp (required)
+//   - expiryDate: optional nullable timestamp
+//   - costPrice: number (required, >= 0)
+//   - initialQty, remainingQty: int (required, >= 0)
+//   - status: string (required, in ['ACTIVE', 'DEPLETED', 'EXPIRED', 'ARCHIVED'])
+// Access: Staff read/create/update; Admin delete.
+//
+// Collection: catalog, bundles
+// Access: Public read; Staff write.
+//
+// Collection: watched_products
+// Document ID: `{productId}_{sanitizedEmail}`
+// Fields:
+//   - productId: string (required, 1..128)
+//   - email: string (required, 1..254)
+//   - userId: string (optional, <= 128)
+//   - createdAt: timestamp (optional)
+// Access: Owner (by userId or auth token email) & Staff.
+//
+// Collection: users
+// Document ID: Firebase Auth UID
+// Fields:
+//   - email, name, displayName, fullName, googleDisplayName, phoneNumber,
+//     pin, role, requestedRole, status, authMethod, totpSecret, fcmToken,
+//     photoBase64, appealStatus, appealMessage, notes: optional bounded strings
+//   - favorites: optional list (<= 500)
+//   - recoveryCodes: optional list (<= 20)
+//   - isDisabled, isCustomer, isAdmin, isSuperAdmin, isPermanentlyLocked,
+//     hasEnteredFullName, requiresNameSetup, totpLinked, totpEnabled: optional bools
+//   - offenseCount: optional number (>= 0)
+//   - restrictedUntil, restrictionUntil, createdAt, updatedAt: optional timestamps
+// Access: Owner & Staff read (strict PII protection, no cross-user read);
+//   Self-create allowed ONLY with unprivileged role (`customer` or `none`);
+//   Self-update blocks role/privilege/offense/restriction tampering;
+//   Only Admin may assign `admin` role or delete users.
+//
+// Subcollection: users/{userId}/notifications/{notificationId}
+// Fields:
+//   - title: string (required, <= 200)
+//   - body: string (required, <= 1000)
+//   - isRead: bool (required)
+//   - type: optional string (<= 64)
+//   - relatedId: optional nullable string (<= 128)
+//   - timestamp: optional timestamp
+// Access: Owner & Staff read/write.
+//
+// Collection: orders
+// Document ID: orderId (UUID)
+// Fields:
+//   - orderId: string (required, 1..64, immutable)
+//   - customerId: string (optional/nullable, <= 128, immutable)
+//   - customerName: string (required, <= 200)
+//   - customerEmail: string (required, <= 254, immutable)
+//   - customerPhone: optional nullable string (<= 30)
+//   - items: list (required, 1..200)
+//   - total: number (required, >= 0)
+//   - subtotal, tax: optional numbers (>= 0)
+//   - status: string (required, allowed OrderStatus enum)
+//   - expiresAt: optional nullable timestamp
+//   - isExtended, isSeniorPWD: optional bools
+//   - paymentMethod, paymentReference, location, pickupTime,
+//     notes, pickupNotes, customerNotes, rejectionReason: optional bounded strings
+// Access: Owner (by customerId or token email) & Staff read;
+//   Customer create allowed only if not restricted and status == 'pending';
+//   Customer update strictly limited to cancel, request refund, cancel pending
+//   refund (revert to collected), or one-time pickup extension;
+//   Staff full update; Admin delete.
+//
+// Collection: refund_requests
+// Document ID: auto-ID
+// Fields:
+//   - transactionId: string (required, 1..128)
+//   - orderId, customerId: optional nullable strings (<= 128)
+//   - customerEmail: string (required, <= 254)
+//   - customerName: optional nullable string (<= 200)
+//   - items: list (required, <= 200)
+//   - total: number (required, >= 0)
+//   - reason: string (required, <= 1000)
+//   - status: string (required, in ['pending', 'approved', 'rejected', 'cancelled'])
+//   - condition: optional nullable string in ['restockable', 'good', 'expired', 'damaged']
+// Access: Owner & Staff read; Customer create (status == 'pending');
+//   Customer cancel/delete own pending request; Staff update; Admin delete.
+//
+// Collection: appeals
+// Document ID: auto-ID
+// Fields:
+//   - userId: string (required, 1..128, immutable)
+//   - customerEmail: string (required, <= 254)
+//   - customerName: optional nullable string (<= 200)
+//   - reason: string (required, 1..2000)
+//   - offenseCount: optional number (>= 0)
+//   - status: string (required, in ['pending', 'approved', 'rejected'])
+// Access: Owner & Staff read; Customer create (status == 'pending');
+//   Staff update; Admin delete.
+//
+// Collection: transactions
+// Fields: total (>= 0), items (list <= 500), isRefunded (optional bool)
+// Access: Staff read/create/update; Owner/Cashier read own; Admin delete.
+//
+// Collection: shifts
+// Access: Staff read/create/update; Admin delete.
+//
+// Collection: settings, store_settings
+// Access: Public read; Staff write.
+//
+// Collection: system_config/time_simulation
+// Fields: offsetMinutes (int), updatedAt (optional timestamp)
+// Access: Public read (pre-login sync); Staff write.
+//
+// Staff-only operational collections:
+//   rfqs, purchase_orders, receiving_records, inventory_batches,
+//   delivery_logs, loss_records, expenses, suppliers, refund_records,
+//   stock_audits, admin_notifications
+//
+// Collection: restock_inquiries
+// Access: Staff read/write; Customer read/create/update own.
+//
+// Collection: customers
+// Access: Owner & Staff read; Staff create/delete; Owner update (non-sensitive fields).
+//
+// Collection: audit_logs
+// Access: Staff read; Authenticated create (actorId == uid); Immutable (no update/delete).
+//
+// Collection: mail
+// Access: Authenticated create; Admin read/update/delete.
+//
+// Collection: otp_requests
+// Document ID: sanitized email or phone
+// Fields: code (6-char string), expiresAt (timestamp), attempts (int 0..10),
+//   createdAt, isEmail, contactMethod
+// Access: Public single-doc get/create/update/delete for unauthenticated OTP
+//   verification; list strictly denied.
+//
+// Collection: admin_notifications
+// Fields: title (<= 200), body (<= 1000), message (<= 1000), type (<= 64),
+//   relatedId (<= 128), isRead (bool), createdAt (timestamp)
+// Access: Staff read/create/update/delete.
+//
+// ===============================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -37,21 +177,69 @@ service cloud.firestore {
     // 1. HELPER FUNCTIONS
     // ─────────────────────────────────────────────────────────────────────────
 
-    function isSignedIn() {
+    function isAuthenticated() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isOptionalNullableString(data, field, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptionalNullableNumber(data, field, minVal) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is number && data[field] >= minVal);
+    }
+
+    function isOptionalNullableBool(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is bool;
+    }
+
+    function isOptionalNullableTimestamp(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is timestamp;
+    }
+
+    function getUserData() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data : {};
+    }
+
+    function isActiveStaffDoc() {
+      let data = getUserData();
+      return data.get('isDisabled', false) != true &&
+        data.get('status', 'approved') != 'denied' &&
+        data.get('status', 'approved') != 'pending';
     }
 
     function hasTokenRole(role) {
-      return isSignedIn() &&
+      return isAuthenticated() &&
         ('role' in request.auth.token && request.auth.token.role == role);
     }
 
     function isSuperAdmin() {
-      return isSignedIn() && (
+      return isAuthenticated() && (
         request.auth.token.get('admin', false) == true ||
         (
           request.auth.token.get('email', '') == 'markjeo.hinampas@gmail.com' &&
@@ -61,13 +249,15 @@ service cloud.firestore {
     }
 
     function getStaffRole() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'customer')
+      return isActiveStaffDoc()
+        ? getUserData().get('role', 'customer')
         : 'customer';
     }
 
     function isAdmin() {
-      return isSuperAdmin() || hasTokenRole('admin') || (isSignedIn() && getStaffRole() == 'admin');
+      return isSuperAdmin() ||
+        hasTokenRole('admin') ||
+        (isAuthenticated() && getStaffRole() == 'admin');
     }
 
     function isStaff() {
@@ -75,89 +265,74 @@ service cloud.firestore {
         hasTokenRole('trustedPartner') ||
         hasTokenRole('cashier') ||
         hasTokenRole('inventoryManager') ||
-        (isSignedIn() && getStaffRole() in ['trustedPartner', 'cashier', 'inventoryManager']);
-    }
-
-    // Check if customer is attempting to reserve/release stock during pre-order checkout or cancellation
-    function isCustomerReservationUpdate() {
-      let affected = request.resource.data.diff(resource.data).affectedKeys();
-      return isSignedIn() &&
-        affected.hasOnly(['stock', 'reservedStock', 'variants', 'notifyUserIds', 'updatedAt']) &&
-        request.resource.data.get('stock', 0) >= 0 &&
-        request.resource.data.get('reservedStock', 0) >= 0 &&
-        request.resource.data.get('price', 0) == resource.data.get('price', 0) &&
-        request.resource.data.get('name', '') == resource.data.get('name', '') &&
-        request.resource.data.get('costPrice', 0) == resource.data.get('costPrice', 0);
+        (isAuthenticated() &&
+          getStaffRole() in ['trustedPartner', 'cashier', 'inventoryManager']);
     }
 
     // Check if customer is restricted/locked from placing new pre-orders due to ghosting offenses
     function isCustomerRestricted() {
-      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      let userExists = exists(userPath);
-      let userDoc = userExists ? get(userPath).data : {};
+      let userDoc = getUserData();
       let isLocked = userDoc.get('isPermanentlyLocked', false) == true;
       let restrictedUntil = userDoc.get('restrictedUntil', null);
-      return isLocked || (restrictedUntil != null && request.time < restrictedUntil);
+      let restrictionUntil = userDoc.get('restrictionUntil', null);
+      return isLocked ||
+        (restrictedUntil is timestamp && request.time < restrictedUntil) ||
+        (restrictionUntil is timestamp && request.time < restrictionUntil);
     }
 
-    // Prevent customers from modifying sensitive identity, role & restriction fields on their user doc
-    function isNotTamperingSensitiveFields() {
+    // Ownership helper for orders and refund requests (supports both UID and auth token email)
+    function isCustomerRecordOwner(data) {
+      return isAuthenticated() && (
+        ('customerId' in data && data.customerId == request.auth.uid) ||
+        (
+          'email' in request.auth.token &&
+          'customerEmail' in data &&
+          data.customerEmail == request.auth.token.email
+        )
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2. DOMAIN VALIDATORS (USED ON BOTH CREATE AND UPDATE)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Validate customer reservation/watch update on products/{productId}
+    function isCustomerReservationUpdate() {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
-      return !affected.hasAny([
-        'role',
-        'isAdmin',
-        'isSuperAdmin',
-        'offenseCount',
-        'restrictedUntil',
-        'isPermanentlyLocked',
-        'offenseHistory',
-        'ghostedOrders'
-      ]);
-    }
-
-    // Enforce default non-privileged role and lock flags when a customer creates their user document
-    function isValidUserCreation(userId) {
-      return isOwner(userId) &&
-        request.resource.data.get('role', 'customer') == 'customer' &&
-        request.resource.data.get('isAdmin', false) == false &&
-        request.resource.data.get('isPermanentlyLocked', false) == false &&
-        !('restrictedUntil' in request.resource.data);
-    }
-
-    // Prevent customers from tampering with loyalty spend, offenses, notes, or staff-managed metrics
-    function isNotTamperingCustomerFields() {
-      let affected = request.resource.data.diff(resource.data).affectedKeys();
-      return !affected.hasAny([
-        'totalSpent',
-        'offenseCount',
-        'restrictedUntil',
-        'isPermanentlyLocked',
-        'offenseHistory',
-        'appealStatus',
-        'notes',
-        'createdAt'
-      ]);
+      let nextStock = request.resource.data.get('stock', 0);
+      let nextReserved = request.resource.data.get('reservedStock', 0);
+      return isAuthenticated() &&
+        affected.hasOnly(['reservedStock', 'variants', 'notifyUserIds', 'updatedAt']) &&
+        (nextStock == null || (nextStock is number && nextStock >= 0)) &&
+        (nextReserved == null || (nextReserved is number && nextReserved >= 0)) &&
+        (!('notifyUserIds' in request.resource.data) ||
+          request.resource.data.notifyUserIds == null ||
+          (request.resource.data.notifyUserIds is list &&
+            request.resource.data.notifyUserIds.size() <= 5000)) &&
+        (!('variants' in request.resource.data) ||
+          request.resource.data.variants == null ||
+          request.resource.data.variants is map);
     }
 
     // Validate product FIFO batch subcollection document schema (products/{productId}/batches/{batchId})
     function isValidProductBatch(productId, batchId) {
       let data = request.resource.data;
-      return data.keys().hasAll([
+      return hasRequiredFields(data, [
           'batchId', 'productId', 'datePurchased', 'dateArrived',
           'costPrice', 'initialQty', 'remainingQty', 'status'
         ]) &&
         data.batchId is string && data.batchId.size() > 0 && data.batchId.size() <= 100 &&
         data.batchId == batchId &&
         data.productId is string && data.productId == productId &&
-        (!('productName' in data) || data.productName == null || (data.productName is string && data.productName.size() <= 200)) &&
-        (!('supplierId' in data) || data.supplierId == null || (data.supplierId is string && data.supplierId.size() <= 128)) &&
-        (!('supplierName' in data) || data.supplierName == null || (data.supplierName is string && data.supplierName.size() <= 200)) &&
-        (!('poId' in data) || data.poId == null || (data.poId is string && data.poId.size() <= 128)) &&
-        (!('poNumber' in data) || data.poNumber == null || (data.poNumber is string && data.poNumber.size() <= 100)) &&
-        (!('invoiceNumber' in data) || data.invoiceNumber == null || (data.invoiceNumber is string && data.invoiceNumber.size() <= 120)) &&
+        isOptionalNullableString(data, 'productName', 200) &&
+        isOptionalNullableString(data, 'supplierId', 128) &&
+        isOptionalNullableString(data, 'supplierName', 200) &&
+        isOptionalNullableString(data, 'poId', 128) &&
+        isOptionalNullableString(data, 'poNumber', 100) &&
+        isOptionalNullableString(data, 'invoiceNumber', 120) &&
         data.datePurchased is timestamp &&
         data.dateArrived is timestamp &&
-        (!('expiryDate' in data) || data.expiryDate == null || data.expiryDate is timestamp) &&
+        isOptionalNullableTimestamp(data, 'expiryDate') &&
         data.costPrice is number && data.costPrice >= 0 &&
         data.initialQty is int && data.initialQty >= 0 &&
         data.remainingQty is int && data.remainingQty >= 0 &&
@@ -168,9 +343,337 @@ service cloud.firestore {
          data.status == 'ARCHIVED');
     }
 
+    // Validate user profile document schema on create and update
+    function isValidUserDoc(data) {
+      return isOptionalNullableString(data, 'email', 254) &&
+        isOptionalNullableString(data, 'name', 200) &&
+        isOptionalNullableString(data, 'displayName', 200) &&
+        isOptionalNullableString(data, 'fullName', 200) &&
+        isOptionalNullableString(data, 'googleDisplayName', 200) &&
+        isOptionalNullableString(data, 'phoneNumber', 30) &&
+        isOptionalNullableString(data, 'pin', 20) &&
+        isOptionalNullableString(data, 'requestedRole', 50) &&
+        isOptionalNullableString(data, 'authMethod', 40) &&
+        isOptionalNullableString(data, 'totpSecret', 128) &&
+        isOptionalNullableString(data, 'fcmToken', 512) &&
+        isOptionalNullableString(data, 'photoBase64', 900000) &&
+        isOptionalNullableString(data, 'appealStatus', 32) &&
+        isOptionalNullableString(data, 'appealMessage', 2000) &&
+        isOptionalNullableString(data, 'notes', 2000) &&
+        (!('role' in data) || data.role == null ||
+          data.role in ['customer', 'none', 'disabled', 'admin', 'trustedPartner', 'cashier', 'inventoryManager']) &&
+        (!('status' in data) || data.status == null ||
+          data.status in ['pending', 'approved', 'denied', 'active', 'disabled', 'none']) &&
+        isOptionalNullableBool(data, 'isDisabled') &&
+        isOptionalNullableBool(data, 'isCustomer') &&
+        isOptionalNullableBool(data, 'isAdmin') &&
+        isOptionalNullableBool(data, 'isSuperAdmin') &&
+        isOptionalNullableBool(data, 'isPermanentlyLocked') &&
+        isOptionalNullableBool(data, 'hasEnteredFullName') &&
+        isOptionalNullableBool(data, 'requiresNameSetup') &&
+        isOptionalNullableBool(data, 'totpLinked') &&
+        isOptionalNullableBool(data, 'totpEnabled') &&
+        isOptionalNullableNumber(data, 'offenseCount', 0) &&
+        (!('favorites' in data) || data.favorites == null ||
+          (data.favorites is list && data.favorites.size() <= 500)) &&
+        (!('recoveryCodes' in data) || data.recoveryCodes == null ||
+          (data.recoveryCodes is list && data.recoveryCodes.size() <= 20));
+    }
+
+    // Enforce unprivileged defaults when a customer or pending employee creates their own user document
+    function isValidUserCreation(userId) {
+      let data = request.resource.data;
+      return isOwner(userId) &&
+        isValidUserDoc(data) &&
+        data.get('role', 'customer') in ['customer', 'none'] &&
+        data.get('isAdmin', false) == false &&
+        data.get('isSuperAdmin', false) == false &&
+        data.get('isDisabled', false) == false &&
+        data.get('isPermanentlyLocked', false) == false &&
+        data.get('offenseCount', 0) == 0 &&
+        !('restrictedUntil' in data) &&
+        !('restrictionUntil' in data) &&
+        (!('status' in data) || data.status in ['pending', 'active', 'none']);
+    }
+
+    // Prevent non-staff users from modifying sensitive role, approval, or offense fields on their user doc
+    function isNotTamperingSensitiveFields() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let statusOk = !affected.hasAny(['status']) || (
+        !('status' in resource.data) &&
+        resource.data.get('role', 'none') == 'none' &&
+        request.resource.data.status == 'pending'
+      );
+      let createdAtOk = !affected.hasAny(['createdAt']) || !('createdAt' in resource.data);
+      return statusOk &&
+        createdAtOk &&
+        !affected.hasAny([
+          'role',
+          'isAdmin',
+          'isSuperAdmin',
+          'isDisabled',
+          'offenseCount',
+          'restrictedUntil',
+          'restrictionUntil',
+          'isPermanentlyLocked',
+          'offenseHistory',
+          'ghostedOrders',
+          'appealStatus',
+          'appealReviewedAt'
+        ]);
+    }
+
+    // Prevent non-admin staff from creating a user document with admin privileges
+    function isNotCreatingAdmin() {
+      let data = request.resource.data;
+      return data.get('isAdmin', false) != true &&
+        data.get('isSuperAdmin', false) != true &&
+        data.get('role', '') != 'admin';
+    }
+
+    // Prevent non-admin staff from escalating any user to admin privileges on update
+    function isNotEscalatingToAdmin() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let touchingAdminFlags = affected.hasAny(['isAdmin', 'isSuperAdmin']);
+      let changingRoleToAdmin = affected.hasAny(['role']) &&
+        request.resource.data.get('role', '') == 'admin';
+      return !touchingAdminFlags && !changingRoleToAdmin;
+    }
+
+    // Validate user notification subcollection document
+    function isValidUserNotification(data) {
+      return hasOnlyAllowedFields(data, ['title', 'body', 'timestamp', 'type', 'isRead', 'relatedId']) &&
+        hasRequiredFields(data, ['title', 'body', 'isRead']) &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        data.body is string && data.body.size() > 0 && data.body.size() <= 1000 &&
+        data.isRead is bool &&
+        isOptionalNullableString(data, 'type', 64) &&
+        isOptionalNullableString(data, 'relatedId', 128);
+    }
+
+    // Validate watched_products document
+    function isValidWatchedProduct(data) {
+      return hasOnlyAllowedFields(data, ['productId', 'email', 'userId', 'createdAt']) &&
+        hasRequiredFields(data, ['productId', 'email']) &&
+        data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128 &&
+        data.email is string && data.email.size() > 0 && data.email.size() <= 254 &&
+        isOptionalNullableString(data, 'userId', 128);
+    }
+
+    // Prevent customers from tampering with staff-managed metrics on customers/{customerId}
+    function isNotTamperingCustomerFields() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return !affected.hasAny([
+        'totalSpent',
+        'offenseCount',
+        'restrictedUntil',
+        'restrictionUntil',
+        'isPermanentlyLocked',
+        'offenseHistory',
+        'appealStatus',
+        'appealReviewedAt',
+        'notes',
+        'createdAt'
+      ]);
+    }
+
+    // Validate order document schema on create and update
+    function isValidOrder(data) {
+      return data.keys().hasAll(['orderId', 'customerName', 'customerEmail', 'items', 'total', 'status']) &&
+        data.orderId is string && data.orderId.size() > 0 && data.orderId.size() <= 64 &&
+        isOptionalNullableString(data, 'customerId', 128) &&
+        data.customerName is string && data.customerName.size() <= 200 &&
+        data.customerEmail is string && data.customerEmail.size() <= 254 &&
+        isOptionalNullableString(data, 'customerPhone', 30) &&
+        data.items is list && data.items.size() >= 1 && data.items.size() <= 200 &&
+        data.total is number && data.total >= 0 &&
+        isOptionalNullableNumber(data, 'subtotal', 0) &&
+        isOptionalNullableNumber(data, 'tax', 0) &&
+        data.status in [
+          'pending', 'staging', 'processing', 'ready',
+          'collected', 'completed', 'cancelled', 'rejected',
+          'refunded', 'refundRequested', 'refund_requested',
+          'refundRejected', 'refund_rejected'
+        ] &&
+        isOptionalNullableString(data, 'paymentMethod', 50) &&
+        isOptionalNullableString(data, 'paymentReference', 120) &&
+        isOptionalNullableString(data, 'location', 300) &&
+        isOptionalNullableString(data, 'pickupTime', 120) &&
+        isOptionalNullableString(data, 'notes', 1000) &&
+        isOptionalNullableString(data, 'pickupNotes', 1000) &&
+        isOptionalNullableString(data, 'customerNotes', 1000) &&
+        isOptionalNullableString(data, 'rejectionReason', 1000) &&
+        isOptionalNullableBool(data, 'isExtended') &&
+        isOptionalNullableBool(data, 'isSeniorPWD') &&
+        isOptionalNullableTimestamp(data, 'expiresAt');
+    }
+
+    // Validate customer-initiated state transitions on orders/{orderId}
+    function isValidCustomerOrderUpdate() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let prevStatus = resource.data.get('status', '');
+      let nextStatus = request.resource.data.get('status', '');
+      return isCustomerRecordOwner(resource.data) &&
+        areImmutableFieldsUnchanged(['orderId', 'customerId', 'customerEmail', 'items', 'total', 'createdAt']) &&
+        (
+          // 1. Cancel active order
+          (
+            affected.hasOnly(['status']) &&
+            nextStatus == 'cancelled' &&
+            prevStatus in ['pending', 'staging', 'ready']
+          ) ||
+          // 2. Request refund on collected/ready order
+          (
+            affected.hasOnly(['status']) &&
+            nextStatus in ['refundRequested', 'refund_requested'] &&
+            prevStatus in ['collected', 'ready']
+          ) ||
+          // 3. Cancel pending refund request (revert back to collected)
+          (
+            affected.hasOnly(['status']) &&
+            nextStatus == 'collected' &&
+            prevStatus in ['refundRequested', 'refund_requested']
+          ) ||
+          // 4. One-time pickup expiration extension (up to 20 minutes)
+          (
+            affected.hasOnly(['expiresAt', 'isExtended']) &&
+            resource.data.get('isExtended', false) == false &&
+            request.resource.data.isExtended == true &&
+            request.resource.data.expiresAt is timestamp &&
+            prevStatus in ['pending', 'staging', 'ready']
+          )
+        );
+    }
+
+    // Validate refund request document schema on create and update
+    function isValidRefundRequest(data) {
+      return data.keys().hasAll(['transactionId', 'customerEmail', 'items', 'total', 'reason', 'status']) &&
+        data.transactionId is string && data.transactionId.size() > 0 && data.transactionId.size() <= 128 &&
+        isOptionalNullableString(data, 'orderId', 128) &&
+        isOptionalNullableString(data, 'customerId', 128) &&
+        data.customerEmail is string && data.customerEmail.size() <= 254 &&
+        isOptionalNullableString(data, 'customerName', 200) &&
+        data.items is list && data.items.size() <= 200 &&
+        data.total is number && data.total >= 0 &&
+        data.reason is string && data.reason.size() <= 1000 &&
+        isOptionalNullableString(data, 'rejectionReason', 1000) &&
+        isOptionalNullableString(data, 'adminNotes', 1000) &&
+        isOptionalNullableString(data, 'processedByEmail', 254) &&
+        data.status in ['pending', 'approved', 'rejected', 'cancelled'] &&
+        (!('condition' in data) || data.condition == null ||
+          data.condition in ['restockable', 'good', 'expired', 'damaged']);
+    }
+
+    // Validate customer restriction appeal document schema on create and update
+    function isValidAppeal(data) {
+      return data.keys().hasAll(['userId', 'customerEmail', 'reason', 'status']) &&
+        data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
+        data.customerEmail is string && data.customerEmail.size() <= 254 &&
+        isOptionalNullableString(data, 'customerName', 200) &&
+        data.reason is string && data.reason.size() > 0 && data.reason.size() <= 2000 &&
+        isOptionalNullableNumber(data, 'offenseCount', 0) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isOptionalNullableString(data, 'adminNotes', 2000) &&
+        isOptionalNullableString(data, 'resolutionNotes', 2000) &&
+        isOptionalNullableString(data, 'reviewedByEmail', 254);
+    }
+
+    // Validate POS / pickup transaction document schema on create and update
+    function isValidTransaction(data) {
+      return data.get('total', -1) is number &&
+        data.get('total', -1) >= 0 &&
+        (!('items' in data) || (data.items is list && data.items.size() <= 500)) &&
+        isOptionalNullableBool(data, 'isRefunded');
+    }
+
+    // Validate audit log entry on append-only create
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['actorId', 'module', 'action']) &&
+        data.actorId is string && data.actorId == request.auth.uid &&
+        data.module is string && data.module.size() > 0 && data.module.size() <= 100 &&
+        data.action is string && data.action.size() > 0 && data.action.size() <= 100 &&
+        isOptionalNullableString(data, 'actorEmail', 254) &&
+        isOptionalNullableString(data, 'actorName', 200) &&
+        isOptionalNullableString(data, 'actorRole', 50) &&
+        isOptionalNullableString(data, 'targetId', 200) &&
+        isOptionalNullableString(data, 'targetName', 300) &&
+        isOptionalNullableString(data, 'summary', 2000);
+    }
+
+    // Validate time simulation config payload
+    function isValidTimeSimulation(data) {
+      return hasOnlyAllowedFields(data, ['offsetMinutes', 'updatedAt']) &&
+        hasRequiredFields(data, ['offsetMinutes']) &&
+        data.offsetMinutes is int;
+    }
+
+    // Validate OTP verification document schema
+    function isValidOtpRequest(data) {
+      return hasOnlyAllowedFields(data, ['code', 'createdAt', 'expiresAt', 'attempts', 'isEmail', 'contactMethod']) &&
+        hasRequiredFields(data, ['code', 'expiresAt', 'attempts']) &&
+        data.code is string && data.code.size() == 6 &&
+        data.expiresAt is timestamp &&
+        data.attempts is int && data.attempts >= 0 && data.attempts <= 10 &&
+        isOptionalNullableBool(data, 'isEmail') &&
+        isOptionalNullableString(data, 'contactMethod', 254);
+    }
+
+    // Validate Trigger Email queue payload (`mail/{mailId}`)
+    function isValidMailDoc(data) {
+      return hasRequiredFields(data, ['to', 'message']) &&
+        (
+          (data.to is string && data.to.size() > 0 && data.to.size() <= 254) ||
+          (data.to is list && data.to.size() > 0 && data.to.size() <= 20)
+        ) &&
+        data.message is map &&
+        isOptionalNullableString(data.message, 'subject', 300) &&
+        isOptionalNullableString(data.message, 'text', 20000) &&
+        isOptionalNullableString(data.message, 'html', 50000);
+    }
+
+    // Validate admin in-app notification payload (`admin_notifications/{notifId}`)
+    function isValidAdminNotification(data) {
+      return hasOnlyAllowedFields(data, [
+          'title', 'body', 'message', 'type', 'severity', 'status',
+          'suggestedRestock', 'relatedId', 'isRead', 'createdAt'
+        ]) &&
+        isOptionalNullableString(data, 'title', 200) &&
+        isOptionalNullableString(data, 'body', 1000) &&
+        isOptionalNullableString(data, 'message', 1000) &&
+        isOptionalNullableString(data, 'type', 64) &&
+        isOptionalNullableString(data, 'severity', 32) &&
+        isOptionalNullableString(data, 'status', 64) &&
+        isOptionalNullableNumber(data, 'suggestedRestock', 0) &&
+        isOptionalNullableString(data, 'relatedId', 128) &&
+        isOptionalNullableBool(data, 'isRead') &&
+        isOptionalNullableTimestamp(data, 'createdAt');
+    }
+
+    // Validate daily end-of-day resupply summary log (`daily_resupply_logs/{dateKey}`)
+    function isValidDailyResupplyLog(data, dateKey) {
+      return hasOnlyAllowedFields(data, [
+          'dateKey', 'storeEmail', 'items', 'itemCount',
+          'summaryEmailSent', 'summaryEmailStatus',
+          'summaryEmailSentAt', 'summaryEmailSentBy',
+          'summaryEmailError', 'updatedAt'
+        ]) &&
+        hasRequiredFields(data, ['dateKey', 'items']) &&
+        data.dateKey is string && data.dateKey == dateKey && data.dateKey.size() == 10 &&
+        data.items is map && data.items.size() <= 500 &&
+        isOptionalNullableString(data, 'storeEmail', 254) &&
+        isOptionalNullableNumber(data, 'itemCount', 0) &&
+        isOptionalNullableBool(data, 'summaryEmailSent') &&
+        isOptionalNullableString(data, 'summaryEmailStatus', 32) &&
+        isOptionalNullableTimestamp(data, 'summaryEmailSentAt') &&
+        isOptionalNullableString(data, 'summaryEmailSentBy', 200) &&
+        isOptionalNullableString(data, 'summaryEmailError', 1000) &&
+        isOptionalNullableTimestamp(data, 'updatedAt');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. PRODUCTS, BUNDLES, CATALOG & WATCHES
+    // 3. PRODUCTS, BATCHES, BUNDLES, CATALOG & WATCHES
     // ─────────────────────────────────────────────────────────────────────────
+
     // Staff-only collectionGroup read for real-time FIFO batch sync across Inventory, POS & Batch screens
     match /{path=**}/batches/{batchId} {
       allow read: if isStaff();
@@ -204,14 +707,42 @@ service cloud.firestore {
     }
 
     match /watched_products/{watchId} {
-      allow read: if isSignedIn() && (isStaff() || resource.data.get('userId', '') == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.get('userId', '') == request.auth.uid;
-      allow update, delete: if isSignedIn() && (isStaff() || resource.data.get('userId', '') == request.auth.uid);
+      // Allow get when resource == null so `isWatching()` doc-existence checks never throw permission-denied
+      allow get: if isAuthenticated() && (
+        isStaff() ||
+        resource == null ||
+        ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+        ('email' in request.auth.token && 'email' in resource.data && resource.data.email == request.auth.token.email)
+      );
+      allow list: if isAuthenticated() && (
+        isStaff() ||
+        ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+        ('email' in request.auth.token && 'email' in resource.data && resource.data.email == request.auth.token.email)
+      );
+      allow create: if isAuthenticated() && isValidWatchedProduct(request.resource.data) && (
+        isStaff() ||
+        ('userId' in request.resource.data && request.resource.data.userId == request.auth.uid) ||
+        ('email' in request.auth.token && request.resource.data.email == request.auth.token.email)
+      );
+      allow update: if isAuthenticated() && isValidWatchedProduct(request.resource.data) && (
+        isStaff() || (
+          areImmutableFieldsUnchanged(['userId', 'email', 'productId', 'createdAt']) && (
+            ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+            ('email' in request.auth.token && 'email' in resource.data && resource.data.email == request.auth.token.email)
+          )
+        )
+      );
+      allow delete: if isAuthenticated() && (
+        isStaff() ||
+        ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+        ('email' in request.auth.token && 'email' in resource.data && resource.data.email == request.auth.token.email)
+      );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. SUPPLIER PROCUREMENT, RECEIVING & INVENTORY MANAGEMENT (STAFF ONLY)
+    // 4. SUPPLIER PROCUREMENT, RECEIVING & INVENTORY MANAGEMENT (STAFF ONLY)
     // ─────────────────────────────────────────────────────────────────────────
+
     match /rfqs/{rfqId} {
       allow read, write: if isStaff();
     }
@@ -250,21 +781,22 @@ service cloud.firestore {
 
     match /restock_inquiries/{inquiryId} {
       allow read: if isStaff() || (
-        isSignedIn() && (
-          resource.data.get('userId', '') == request.auth.uid ||
-          resource.data.get('createdBy', '') == request.auth.uid
+        isAuthenticated() && (
+          ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+          ('createdBy' in resource.data && resource.data.createdBy == request.auth.uid)
         )
       );
       allow create: if isStaff() || (
-        isSignedIn() && (
-          request.resource.data.get('userId', '') == request.auth.uid ||
-          request.resource.data.get('createdBy', '') == request.auth.uid
+        isAuthenticated() && (
+          ('userId' in request.resource.data && request.resource.data.userId == request.auth.uid) ||
+          ('createdBy' in request.resource.data && request.resource.data.createdBy == request.auth.uid)
         )
       );
       allow update: if isStaff() || (
-        isSignedIn() && (
-          resource.data.get('userId', '') == request.auth.uid ||
-          resource.data.get('createdBy', '') == request.auth.uid
+        isAuthenticated() &&
+        areImmutableFieldsUnchanged(['userId', 'createdBy', 'createdAt']) && (
+          ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+          ('createdBy' in resource.data && resource.data.createdBy == request.auth.uid)
         )
       );
       allow delete: if isStaff();
@@ -273,7 +805,13 @@ service cloud.firestore {
     match /customers/{customerId} {
       allow read: if isOwner(customerId) || isStaff();
       allow create, delete: if isStaff();
-      allow update: if isStaff() || (isOwner(customerId) && isNotTamperingCustomerFields());
+      allow update: if isStaff() || (
+        isOwner(customerId) &&
+        isNotTamperingCustomerFields() &&
+        isOptionalNullableString(request.resource.data, 'name', 200) &&
+        isOptionalNullableString(request.resource.data, 'email', 254) &&
+        isOptionalNullableString(request.resource.data, 'phone', 30)
+      );
     }
 
     match /stock_audits/{auditId} {
@@ -282,22 +820,28 @@ service cloud.firestore {
 
     match /audit_logs/{logId} {
       allow read: if isStaff();
-      allow create: if isSignedIn();
+      allow create: if isAuthenticated() && isValidAuditLog(request.resource.data);
       allow update, delete: if false; // Strict immutability, append-only
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 4. TRANSACTIONS & SHIFTS (POS & RECEIPTS)
+    // 5. TRANSACTIONS & SHIFTS (POS & RECEIPTS)
     // ─────────────────────────────────────────────────────────────────────────
+
     match /transactions/{txId} {
       allow read: if isStaff() || (
-        isSignedIn() && (
-          resource.data.get('cashierId', '') == request.auth.uid ||
-          resource.data.get('customerId', '') == request.auth.uid
+        isAuthenticated() && (
+          ('cashierId' in resource.data && resource.data.cashierId == request.auth.uid) ||
+          ('customerId' in resource.data && resource.data.customerId == request.auth.uid) ||
+          (
+            'email' in request.auth.token &&
+            'customerEmail' in resource.data &&
+            resource.data.customerEmail == request.auth.token.email
+          )
         )
       );
-      allow create: if isStaff() && request.resource.data.get('total', 0) >= 0;
-      allow update, delete: if isAdmin();
+      allow create, update: if isStaff() && isValidTransaction(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /shifts/{shiftId} {
@@ -306,39 +850,59 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. STORE SETTINGS & SYSTEM CONFIG
+    // 6. STORE SETTINGS & SYSTEM CONFIG
     // ─────────────────────────────────────────────────────────────────────────
+
     match /settings/{settingId} {
       allow read: if true;
       allow write: if isStaff();
     }
 
-    match /system_config/time_simulation {
-      allow read: if isSignedIn();
+    match /store_settings/{settingId} {
+      allow read: if true;
       allow write: if isStaff();
     }
 
+    match /system_config/time_simulation {
+      allow read: if true;
+      allow create, update: if isStaff() && isValidTimeSimulation(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
-    // 6. USERS & NOTIFICATIONS
+    // 7. USERS & NOTIFICATIONS
     // ─────────────────────────────────────────────────────────────────────────
+
     match /users/{userId} {
+      // Strict PII separation: users may only read their own document; staff can read all
       allow read: if isOwner(userId) || isStaff();
-      allow create: if isStaff() || isValidUserCreation(userId);
-      allow update: if isStaff() || (isOwner(userId) && isNotTamperingSensitiveFields());
+      allow create: if (isAdmin() && isValidUserDoc(request.resource.data)) ||
+        (isStaff() && isValidUserDoc(request.resource.data) && isNotCreatingAdmin()) ||
+        isValidUserCreation(userId);
+      allow update: if isValidUserDoc(request.resource.data) && (
+        isAdmin() ||
+        (isStaff() && isNotEscalatingToAdmin()) ||
+        (isOwner(userId) && isNotTamperingSensitiveFields())
+      );
       allow delete: if isAdmin();
 
       match /notifications/{notificationId} {
-        allow read, write: if isOwner(userId) || isStaff();
+        allow read: if isOwner(userId) || isStaff();
+        allow create, update: if (isOwner(userId) || isStaff()) &&
+          isValidUserNotification(request.resource.data);
+        allow delete: if isOwner(userId) || isStaff();
       }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 7. ONLINE PRE-ORDERS, REFUNDS & APPEALS
+    // 8. ONLINE PRE-ORDERS, REFUNDS & APPEALS
     // ─────────────────────────────────────────────────────────────────────────
+
     match /orders/{orderId} {
+      // Direct field checks (not .get()) so Firestore query planner allows where('customerEmail') / where('customerId')
       allow read: if isStaff() || (
-        isSignedIn() && (
-          resource.data.get('customerId', '') == request.auth.uid ||
+        isAuthenticated() && (
+          ('customerId' in resource.data && resource.data.customerId == request.auth.uid) ||
           (
             'email' in request.auth.token &&
             'customerEmail' in resource.data &&
@@ -348,70 +912,133 @@ service cloud.firestore {
       );
 
       // Block order creation if the customer is currently restricted or permanently locked
-      allow create: if isSignedIn() && (
+      allow create: if isAuthenticated() && isValidOrder(request.resource.data) && (
         isStaff() || (
           request.resource.data.get('customerId', '') == request.auth.uid &&
+          request.resource.data.status == 'pending' &&
           !isCustomerRestricted()
         )
       );
 
-      allow update: if isStaff() || (
-        isSignedIn() && resource.data.get('customerId', '') == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-        (
-          (request.resource.data.status == 'cancelled' && resource.data.get('status', '') in ['pending', 'staging', 'ready']) ||
-          (request.resource.data.status in ['refund_requested', 'refundRequested'] && resource.data.get('status', '') in ['collected', 'ready'])
-        )
+      allow update: if isValidOrder(request.resource.data) && (
+        isStaff() || isValidCustomerOrderUpdate()
       );
+
       allow delete: if isAdmin();
     }
 
     match /refund_requests/{requestId} {
+      // Direct field checks (not .get()) so Firestore query planner allows where('customerEmail') / where('customerId')
       allow read: if isStaff() || (
-        isSignedIn() && (
-          resource.data.get('customerId', '') == request.auth.uid ||
+        isAuthenticated() && (
+          ('customerId' in resource.data && resource.data.customerId == request.auth.uid) ||
           (
             'email' in request.auth.token &&
-            resource.data.get('customerEmail', '') == request.auth.token.email
+            'customerEmail' in resource.data &&
+            resource.data.customerEmail == request.auth.token.email
           )
         )
       );
-      allow create: if isSignedIn() && (isStaff() || request.resource.data.get('customerId', '') == request.auth.uid);
-      allow update: if isStaff() || (
-        isSignedIn() && resource.data.get('customerId', '') == request.auth.uid &&
-        request.resource.data.get('status', '') == 'cancelled'
+
+      allow create: if isAuthenticated() && isValidRefundRequest(request.resource.data) && (
+        isStaff() || (
+          request.resource.data.get('customerId', '') == request.auth.uid &&
+          request.resource.data.status == 'pending'
+        )
       );
-      allow delete: if isAdmin();
+
+      allow update: if isValidRefundRequest(request.resource.data) && (
+        isStaff() || (
+          isCustomerRecordOwner(resource.data) &&
+          areImmutableFieldsUnchanged(['transactionId', 'orderId', 'customerId', 'customerEmail', 'items', 'total', 'createdAt']) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'cancelled'
+        )
+      );
+
+      allow delete: if isAdmin() || (
+        isCustomerRecordOwner(resource.data) &&
+        resource.data.get('status', '') == 'pending'
+      );
     }
 
     match /appeals/{appealId} {
+      // Direct field checks (not .get()) so Firestore query planner allows where('userId') / where('customerEmail')
       allow read: if isStaff() || (
-        isSignedIn() && (
-          resource.data.get('userId', '') == request.auth.uid ||
+        isAuthenticated() && (
+          ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
           (
             'email' in request.auth.token &&
-            resource.data.get('customerEmail', '') == request.auth.token.email
+            'customerEmail' in resource.data &&
+            resource.data.customerEmail == request.auth.token.email
           )
         )
       );
-      allow create: if isSignedIn() && request.resource.data.get('userId', '') == request.auth.uid;
-      allow update: if isStaff();
+
+      allow create: if isAuthenticated() &&
+        isValidAppeal(request.resource.data) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'pending';
+
+      allow update: if isStaff() &&
+        isValidAppeal(request.resource.data) &&
+        areImmutableFieldsUnchanged(['userId', 'createdAt']);
+
       allow delete: if isAdmin();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 8. MAIL & OTP VERIFICATION REQUESTS
+    // 9. MAIL & OTP VERIFICATION REQUESTS
     // ─────────────────────────────────────────────────────────────────────────
+
     match /mail/{mailId} {
-      allow create: if isSignedIn();
+      allow create: if isAuthenticated() && isValidMailDoc(request.resource.data);
       allow read, update, delete: if isAdmin();
     }
 
     match /otp_requests/{contactMethod} {
-      // Unauthenticated single-document OTP lookup during sign-up verification
+      // Unauthenticated single-document OTP lookup during sign-up & PIN reset verification; list disabled
       allow get: if true;
       allow list: if false;
-      allow create, update, delete: if true;
+      allow create: if isValidOtpRequest(request.resource.data) &&
+        request.resource.data.attempts == 0;
+      allow update: if isValidOtpRequest(request.resource.data) && (
+        (request.resource.data.code == resource.data.code &&
+         request.resource.data.attempts == resource.data.attempts + 1) ||
+        (request.resource.data.attempts == 0 &&
+         request.resource.data.expiresAt >= resource.data.expiresAt)
+      );
+      allow delete: if true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10. ADMIN NOTIFICATIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    match /admin_notifications/{notifId} {
+      allow read, delete: if isStaff();
+      allow create, update: if isStaff() &&
+        isValidAdminNotification(request.resource.data);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 11b. DAILY END-OF-DAY RESUPPLY LOGS (LOW-STOCK THRESHOLD SUMMARY)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    match /daily_resupply_logs/{dateKey} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() &&
+        isValidDailyResupplyLog(request.resource.data, dateKey);
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 12. DEFAULT DENY
+    // ─────────────────────────────────────────────────────────────────────────
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

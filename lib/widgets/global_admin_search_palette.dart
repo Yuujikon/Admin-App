@@ -632,7 +632,7 @@ class _GlobalAdminSearchPaletteState extends State<GlobalAdminSearchPalette> {
     if (_selectedDomain == GlobalSearchDomain.all ||
         _selectedDomain == GlobalSearchDomain.products) {
       for (final p in inventory.products) {
-        final isLow = p.totalStock <= p.lowStockThreshold;
+        final isLow = p.isPhysicalThresholdHit;
         if (_lowStockOnly && !isLow) continue;
 
         final matchesName = p.name.toLowerCase().contains(q);

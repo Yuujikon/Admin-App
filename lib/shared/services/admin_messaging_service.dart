@@ -11,6 +11,7 @@ import '../../models/order.dart';
 import '../../models/purchase_order.dart';
 import '../../models/receiving_record.dart';
 import '../../models/supplier.dart';
+import '../../models/daily_resupply_log.dart';
 import '../../utils/notice_pdf_printer.dart';
 import '../../utils/po_pdf_printer.dart';
 import '../../services/audit_log_service.dart';
@@ -214,7 +215,8 @@ class AdminMessagingService {
         'htmlContent': htmlContent,
       };
 
-      if (effectiveCc.isNotEmpty) {
+      if (effectiveCc.isNotEmpty &&
+          effectiveCc.toLowerCase() != toEmail.trim().toLowerCase()) {
         bodyMap['cc'] = [
           {
             'email': effectiveCc,
@@ -1705,5 +1707,136 @@ class AdminMessagingService {
       cancellationReason: reason,
     );
     return result.isFullSuccess;
+  }
+
+  /// Sends the **Store-Closing Resupply Summary Email** to the GDC Sari-Sari
+  /// Store email account summarizing every product/variant whose 100% physical
+  /// stock reached 30% of its original stock on [log.dateKey].
+  Future<bool> sendDailyResupplySummaryEmail({
+    required DailyResupplyLog log,
+  }) async {
+    final storeEmail = (log.storeEmail.trim().isNotEmpty)
+        ? log.storeEmail.trim()
+        : await resolveStoreEmail();
+    if (storeEmail.isEmpty) {
+      debugPrint(
+        '[AdminMessagingService] Store Gmail address missing; skipping Store-Closing Resupply Summary.',
+      );
+      return false;
+    }
+
+    final items = log.sortedItems;
+    if (items.isEmpty) {
+      debugPrint(
+        '[AdminMessagingService] No 30%-low-stock items for ${log.dateKey}; skipping Store-Closing Resupply Summary.',
+      );
+      return false;
+    }
+
+    final int oosCount = items.where((i) => i.isOutOfStock).length;
+    final int onlineOosCount = items.where((i) => i.onlineOutOfStock).length;
+    final int totalResupplyUnits = log.totalSuggestedUnits;
+    final generatedStr =
+        DateFormat('MMM d, yyyy • h:mm a').format(DateTime.now());
+
+    final StringBuffer rowsBuffer = StringBuffer();
+    for (final item in items) {
+      final safeName = _escapeHtml(item.displayName);
+      final safeCategory = _escapeHtml(item.category);
+      final safeUnit = _escapeHtml(item.unit);
+      final hitTime = DateFormat('h:mm a').format(item.firstTriggeredAt);
+      final int orig = item.effectiveOriginalStock;
+      final String statusBadge = item.isOutOfStock
+          ? '<span style="background-color:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:700;">OUT OF STOCK</span>'
+          : '<span style="background-color:#fef3c7;color:#b45309;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:700;">≤ 30% LOW STOCK</span>';
+      final String onlineTag = item.onlineOutOfStock
+          ? '<div style="font-size:11px;color:#b91c1c;margin-top:2px;">Online: Out of Stock</div>'
+          : '<div style="font-size:11px;color:#475569;margin-top:2px;">Online: ${item.onlineStock} $safeUnit</div>';
+
+      rowsBuffer.write('''
+<tr style="border-bottom: 1px solid #e2e8f0;">
+  <td style="padding: 10px 8px; vertical-align: top;">
+    <div style="font-size: 13px; font-weight: 700; color: #0f172a;">$safeName</div>
+    <div style="font-size: 11px; color: #64748b; margin-top: 2px;">$safeCategory • Reached 30% at $hitTime</div>
+  </td>
+  <td style="padding: 10px 8px; text-align: center; vertical-align: top;">
+    <div style="font-size: 13px; font-weight: 700; color: ${item.isOutOfStock ? '#b91c1c' : '#b45309'};">${item.availableStock} / $orig $safeUnit</div>
+    <div style="font-size: 11px; color: #64748b;">30% Alert: ≤ ${item.lowStockThreshold} $safeUnit</div>
+  </td>
+  <td style="padding: 10px 8px; text-align: center; vertical-align: top;">
+    $statusBadge
+    $onlineTag
+  </td>
+  <td style="padding: 10px 8px; text-align: right; vertical-align: top;">
+    <div style="font-size: 14px; font-weight: 800; color: #0f766e;">+${item.suggestedResupplyQty} $safeUnit</div>
+    <div style="font-size: 11px; color: #64748b;">Recommended</div>
+  </td>
+</tr>
+''');
+    }
+
+    final htmlContent = '''
+<div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc;">
+  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 14px; padding: 28px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="background: linear-gradient(135deg, #0f766e 0%, #115e59 100%); color: #ffffff; padding: 18px 20px; border-radius: 12px; margin-bottom: 22px;">
+      <p style="margin: 0; font-size: 11px; letter-spacing: 0.9px; text-transform: uppercase; opacity: 0.9;">GDC Sari-Sari Store • Store-Closing Resupply Report</p>
+      <h2 style="margin: 6px 0 0 0; font-size: 21px;">Store-Closing 30% Low-Stock Summary (${_escapeHtml(log.dateKey)})</h2>
+      <p style="margin: 6px 0 0 0; font-size: 12px; opacity: 0.9;">Generated on store close • $generatedStr</p>
+    </div>
+
+    <p style="color: #334155; font-size: 14px; line-height: 1.6; margin-top: 0;">
+      The store has closed for the day. Below is the complete summary of all products whose
+      <strong>100% Physical Store stock reached 30% or less of their original stock</strong> today and require resupply.
+      Walk-in POS retains access to the 25% physical-only reserve while online availability automatically closes once the 75% online cap is sold out.
+    </p>
+
+    <table style="width: 100%; border-collapse: separate; border-spacing: 8px 0; margin: 16px -8px;">
+      <tr>
+        <td style="background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 10px; padding: 12px; text-align: center; width: 33%;">
+          <div style="font-size: 22px; font-weight: 800; color: #0f766e;">${items.length}</div>
+          <div style="font-size: 11px; color: #115e59; font-weight: 700; text-transform: uppercase;">Items at ≤ 30% Stock</div>
+        </td>
+        <td style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px; text-align: center; width: 33%;">
+          <div style="font-size: 22px; font-weight: 800; color: #b91c1c;">$onlineOosCount</div>
+          <div style="font-size: 11px; color: #991b1b; font-weight: 700; text-transform: uppercase;">Online Out of Stock ($oosCount Physical OOS)</div>
+        </td>
+        <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 12px; text-align: center; width: 33%;">
+          <div style="font-size: 22px; font-weight: 800; color: #1d4ed8;">+$totalResupplyUnits</div>
+          <div style="font-size: 11px; color: #1e40af; font-weight: 700; text-transform: uppercase;">Suggested Restock Units</div>
+        </td>
+      </tr>
+    </table>
+
+    <h3 style="color: #0f172a; font-size: 15px; margin: 22px 0 10px 0;">Products Requiring Resupply (≤ 30% Remaining)</h3>
+    <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <thead>
+        <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; color: #475569; font-size: 11px; text-transform: uppercase;">
+          <th style="padding: 10px 8px; text-align: left;">Product</th>
+          <th style="padding: 10px 8px; text-align: center;">Physical / Original</th>
+          <th style="padding: 10px 8px; text-align: center;">Stock Status</th>
+          <th style="padding: 10px 8px; text-align: right;">Suggested Resupply</th>
+        </tr>
+      </thead>
+      <tbody>
+        $rowsBuffer
+      </tbody>
+    </table>
+
+    <p style="color: #475569; font-size: 13px; line-height: 1.5; margin-top: 20px;">
+      <strong>Next Steps:</strong> Review this store-closing resupply list and create a Purchase Order or log new FIFO stock deliveries in the GDC Admin App. Online availability will automatically reopen once new stock is received.
+    </p>
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+    <p style="color: #94a3b8; font-size: 12px; margin: 0;">GDC Sari-Sari Store Inventory System • Store-Closing Resupply Summary</p>
+  </div>
+</div>
+''';
+
+    return await sendBrevoEmail(
+      toEmail: storeEmail,
+      recipientName: 'GDC Sari-Sari Store',
+      subject:
+          '📦 Store-Closing Resupply Summary (${log.dateKey}): ${items.length} item${items.length == 1 ? '' : 's'} reached 30% stock',
+      htmlContent: htmlContent,
+    );
   }
 }

@@ -77,15 +77,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final products = inventory.sortedProducts;
     final cats = ['All', 'Low Stock', ...settings.masterCategories];
     final filtered = products.where((p) {
-      final threshold = p.lowStockThreshold;
-      if (_cat == 'Low Stock') return p.totalStock <= threshold;
+      if (_cat == 'Low Stock') return p.isPhysicalThresholdHit;
       return _cat == 'All' || p.category == _cat;
     }).where((p) {
       if (_filterOuts['Hide Out of Stock'] == true && p.totalStock <= 0) {
         return false;
       }
-      if (_filterOuts['Hide Low Stock'] == true &&
-          p.totalStock <= p.lowStockThreshold) {
+      if (_filterOuts['Hide Low Stock'] == true && p.isPhysicalThresholdHit) {
         return false;
       }
       final isBulkOrBundle = p.category == 'Bundle' ||
@@ -358,9 +356,8 @@ class _ProductRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final threshold = product.lowStockThreshold;
     final int effectiveStock = product.totalStock;
-    final isLow = effectiveStock <= threshold;
+    final isLow = product.isPhysicalThresholdHit;
     final now = DateTime.now();
     final isExpired =
         product.expiryDate != null && product.expiryDate!.isBefore(now);
@@ -541,6 +538,42 @@ class _ProductRow extends StatelessWidget {
                                     ),
                                   ),
                                 ),
+                              Builder(
+                                builder: (context) {
+                                  final bool isOos = effectiveStock <= 0;
+                                  final bool isOnlineOos =
+                                      !isOos && product.isOnlineOutOfStock;
+                                  final bool isPhysicalLow =
+                                      !isOos && product.isPhysicalThresholdHit;
+                                  final Color badgeColor = (isOos ||
+                                          isOnlineOos)
+                                      ? Theme.of(context).colorScheme.error
+                                      : (isPhysicalLow
+                                          ? Theme.of(context).semantic.warning
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .primary);
+                                  final String label = isOos
+                                      ? 'Out of Stock'
+                                      : 'POS: $effectiveStock • Online: ${isOnlineOos ? 'Out of Stock' : product.onlineAvailableStock} • Reserve: ${product.effectivePhysicalReserve}';
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: badgeColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      label,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        color: badgeColor,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ],

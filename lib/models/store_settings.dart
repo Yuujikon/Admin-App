@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../shared/services/time_service.dart';
 
 enum OverrideType {
   fullClosure, // e.g., Dec 24 - Jan 1: Closed All Day ("Holidays")
@@ -27,6 +28,28 @@ class ScheduleOverride {
     this.endMinutes,
     required this.reason,
   });
+
+  ScheduleOverride copyWith({
+    String? id,
+    DateTime? startDate,
+    DateTime? endDate,
+    OverrideType? type,
+    int? startMinutes,
+    int? endMinutes,
+    bool clearTimeWindow = false,
+    String? reason,
+  }) {
+    return ScheduleOverride(
+      id: id ?? this.id,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      type: type ?? this.type,
+      startMinutes:
+          clearTimeWindow ? null : (startMinutes ?? this.startMinutes),
+      endMinutes: clearTimeWindow ? null : (endMinutes ?? this.endMinutes),
+      reason: reason ?? this.reason,
+    );
+  }
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -59,15 +82,40 @@ class ScheduleOverride {
     );
   }
 
-  /// Checks if a given DateTime falls inside this override's date range
+  DateTime get normalizedStart =>
+      DateTime(startDate.year, startDate.month, startDate.day);
+
+  DateTime get normalizedEnd =>
+      DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+
+  bool get isSingleDay =>
+      startDate.year == endDate.year &&
+      startDate.month == endDate.month &&
+      startDate.day == endDate.day;
+
+  /// Checks if a given DateTime falls inside this override's date range.
   bool appliesToDate(DateTime date) {
-    final dayStart = DateTime(startDate.year, startDate.month, startDate.day);
-    final dayEnd =
-        DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
-    return !date.isBefore(dayStart) && !date.isAfter(dayEnd);
+    return !date.isBefore(normalizedStart) && !date.isAfter(normalizedEnd);
   }
 
-  /// Checks if a specific pickup DateTime is blocked by this override
+  /// Returns true if this override is active on the date of [now].
+  bool isActiveAt(DateTime now) => appliesToDate(now);
+
+  /// Returns true if this override has completely ended before [now].
+  bool isPastAt(DateTime now) => now.isAfter(normalizedEnd);
+
+  /// Returns true if this override begins after [now].
+  bool isUpcomingAt(DateTime now) => now.isBefore(normalizedStart);
+
+  /// Returns true if this override overlaps the inclusive date range [start]..[end].
+  bool overlapsRange(DateTime start, DateTime end) {
+    final otherStart = DateTime(start.year, start.month, start.day);
+    final otherEnd = DateTime(end.year, end.month, end.day, 23, 59, 59);
+    return !normalizedStart.isAfter(otherEnd) &&
+        !otherStart.isAfter(normalizedEnd);
+  }
+
+  /// Checks if a specific DateTime is closed/blocked by this override.
   bool isDateTimeClosed(DateTime checkTime) {
     if (!appliesToDate(checkTime)) return false;
 
@@ -80,11 +128,21 @@ class ScheduleOverride {
     final int eMins = endMinutes ?? 1439;
 
     if (type == OverrideType.customOpenHours) {
-      // Only open BETWEEN sMins and eMins (e.g. 1:00 PM - 3:00 PM lang)
-      return checkMins < sMins || checkMins > eMins;
+      // Only open between sMins and eMins.
+      if (sMins <= eMins) {
+        return checkMins < sMins || checkMins > eMins;
+      } else {
+        // Overnight custom open window (e.g. 20:00 - 04:00)
+        return checkMins < sMins && checkMins > eMins;
+      }
     } else {
-      // maintenanceWindow: Closed BETWEEN sMins and eMins
-      return checkMins >= sMins && checkMins <= eMins;
+      // maintenanceWindow: Closed between sMins and eMins.
+      if (sMins <= eMins) {
+        return checkMins >= sMins && checkMins <= eMins;
+      } else {
+        // Overnight maintenance window
+        return checkMins >= sMins || checkMins <= eMins;
+      }
     }
   }
 
@@ -97,6 +155,16 @@ class ScheduleOverride {
       case OverrideType.maintenanceWindow:
         return 'Maintenance Window';
     }
+  }
+
+  String formatDateRange() {
+    if (isSingleDay) {
+      return DateFormat('MMM d, yyyy').format(startDate);
+    }
+    if (startDate.year == endDate.year) {
+      return '${DateFormat('MMM d').format(startDate)} – ${DateFormat('MMM d, yyyy').format(endDate)}';
+    }
+    return '${DateFormat('MMM d, yyyy').format(startDate)} – ${DateFormat('MMM d, yyyy').format(endDate)}';
   }
 
   String formatTimeRange() {
@@ -273,8 +341,10 @@ class StoreSettings {
   StoreSettings copyWith({
     bool? isClosed,
     String? closureMessage,
+    bool clearClosureMessage = false,
     DateTime? scheduledCloseAt,
     DateTime? scheduledOpenAt,
+    bool clearScheduledOutage = false,
     bool? operatingHoursEnabled,
     String? dailyOpenTime,
     String? dailyCloseTime,
@@ -293,9 +363,14 @@ class StoreSettings {
   }) {
     return StoreSettings(
       isClosed: isClosed ?? this.isClosed,
-      closureMessage: closureMessage ?? this.closureMessage,
-      scheduledCloseAt: scheduledCloseAt ?? this.scheduledCloseAt,
-      scheduledOpenAt: scheduledOpenAt ?? this.scheduledOpenAt,
+      closureMessage:
+          clearClosureMessage ? null : (closureMessage ?? this.closureMessage),
+      scheduledCloseAt: clearScheduledOutage
+          ? null
+          : (scheduledCloseAt ?? this.scheduledCloseAt),
+      scheduledOpenAt: clearScheduledOutage
+          ? null
+          : (scheduledOpenAt ?? this.scheduledOpenAt),
       operatingHoursEnabled:
           operatingHoursEnabled ?? this.operatingHoursEnabled,
       dailyOpenTime: dailyOpenTime ?? this.dailyOpenTime,
@@ -318,38 +393,91 @@ class StoreSettings {
     );
   }
 
-  /// Returns active override matching a given date if any.
+  /// Returns all overrides that cover [date].
+  List<ScheduleOverride> overridesForDate(DateTime date) {
+    return overrides.where((o) => o.appliesToDate(date)).toList();
+  }
+
+  /// Returns the highest-priority active override matching [date], if any.
+  /// Priority: fullClosure > currently-closed maintenanceWindow > customOpenHours > other maintenanceWindow.
   ScheduleOverride? activeOverrideFor(DateTime date) {
-    for (final override in overrides) {
-      if (override.appliesToDate(date)) {
-        return override;
+    final matching = overridesForDate(date);
+    if (matching.isEmpty) return null;
+
+    for (final o in matching) {
+      if (o.type == OverrideType.fullClosure) return o;
+    }
+    for (final o in matching) {
+      if (o.type == OverrideType.maintenanceWindow &&
+          o.isDateTimeClosed(date)) {
+        return o;
+      }
+    }
+    for (final o in matching) {
+      if (o.type == OverrideType.customOpenHours) return o;
+    }
+    return matching.first;
+  }
+
+  /// Returns the specific [ScheduleOverride] that is actively closing the store at [now], if any.
+  ScheduleOverride? activeClosingOverrideAt(DateTime now) {
+    final matching = overridesForDate(now);
+    if (matching.isEmpty) return null;
+
+    for (final o in matching) {
+      if (o.type == OverrideType.fullClosure) return o;
+    }
+    for (final o in matching) {
+      if (o.type == OverrideType.maintenanceWindow && o.isDateTimeClosed(now)) {
+        return o;
+      }
+    }
+    for (final o in matching) {
+      if (o.type == OverrideType.customOpenHours && o.isDateTimeClosed(now)) {
+        return o;
       }
     }
     return null;
   }
 
-  /// Evaluates manual, scheduled overrides, or operating hour constraints to determine if store is closed right now.
-  bool get effectivelyClosed {
+  /// Returns true if a legacy scheduled outage window (`scheduledCloseAt`..`scheduledOpenAt`) is active at [now].
+  bool isScheduledOutageActiveAt(DateTime now) {
+    final DateTime? sClose = scheduledCloseAt;
+    final DateTime? sOpen = scheduledOpenAt;
+    if (sClose != null && sOpen != null) {
+      return now.isAfter(sClose) && now.isBefore(sOpen);
+    }
+    return false;
+  }
+
+  /// Evaluates manual, scheduled overrides, or operating hour constraints to determine if store is closed at [now].
+  bool isEffectivelyClosedAt(DateTime now) {
     if (isClosed) return true;
 
-    final now = DateTime.now();
-
-    // 1. Check Scheduled Overrides
-    for (final override in overrides) {
-      if (override.appliesToDate(now)) {
-        if (override.isDateTimeClosed(now)) {
+    // 1. Check Scheduled Overrides with clear precedence
+    final matching = overridesForDate(now);
+    if (matching.isNotEmpty) {
+      // Full-day closure or active maintenance window always closes the store
+      for (final o in matching) {
+        if (o.type == OverrideType.fullClosure) return true;
+      }
+      for (final o in matching) {
+        if (o.type == OverrideType.maintenanceWindow &&
+            o.isDateTimeClosed(now)) {
           return true;
+        }
+      }
+      // Custom open hours override regular operating hours & closed days of week
+      for (final o in matching) {
+        if (o.type == OverrideType.customOpenHours) {
+          return o.isDateTimeClosed(now);
         }
       }
     }
 
-    // 2. Check Scheduled Outage
-    final DateTime? sClose = scheduledCloseAt;
-    final DateTime? sOpen = scheduledOpenAt;
-    if (sClose != null && sOpen != null) {
-      if (now.isAfter(sClose) && now.isBefore(sOpen)) {
-        return true;
-      }
+    // 2. Check Legacy Scheduled Outage
+    if (isScheduledOutageActiveAt(now)) {
+      return true;
     }
 
     // 3. Check Daily Operating Hours & Days if enabled
@@ -381,54 +509,85 @@ class StoreSettings {
     return false;
   }
 
-  /// Human-readable explanation text for store closure reason or active schedule label.
-  String get closureReason {
-    if (isClosed) {
-      final String rawMsg = closureMessage?.trim() ?? '';
-      final String reasonText =
-          rawMsg.isNotEmpty ? rawMsg : 'Will be back soon.';
-      final DateTime time = updatedAt ?? scheduledCloseAt ?? DateTime.now();
-      final String formattedTime = DateFormat('MMM d, h:mm a').format(time);
-      return '$formattedTime — $reasonText';
-    }
+  /// Evaluates manual, scheduled overrides, or operating hour constraints to determine if store is closed right now.
+  bool get effectivelyClosed => isEffectivelyClosedAt(TimeService.now);
 
-    final now = DateTime.now();
+  /// Returns `true` when the store has closed for the day at [now] — triggering
+  /// the end-of-day (store-closing) 30% low-stock resupply summary email.
+  ///
+  /// Triggers on:
+  /// 1. Manual store close (`isClosed == true`),
+  /// 2. Active scheduled outage (`scheduledCloseAt..scheduledOpenAt`),
+  /// 3. Today's full-day closure override or `customOpenHours` end time reached, or
+  /// 4. Regular daily closing time (`dailyCloseTime`, default `21:00`) reached.
+  ///
+  /// Does NOT fire early in the morning before opening time on a regular open day.
+  bool hasStoreClosedForDayAt(DateTime now) {
+    if (isClosed) return true;
+    if (isScheduledOutageActiveAt(now)) return true;
 
-    for (final override in overrides) {
-      if (override.appliesToDate(now)) {
-        final reason = override.reason.isNotEmpty
-            ? override.reason
-            : 'Holiday / Special Schedule';
-        if (override.type == OverrideType.fullClosure) {
-          return 'Closed: $reason';
-        } else if (override.type == OverrideType.customOpenHours) {
-          if (override.isDateTimeClosed(now)) {
-            return '$reason (Open ${override.formatTimeRange()} only).';
-          } else {
-            return 'Open: $reason (${override.formatTimeRange()})';
-          }
-        } else {
-          if (override.isDateTimeClosed(now)) {
-            return 'Closed for maintenance: $reason (${override.formatTimeRange()}).';
-          }
+    final int curMins = now.hour * 60 + now.minute;
+    final matching = overridesForDate(now);
+    if (matching.isNotEmpty) {
+      for (final o in matching) {
+        if (o.type == OverrideType.fullClosure) return true;
+      }
+      for (final o in matching) {
+        if (o.type == OverrideType.customOpenHours && o.endMinutes != null) {
+          return curMins >= o.endMinutes!;
         }
       }
     }
 
-    final DateTime? sClose = scheduledCloseAt;
-    final DateTime? sOpen = scheduledOpenAt;
-    if (sClose != null && sOpen != null) {
-      if (now.isAfter(sClose) && now.isBefore(sOpen)) {
-        final reopens = DateFormat('MMM d, h:mm a').format(sOpen);
-        return (closureMessage != null && closureMessage!.trim().isNotEmpty)
-            ? closureMessage!
-            : 'Scheduled closure active until $reopens.';
+    final int closeMins = _parseMinutes(dailyCloseTime ?? '21:00') ?? (21 * 60);
+    return curMins >= closeMins;
+  }
+
+  /// Returns `true` if the store has closed for the current day.
+  bool get hasStoreClosedForDay => hasStoreClosedForDayAt(TimeService.now);
+
+  /// Human-readable explanation text for store closure reason or active schedule label at [now].
+  String closureReasonAt(DateTime now) {
+    if (isClosed) {
+      final String rawMsg = closureMessage?.trim() ?? '';
+      final String reasonText =
+          rawMsg.isNotEmpty ? rawMsg : 'Will be back soon.';
+      final DateTime time = updatedAt ?? scheduledCloseAt ?? now;
+      final String formattedTime = DateFormat('MMM d, h:mm a').format(time);
+      return '$formattedTime — $reasonText';
+    }
+
+    final active = activeOverrideFor(now);
+    if (active != null) {
+      final reason = active.reason.isNotEmpty
+          ? active.reason
+          : 'Holiday / Special Schedule';
+      if (active.type == OverrideType.fullClosure) {
+        return 'Closed: $reason (${active.formatDateRange()})';
+      } else if (active.type == OverrideType.customOpenHours) {
+        if (active.isDateTimeClosed(now)) {
+          return '$reason (Open ${active.formatTimeRange()} only).';
+        } else {
+          return 'Open: $reason (${active.formatTimeRange()})';
+        }
+      } else {
+        if (active.isDateTimeClosed(now)) {
+          return 'Closed for maintenance: $reason (${active.formatTimeRange()}).';
+        }
       }
+    }
+
+    if (isScheduledOutageActiveAt(now)) {
+      final reopens = DateFormat('MMM d, h:mm a').format(scheduledOpenAt!);
+      return (closureMessage != null && closureMessage!.trim().isNotEmpty)
+          ? closureMessage!
+          : 'Scheduled closure active until $reopens.';
     }
 
     if (operatingHoursEnabled) {
       if (closedDaysOfWeek.contains(now.weekday)) {
-        return 'Store is closed today per operating schedule.';
+        final dayName = DateFormat('EEEE').format(now);
+        return 'Store is closed on ${dayName}s per regular schedule.';
       }
       final String? openStr = dailyOpenTime;
       final String? closeStr = dailyCloseTime;
@@ -447,6 +606,7 @@ class StoreSettings {
           if (outside) {
             return 'Outside daily operating hours (${_formatTimeStr(openStr)} – ${_formatTimeStr(closeStr)}).';
           }
+          return 'Open regular hours (${_formatTimeStr(openStr)} – ${_formatTimeStr(closeStr)}).';
         }
       }
     }
@@ -454,14 +614,17 @@ class StoreSettings {
     return 'Store is currently open.';
   }
 
-  /// Active status label for store status badges.
-  String get activeStatusLabel {
+  /// Human-readable explanation text for store closure reason or active schedule label.
+  String get closureReason => closureReasonAt(TimeService.now);
+
+  /// Active status label for store status badges at [now].
+  String activeStatusLabelAt(DateTime now) {
     if (isClosed) {
       return closureMessage?.trim().isNotEmpty == true
           ? closureMessage!
           : 'Emergency Maintenance Active';
     }
-    final active = activeOverrideFor(DateTime.now());
+    final active = activeOverrideFor(now);
     if (active != null) {
       if (active.type == OverrideType.fullClosure) {
         return 'Closed: ${active.reason}';
@@ -477,10 +640,12 @@ class StoreSettings {
     return 'Regular Store Hours';
   }
 
-  /// Status badge label describing store status.
-  String get statusLabel {
+  /// Active status label for store status badges.
+  String get activeStatusLabel => activeStatusLabelAt(TimeService.now);
+
+  /// Status badge label describing store status at [now].
+  String statusLabelAt(DateTime now) {
     if (isClosed) return 'MAINTENANCE';
-    final now = DateTime.now();
 
     final active = activeOverrideFor(now);
     if (active != null) {
@@ -488,23 +653,22 @@ class StoreSettings {
         return active.type == OverrideType.fullClosure
             ? 'HOLIDAY'
             : 'SPECIAL SCHEDULE';
-      } else {
+      } else if (active.type == OverrideType.customOpenHours) {
         return 'SPECIAL HOURS';
       }
     }
 
-    final DateTime? sClose = scheduledCloseAt;
-    final DateTime? sOpen = scheduledOpenAt;
-    if (sClose != null && sOpen != null) {
-      if (now.isAfter(sClose) && now.isBefore(sOpen)) {
-        return 'SCHEDULED';
-      }
+    if (isScheduledOutageActiveAt(now)) {
+      return 'SCHEDULED';
     }
-    if (operatingHoursEnabled && effectivelyClosed) {
+    if (operatingHoursEnabled && isEffectivelyClosedAt(now)) {
       return 'OUT OF HOURS';
     }
     return 'OPEN';
   }
+
+  /// Status badge label describing store status.
+  String get statusLabel => statusLabelAt(TimeService.now);
 
   static int? _parseMinutes(String timeStr) {
     try {

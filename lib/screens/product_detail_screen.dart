@@ -160,6 +160,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                       const SizedBox(height: 16),
 
+                      // 3.5 Read-Only Inventory Allocation Card (100% POS / 75% Online / 25% Reserve)
+                      _InventoryAllocationCard(product: p),
+
+                      const SizedBox(height: 16),
+
                       // 4. Audit & FIFO Batch History Card
                       _AuditBatchCard(
                         product: p,
@@ -870,9 +875,10 @@ class _LiveInventoryHealthCard extends StatelessWidget {
     final semantic = theme.semantic;
 
     final totalStock = product.totalStock;
-    final threshold = product.lowStockThreshold;
+    final alertThreshold = product.lowStockAlertThreshold;
+    final originalStock = product.effectiveOriginalStock;
     final isOutOfStock = totalStock <= 0;
-    final isLowStock = !isOutOfStock && totalStock <= threshold;
+    final isLowStock = !isOutOfStock && product.isPhysicalThresholdHit;
 
     final (bannerText, bannerBg, bannerFg, bannerIcon) = isOutOfStock
         ? (
@@ -895,7 +901,6 @@ class _LiveInventoryHealthCard extends StatelessWidget {
                 Icons.check_circle_outline_rounded,
               );
 
-    final availableStock = product.totalAvailableStock;
     final reservedStock = product.totalReservedStock;
     final suggestedRestock = product.calculateSuggestedRestock();
 
@@ -1027,10 +1032,28 @@ class _LiveInventoryHealthCard extends StatelessWidget {
             ),
 
             _DetailRow(
-              label: 'Available for POS / Storefront',
-              value: '$availableStock ${product.unit}',
+              label: 'Physical Stock (POS)',
+              value: '${product.totalStock} ${product.unit}',
               isBoldValue: true,
               valueColor: semantic.success,
+            ),
+
+            _DetailRow(
+              label: 'Online Available (75% cap)',
+              value: product.isOnlineOutOfStock
+                  ? 'Out of Stock (0 ${product.unit})'
+                  : '${product.onlineAvailableStock} ${product.unit}',
+              isBoldValue: true,
+              valueColor: product.isOnlineOutOfStock
+                  ? colorScheme.error
+                  : colorScheme.primary,
+            ),
+
+            _DetailRow(
+              label: 'Walk-In Reserve (25%)',
+              value: '${product.effectivePhysicalReserve} ${product.unit}',
+              isBoldValue: true,
+              valueColor: semantic.warning,
             ),
 
             _DetailRow(
@@ -1040,8 +1063,8 @@ class _LiveInventoryHealthCard extends StatelessWidget {
             ),
 
             _DetailRow(
-              label: 'Low Stock Threshold',
-              value: '$threshold ${product.unit}',
+              label: 'Low Stock Alert (30%)',
+              value: '≤ $alertThreshold ${product.unit} (of $originalStock)',
             ),
 
             const Divider(height: 16),
@@ -1890,8 +1913,7 @@ class _ParentGroupVariantsCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
-                                color: childP.totalStock <=
-                                        childP.lowStockThreshold
+                                color: childP.isPhysicalThresholdHit
                                     ? Colors.red
                                     : Colors.green.shade800,
                               ),
@@ -1904,6 +1926,325 @@ class _ParentGroupVariantsCard extends StatelessWidget {
                 );
               },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INVENTORY ALLOCATION CARD (FIXED 100% POS / 75% ONLINE / 25% RESERVE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InventoryAllocationCard extends StatelessWidget {
+  final Product product;
+
+  const _InventoryAllocationCard({required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final semantic = theme.semantic;
+
+    final int totalStock = product.totalStock;
+    final int posAvailable = product.totalAvailableStock;
+    final int onlineAvailable = product.onlineAvailableStock;
+    final int physicalReserve = product.effectivePhysicalReserve;
+    final bool isOos = totalStock <= 0;
+    final bool isOnlineOos = product.isOnlineOutOfStock;
+    final bool isPhysicalLow = !isOos && product.isPhysicalThresholdHit;
+
+    final Color accentColor = (isOos || isOnlineOos)
+        ? cs.error
+        : (isPhysicalLow ? semantic.warning : cs.primary);
+
+    final int reserveInStock =
+        totalStock < physicalReserve ? totalStock : physicalReserve;
+
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: cs.outline.withValues(alpha: 0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.inventory_2_rounded,
+                    size: 18,
+                    color: accentColor,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Inventory Allocation (100% POS / 75% Online)',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      Text(
+                        '25% physical-only walk-in reserve automatically calculated on restock',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Status Banner
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    (isOos || isOnlineOos)
+                        ? Icons.warning_amber_rounded
+                        : (isPhysicalLow
+                            ? Icons.shield_rounded
+                            : Icons.verified_rounded),
+                    size: 16,
+                    color: accentColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isOos
+                          ? 'Out of Stock — Restock to replenish POS and reopen Online availability.'
+                          : (isOnlineOos
+                              ? 'Online Out of Stock — Remaining $posAvailable ${product.unit} protected in the Walk-In Reserve for POS sales.'
+                              : 'Online capped at $onlineAvailable ${product.unit} • $physicalReserve ${product.unit} strictly reserved for walk-in POS.'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: accentColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Visual Stock Bar (Walk-In Reserve vs Online Available)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: 14,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex:
+                          isOos ? 1 : (reserveInStock > 0 ? reserveInStock : 1),
+                      child: Container(
+                        color: isOos ? cs.error : semantic.warning,
+                      ),
+                    ),
+                    if (!isOos && onlineAvailable > 0)
+                      Expanded(
+                        flex: onlineAvailable,
+                        child: Container(color: cs.primary),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Read-Only Allocation Visibility Tiles
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: (isOos ? cs.error : semantic.success)
+                            .withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Physical Stock (POS)',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: isOos ? cs.error : semantic.success,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$totalStock ${product.unit}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        Text(
+                          'Sellable now: $posAvailable ${product.unit}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: (isOnlineOos ? cs.error : cs.primary)
+                            .withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Online Available (75% cap)',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: isOnlineOos ? cs.error : cs.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isOnlineOos
+                              ? 'Out of Stock'
+                              : '$onlineAvailable ${product.unit}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: isOnlineOos ? cs.error : cs.onSurface,
+                          ),
+                        ),
+                        Text(
+                          isOnlineOos
+                              ? '0 ${product.unit} online'
+                              : 'Customer App catalog',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: semantic.warning.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Walk-In Reserve (25%)',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: semantic.warning,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$physicalReserve ${product.unit}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        Text(
+                          'POS-only protected',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            if (product.hasVariants) ...[
+              const Divider(height: 20),
+              Text(
+                'Per-Variant Stock Breakdown',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...product.variants.map((v) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          v.name,
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        'POS: ${v.stock} • Online: ${v.isOnlineOutOfStock ? 'OOS' : v.onlineAvailableStock} • Reserve: ${v.effectivePhysicalReserve}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
           ],
         ),
       ),

@@ -172,18 +172,22 @@ class _StaffAuthGate extends StatefulWidget {
 }
 
 class _StaffAuthGateState extends State<_StaffAuthGate> {
-  String? _activeUid;
+  String? _activeStaffKey;
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AppAuthProvider>();
     final user = auth.currentUser;
+    final bool hasStaffAccess = user != null && auth.role != UserRole.none;
+    final String? staffKey =
+        hasStaffAccess ? '${user.uid}:${auth.role.name}' : null;
 
-    // Manage provider lifecycles based on auth state
-    if (user?.uid != _activeUid) {
-      _activeUid = user?.uid;
+    // Manage provider lifecycles based on authenticated + approved staff role
+    if (staffKey != _activeStaffKey) {
+      _activeStaffKey = staffKey;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (user != null) {
+        if (!mounted) return;
+        if (hasStaffAccess) {
           final email = user.email ?? 'Staff';
           debugPrint('AuthGate: Initializing providers & identity for $email');
           context.read<InventoryProvider>().setAdminEmail(email);
@@ -194,13 +198,15 @@ class _StaffAuthGateState extends State<_StaffAuthGate> {
           context.read<ExpenseProvider>().initialize();
           context.read<RestockProvider>().initialize();
           context.read<ProcurementProvider>().initialize();
+          context.read<ShiftProvider>().initialize();
         } else {
-          debugPrint('AuthGate: Cancelling subscriptions (Logout)');
+          debugPrint('AuthGate: Cancelling subscriptions (Logout / Pending)');
           context.read<InventoryProvider>().cancelSubscriptions();
           context.read<OrderProvider>().cancelSubscriptions();
           context.read<ExpenseProvider>().cancelSubscriptions();
           context.read<RestockProvider>().cancelSubscriptions();
           context.read<ProcurementProvider>().cancelSubscriptions();
+          context.read<ShiftProvider>().cancelSubscriptions();
         }
       });
     }

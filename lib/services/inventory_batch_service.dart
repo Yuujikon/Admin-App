@@ -12,6 +12,7 @@ import '../models/refund_request.dart';
 import '../models/store_settings.dart';
 import '../models/supplier.dart';
 import '../models/transaction.dart';
+import '../utils/inventory_allocation.dart';
 import '../utils/pricing_engine.dart';
 
 /// Pure result of computing a FIFO deduction across sorted active batches.
@@ -325,6 +326,61 @@ class InventoryBatchService {
       _db.collection('audit_logs');
   CollectionReference<Map<String, dynamic>> get _inventoryBatches =>
       _db.collection('inventory_batches');
+
+  /// Returns the `physicalReserve` update field for a standard product.
+  ///
+  /// - When [isRestock] is `true` (PO receiving, manual stock-in, restock
+  ///   inquiry, or stock increase), recalculates `physicalReserve = (syncedStock * 0.25).ceil()`.
+  /// - Otherwise (POS sale, refund, write-off, reconciliation, reservation),
+  ///   preserves the stored `physicalReserve` (falling back to `(syncedStock * 0.25).ceil()`
+  ///   only if missing on legacy documents).
+  Map<String, dynamic> _physicalReserveFields(
+    Product product,
+    int syncedStock, {
+    required bool isRestock,
+  }) {
+    final int nextReserve = isRestock
+        ? InventoryAllocation.calculatePhysicalReserve(syncedStock)
+        : InventoryAllocation.resolvePhysicalReserve(
+            totalStock: syncedStock,
+            storedPhysicalReserve: product.physicalReserve,
+          );
+    return {'physicalReserve': nextReserve};
+  }
+
+  /// Returns `physicalReserve` update fields for variant products (per-variant
+  /// dot-paths + parent aggregate).
+  Map<String, dynamic> _variantPhysicalReserveFields(
+    Product product, {
+    Map<String, int>? stockOverrides,
+    Set<String> restockedVariantIds = const {},
+  }) {
+    int totalReserve = 0;
+    final Map<String, dynamic> fields = {};
+
+    for (final v in product.variants) {
+      final int vStock = (stockOverrides?[v.id] ?? v.stock).clamp(0, 999999999);
+      final bool recalc =
+          restockedVariantIds.contains(v.id) || v.physicalReserve == null;
+      final int nextReserve = recalc
+          ? InventoryAllocation.calculatePhysicalReserve(vStock)
+          : v.effectivePhysicalReserve;
+      totalReserve += nextReserve;
+      fields['variants.${v.id}.physicalReserve'] = nextReserve;
+    }
+
+    fields['physicalReserve'] = totalReserve;
+    return fields;
+  }
+
+  /// Computes the updated original stock baseline (`initialStock`) whenever
+  /// new stock is added/restocked so both the 25% walk-in reserve and the
+  /// 30% low-stock alert track the current restock cycle accurately.
+  int _nextInitialStockOnRestock(Product product, int syncedStock) {
+    if (syncedStock <= 0) return product.effectiveInitialStock;
+    return syncedStock;
+  }
+
   CollectionReference<Map<String, dynamic>> get _deliveryLogs =>
       _db.collection('delivery_logs');
   CollectionReference<Map<String, dynamic>> get _receivingRecords =>
@@ -1044,6 +1100,7 @@ class InventoryBatchService {
       transaction.update(productRef, {
         'stock': syncedStock,
         'batches': {for (final b in fallbackBatches) b.batchId: b.toMap()},
+        ..._physicalReserveFields(product, syncedStock, isRestock: false),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -1256,10 +1313,12 @@ class InventoryBatchService {
 
       final Map<String, dynamic> productUpdate = {
         'stock': syncedStock,
+        'initialStock': _nextInitialStockOnRestock(product, syncedStock),
         'costPrice': updatedCostPrice,
         'batches': {for (final b in allBatches) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(product, syncedStock, isRestock: true),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -1424,9 +1483,24 @@ class InventoryBatchService {
           ? product.totalStock
           : sumActiveBatchStock(allBatches);
 
+      final List<ProductVariant> resolvedVariants = product.hasVariants
+          ? product.variants
+              .map((v) => v.copyWith(
+                    physicalReserve:
+                        InventoryAllocation.calculatePhysicalReserve(v.stock),
+                  ))
+              .toList()
+          : product.variants;
+      final int initialReserve = product.hasVariants
+          ? resolvedVariants.fold(
+              0, (acc, v) => acc + v.effectivePhysicalReserve)
+          : InventoryAllocation.calculatePhysicalReserve(syncedStock);
+
       final updatedProduct = product.copyWith(
         stock: syncedStock,
+        physicalReserve: initialReserve,
         supplierId: finalSupplierId ?? product.supplierId,
+        variants: resolvedVariants,
         batches: allBatches,
       );
 
@@ -1898,9 +1972,11 @@ class InventoryBatchService {
 
         final Map<String, dynamic> prodUpdateData = {
           'stock': syncedStock,
+          'initialStock': _nextInitialStockOnRestock(product, syncedStock),
           'batches': {for (final b in allBatches) b.batchId: b.toMap()},
           'expiryDate':
               earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+          ..._physicalReserveFields(product, syncedStock, isRestock: true),
           'updatedAt': FieldValue.serverTimestamp(),
         };
         if (product.reservedStock < 0) {
@@ -2314,6 +2390,7 @@ class InventoryBatchService {
           final vMap = variantDeductions[pid]!;
           int newTotalVariantStock = 0;
           int newTotalVariantReserved = 0;
+          int newTotalVariantReserve = 0;
           final Map<String, dynamic> updateData = {
             'updatedAt': FieldValue.serverTimestamp(),
           };
@@ -2323,10 +2400,17 @@ class InventoryBatchService {
             final int nextStock = (v.stock - ded).clamp(0, 999999999);
             final int nextRes =
                 (v.effectiveReservedStock - rel).clamp(0, 999999999);
+            final int preservedReserve = v.effectivePhysicalReserve;
+
             newTotalVariantStock += nextStock;
             newTotalVariantReserved += nextRes;
+            newTotalVariantReserve += preservedReserve;
+
             if (ded > 0) {
               updateData['variants.${v.id}.stock'] = nextStock;
+            }
+            if (v.physicalReserve == null) {
+              updateData['variants.${v.id}.physicalReserve'] = preservedReserve;
             }
             if (rel > 0 || v.reservedStock < 0) {
               updateData['variants.${v.id}.reservedStock'] = nextRes;
@@ -2334,6 +2418,7 @@ class InventoryBatchService {
           }
           updateData['stock'] = newTotalVariantStock;
           updateData['reservedStock'] = newTotalVariantReserved;
+          updateData['physicalReserve'] = newTotalVariantReserve;
           transaction.update(prodRef, updateData);
           continue;
         }
@@ -2373,18 +2458,20 @@ class InventoryBatchService {
         final DateTime? earliestExp =
             _earliestActiveExpiry(updatedBatches, now: now);
         final int releaseReserved = reservedReleaseByProduct[pid] ?? 0;
+        final int nextReserved =
+            (product.effectiveReservedStock - releaseReserved)
+                .clamp(0, 999999999);
 
         final Map<String, dynamic> productUpdate = {
           'stock': syncedStock,
           'batches': {for (final b in updatedBatches) b.batchId: b.toMap()},
           'expiryDate':
               earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+          ..._physicalReserveFields(product, syncedStock, isRestock: false),
           'updatedAt': FieldValue.serverTimestamp(),
         };
         if (releaseReserved > 0 || product.reservedStock < 0) {
-          productUpdate['reservedStock'] =
-              (product.effectiveReservedStock - releaseReserved)
-                  .clamp(0, 999999999);
+          productUpdate['reservedStock'] = nextReserved;
         }
 
         // FIFO Batch Transition dynamic pricing recalculation (never alters current tx unitPriceAtSale)
@@ -2931,15 +3018,21 @@ class InventoryBatchService {
             'updatedAt': FieldValue.serverTimestamp(),
           };
           int newTotalVariantStock = 0;
+          final Map<String, int> nextStockByVariant = {};
           for (final v in product.variants) {
             final int delta = variantDeltas[pid]![v.id] ?? 0;
             final int nextStock = (v.stock + delta).clamp(0, 999999999);
+            nextStockByVariant[v.id] = nextStock;
             newTotalVariantStock += nextStock;
             if (delta != 0) {
               updateData['variants.${v.id}.stock'] = nextStock;
             }
           }
           updateData['stock'] = newTotalVariantStock;
+          updateData.addAll(_variantPhysicalReserveFields(
+            product,
+            stockOverrides: nextStockByVariant,
+          ));
           if (product.reservedStock < 0) {
             updateData['reservedStock'] = 0;
           }
@@ -2986,6 +3079,7 @@ class InventoryBatchService {
             'batches': {for (final b in allBatches) b.batchId: b.toMap()},
             'expiryDate':
                 earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+            ..._physicalReserveFields(product, syncedStock, isRestock: false),
             'updatedAt': FieldValue.serverTimestamp(),
           };
           if (product.reservedStock < 0) {
@@ -3291,6 +3385,7 @@ class InventoryBatchService {
         'batches': {for (final b in allBatches) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(product, syncedStock, isRestock: false),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -3562,9 +3657,11 @@ class InventoryBatchService {
 
         final Map<String, dynamic> prodUpdate = {
           'stock': syncedStock,
+          'initialStock': _nextInitialStockOnRestock(product, syncedStock),
           'batches': {for (final b in allBatches) b.batchId: b.toMap()},
           'expiryDate':
               earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+          ..._physicalReserveFields(product, syncedStock, isRestock: true),
           'updatedAt': FieldValue.serverTimestamp(),
         };
         if (product.reservedStock < 0) {
@@ -3746,6 +3843,7 @@ class InventoryBatchService {
         'batches': {for (final b in allBatches) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(product, syncedStock, isRestock: false),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -3877,11 +3975,19 @@ class InventoryBatchService {
         }
       }
 
+      final bool isBatchRestock = syncedStock > product.totalStock;
       final Map<String, dynamic> prodUpdate = {
         'stock': syncedStock,
+        if (isBatchRestock)
+          'initialStock': _nextInitialStockOnRestock(product, syncedStock),
         'batches': {for (final b in allBatches) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(
+          product,
+          syncedStock,
+          isRestock: isBatchRestock,
+        ),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -3976,6 +4082,7 @@ class InventoryBatchService {
         'batches': {for (final b in remainingBatches) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(product, syncedStock, isRestock: false),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -4136,6 +4243,7 @@ class InventoryBatchService {
         'batches': {for (final b in allBatches) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(product, syncedStock, isRestock: false),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -4306,9 +4414,16 @@ class InventoryBatchService {
 
       final Map<String, dynamic> prodUpdate = {
         'stock': syncedStock,
+        if (delta > 0)
+          'initialStock': _nextInitialStockOnRestock(product, syncedStock),
         'batches': {for (final b in working) b.batchId: b.toMap()},
         'expiryDate':
             earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+        ..._physicalReserveFields(
+          product,
+          syncedStock,
+          isRestock: delta > 0,
+        ),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (product.reservedStock < 0) {
@@ -4412,11 +4527,10 @@ class InventoryBatchService {
           };
           for (final v in product.variants) {
             final addRes = vMap[v.id] ?? 0;
-            final avail =
-                (v.stock - v.effectiveReservedStock).clamp(0, v.stock);
-            if (addRes > avail) {
+            final int onlineAvail = v.onlineAvailableStock;
+            if (addRes > onlineAvail) {
               throw Exception(
-                'Insufficient available stock to reserve ${product.name} (${v.name}). Available: $avail, Requested: $addRes.',
+                'Insufficient online available stock to reserve ${product.name} (${v.name}). Online available: $onlineAvail, Requested: $addRes.',
               );
             }
             final nextRes = v.effectiveReservedStock + addRes;
@@ -4426,6 +4540,7 @@ class InventoryBatchService {
             }
           }
           updateData['reservedStock'] = totalVarRes;
+          updateData.addAll(_variantPhysicalReserveFields(product));
           transaction.update(prodRef, updateData);
           continue;
         }
@@ -4436,11 +4551,18 @@ class InventoryBatchService {
         final int sellable = normalized.isNotEmpty
             ? sumActiveBatchStock(normalized, now: now)
             : product.stock.clamp(0, 999999999);
-        final int avail =
-            (sellable - product.effectiveReservedStock).clamp(0, sellable);
-        if (addRes > avail) {
+        final int physicalReserve = InventoryAllocation.resolvePhysicalReserve(
+          totalStock: sellable,
+          storedPhysicalReserve: product.physicalReserve,
+        );
+        final int onlineAvail = InventoryAllocation.calculateOnlineAvailable(
+          totalStock: sellable,
+          physicalReserve: physicalReserve,
+          reservedStock: product.effectiveReservedStock,
+        );
+        if (addRes > onlineAvail) {
           throw Exception(
-            'Insufficient available stock to reserve ${product.name}. Available: $avail, Requested: $addRes.',
+            'Insufficient online available stock to reserve ${product.name}. Online available: $onlineAvail, Requested: $addRes.',
           );
         }
 
@@ -4458,13 +4580,15 @@ class InventoryBatchService {
         }
 
         final earliestExp = _earliestActiveExpiry(normalized, now: now);
+        final int nextReserved = product.effectiveReservedStock + addRes;
         final Map<String, dynamic> prodUpdate = {
           'stock': sellable,
-          'reservedStock': product.effectiveReservedStock + addRes,
+          'reservedStock': nextReserved,
           if (normalized.isNotEmpty)
             'batches': {for (final b in normalized) b.batchId: b.toMap()},
           'expiryDate':
               earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+          ..._physicalReserveFields(product, sellable, isRestock: false),
           'updatedAt': FieldValue.serverTimestamp(),
         };
         transaction.update(prodRef, prodUpdate);
@@ -4556,6 +4680,7 @@ class InventoryBatchService {
           if (releaseVarByProduct.containsKey(pid)) {
             final vMap = releaseVarByProduct[pid]!;
             int newTotalReserved = 0;
+            final Map<String, int> nextResByVariant = {};
             final Map<String, dynamic> updateData = {
               'updatedAt': FieldValue.serverTimestamp(),
             };
@@ -4563,12 +4688,14 @@ class InventoryBatchService {
               final rel = vMap[v.id] ?? 0;
               final nextRes =
                   (v.effectiveReservedStock - rel).clamp(0, 999999999);
+              nextResByVariant[v.id] = nextRes;
               newTotalReserved += nextRes;
               if (rel > 0 || v.reservedStock < 0) {
                 updateData['variants.${v.id}.reservedStock'] = nextRes;
               }
             }
             updateData['reservedStock'] = newTotalReserved;
+            updateData.addAll(_variantPhysicalReserveFields(product));
             transaction.update(prodRef, updateData);
             continue;
           }
@@ -4605,6 +4732,7 @@ class InventoryBatchService {
               'batches': {for (final b in normalized) b.batchId: b.toMap()},
             'expiryDate':
                 earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+            ..._physicalReserveFields(product, syncedStock, isRestock: false),
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }
@@ -4700,12 +4828,16 @@ class InventoryBatchService {
             reservations.byVariant[productId] ?? const <String, int>{};
         int sumVarStock = 0;
         int sumVarReserved = 0;
+        final Map<String, int> nextStockByVariant = {};
+        final Map<String, int> nextResByVariant = {};
         final Map<String, dynamic> updateData = {
           'updatedAt': FieldValue.serverTimestamp(),
         };
         for (final v in product.variants) {
           final clampedStock = v.stock.clamp(0, 999999999);
           final targetRes = (varResMap[v.id] ?? 0).clamp(0, 999999999);
+          nextStockByVariant[v.id] = clampedStock;
+          nextResByVariant[v.id] = targetRes;
           sumVarStock += clampedStock;
           sumVarReserved += targetRes;
           if (v.stock != clampedStock) {
@@ -4722,6 +4854,10 @@ class InventoryBatchService {
             (product.stock != sumVarStock ||
                 product.reservedStock != sumVarReserved ||
                 updateData.length > 3)) {
+          updateData.addAll(_variantPhysicalReserveFields(
+            product,
+            stockOverrides: nextStockByVariant,
+          ));
           transaction.update(prodRef, updateData);
           transaction.set(_auditLogs.doc(), {
             'timestamp': FieldValue.serverTimestamp(),
@@ -4820,6 +4956,7 @@ class InventoryBatchService {
           'batches': {for (final b in merged) b.batchId: b.toMap()},
           'expiryDate':
               earliestExp != null ? Timestamp.fromDate(earliestExp) : null,
+          ..._physicalReserveFields(product, syncedStock, isRestock: false),
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
